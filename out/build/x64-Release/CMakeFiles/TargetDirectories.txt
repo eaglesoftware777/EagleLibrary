@@ -1,0 +1,10 @@
+C:/eagle_software/EagleLibrary/out/build/x64-Release/CMakeFiles/EagleLibrary.dir
+C:/eagle_software/EagleLibrary/out/build/x64-Release/CMakeFiles/package.dir
+C:/eagle_software/EagleLibrary/out/build/x64-Release/CMakeFiles/package_source.dir
+C:/eagle_software/EagleLibrary/out/build/x64-Release/CMakeFiles/edit_cache.dir
+C:/eagle_software/EagleLibrary/out/build/x64-Release/CMakeFiles/rebuild_cache.dir
+C:/eagle_software/EagleLibrary/out/build/x64-Release/CMakeFiles/list_install_components.dir
+C:/eagle_software/EagleLibrary/out/build/x64-Release/CMakeFiles/install.dir
+C:/eagle_software/EagleLibrary/out/build/x64-Release/CMakeFiles/install/local.dir
+C:/eagle_software/EagleLibrary/out/build/x64-Release/CMakeFiles/EagleLibrary_autogen_timestamp_deps.dir
+C:/eagle_software/EagleLibrary/out/build/x64-Release/CMakeFiles/EagleLibrary_autogen.dir
