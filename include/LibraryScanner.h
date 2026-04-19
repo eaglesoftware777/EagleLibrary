@@ -1,7 +1,7 @@
 #pragma once
 // ============================================================
 //  Eagle Library -- LibraryScanner.h
-//  Copyright (c) 2024 Eagle Software. All rights reserved.
+//  Copyright (c) 2026 Eagle Software. All rights reserved.
 // ============================================================
 
 #include "Book.h"
@@ -25,6 +25,7 @@ class ScanWorker : public QObject
 public:
     explicit ScanWorker(const QStringList& folders,
                         int parallelism,
+                        bool fastScanMode,
                         QObject* parent = nullptr);
     void cancel() { m_cancelled.storeRelaxed(1); }
 
@@ -40,6 +41,7 @@ signals:
 private:
     QStringList m_folders;
     int         m_parallelism;
+    bool        m_fastScanMode = true;
     QAtomicInt  m_cancelled{0};
 
     // shared counters (atomic)
@@ -66,7 +68,7 @@ public:
     explicit LibraryScanner(QObject* parent = nullptr);
     ~LibraryScanner();
 
-    void startScan(const QStringList& folders, int parallelism = 0);
+    void startScan(const QStringList& folders, int parallelism = 0, bool fastScanMode = true);
     void cancel();
     bool isRunning() const;
 
@@ -107,7 +109,7 @@ public:
 
 signals:
     void renamed(RenameResult result);
-    void progress(int done, int total);
+    void progress(int done, int total, const QString& currentFile, const QString& detail);
     void finished(int changed);
 
 private:
@@ -116,4 +118,5 @@ private:
     static QString cleanToken(const QString& s);
     static bool    isWeakTitle(const QString& title, const QString& filePath);
     static RenameResult parseFilename(const Book& book);
+    static QString inferTitleFromContent(const Book& book);
 };

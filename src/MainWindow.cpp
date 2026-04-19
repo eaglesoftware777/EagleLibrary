@@ -1,6 +1,6 @@
 // ============================================================
 //  Eagle Library -- MainWindow.cpp
-//  Copyright (c) 2024 Eagle Software. All rights reserved.
+//  Copyright (c) 2026 Eagle Software. All rights reserved.
 // ============================================================
 #include "MainWindow.h"
 #include "BookDelegate.h"
@@ -8,6 +8,10 @@
 #include "SettingsDialog.h"
 #include "Database.h"
 #include "AppConfig.h"
+#include "LanguageManager.h"
+#include "ThemeManager.h"
+#include "CommandPalette.h"
+#include "PluginManager.h"
 
 #include <QApplication>
 #include <QCoreApplication>
@@ -17,18 +21,30 @@
 #include <QToolBar>
 #include <QDockWidget>
 #include <QListWidget>
+#include <QTableWidget>
+#include <QHeaderView>
 #include <QVBoxLayout>
 #include <QHBoxLayout>
+#include <QFormLayout>
+#include <QGroupBox>
 #include <QLabel>
 #include <QLineEdit>
 #include <QComboBox>
+#include <QCheckBox>
+#include <QSpinBox>
+#include <QDialog>
+#include <QDialogButtonBox>
+#include <QAbstractButton>
 #include <QProgressBar>
 #include <QStatusBar>
 #include <QSettings>
 #include <QCloseEvent>
 #include <QMessageBox>
+#include <QInputDialog>
 #include <QFileDialog>
+#include <QFileInfo>
 #include <QDesktopServices>
+#include <QDir>
 #include <QUrl>
 #include <QTimer>
 #include <QScrollBar>
@@ -37,12 +53,1170 @@
 #include <QGuiApplication>
 #include <QScreen>
 #include <QIcon>
+#include <QSignalBlocker>
 #include <functional>
+#include <QSet>
+#include <QFile>
+#include <QImage>
+#include <QImageReader>
+#include <QJsonArray>
+#include <QJsonObject>
+#include <QPainter>
+#include <QRegularExpression>
+#include <QSaveFile>
+#include <QJsonDocument>
+#include <QPushButton>
+#include <QResizeEvent>
+#include <QItemSelectionModel>
+#include <QDateTime>
+#include <QEventLoop>
+#include <QProcess>
+#include <QNetworkAccessManager>
+#include <QNetworkReply>
+#include <QNetworkRequest>
+#include <QStandardPaths>
+#include <QTemporaryDir>
+#include <QMap>
+#include <QStyle>
+#include <QTextStream>
+#include <QUrlQuery>
+#include <algorithm>
+
+namespace {
+
+QString trl(const QString& key, const QString& fallback)
+{
+    return LanguageManager::instance().text(key, fallback);
+}
+
+QString shelfLabel(const QString& id)
+{
+    if (id == QStringLiteral("all")) return trl("shelf.allItems", "All Items");
+    if (id == QStringLiteral("books")) return trl("shelf.booksOnly", "Books Only");
+    if (id == QStringLiteral("documents")) return trl("shelf.documentsOnly", "Documents Only");
+    if (id == QStringLiteral("favourites")) return trl("shelf.favourites", "Favourites");
+    if (id == QStringLiteral("recent")) return trl("shelf.recentlyAdded", "Recently Added");
+    if (id == QStringLiteral("opened")) return trl("shelf.mostOpened", "Most Opened");
+    if (id == QStringLiteral("missing_metadata")) return trl("shelf.missingMetadata", "Missing Metadata");
+    if (id == QStringLiteral("no_cover")) return trl("shelf.noCover", "No Cover");
+    return id;
+}
+
+QString normalizeShelfId(const QString& value)
+{
+    if (value == QStringLiteral("all") || value == QStringLiteral("All Items")) return QStringLiteral("all");
+    if (value == QStringLiteral("books") || value == QStringLiteral("Books Only")) return QStringLiteral("books");
+    if (value == QStringLiteral("documents") || value == QStringLiteral("Documents Only")) return QStringLiteral("documents");
+    if (value == QStringLiteral("favourites") || value == QStringLiteral("Favourites")) return QStringLiteral("favourites");
+    if (value == QStringLiteral("recent") || value == QStringLiteral("Recently Added")) return QStringLiteral("recent");
+    if (value == QStringLiteral("opened") || value == QStringLiteral("Most Opened")) return QStringLiteral("opened");
+    if (value == QStringLiteral("missing_metadata") || value == QStringLiteral("Missing Metadata")) return QStringLiteral("missing_metadata");
+    if (value == QStringLiteral("no_cover") || value == QStringLiteral("No Cover")) return QStringLiteral("no_cover");
+    return value.trimmed().isEmpty() ? QStringLiteral("all") : value;
+}
+
+Book mergeFetchedMetadata(const Book& current, const Book& fetched)
+{
+    Book merged = current;
+    if (!fetched.title.isEmpty())       merged.title = fetched.title;
+    if (!fetched.author.isEmpty())      merged.author = fetched.author;
+    if (!fetched.publisher.isEmpty())   merged.publisher = fetched.publisher;
+    if (!fetched.isbn.isEmpty())        merged.isbn = fetched.isbn;
+    if (!fetched.language.isEmpty())    merged.language = fetched.language;
+    if (fetched.year > 0)               merged.year = fetched.year;
+    if (fetched.pages > 0)              merged.pages = fetched.pages;
+    if (fetched.rating > 0)             merged.rating = fetched.rating;
+    if (!fetched.description.isEmpty()) merged.description = fetched.description;
+    if (!fetched.subjects.isEmpty())    merged.subjects = fetched.subjects;
+    return merged;
+}
+
+QString normalizedText(QString value)
+{
+    value = value.toLower();
+    value.remove(QRegularExpression("[^\\p{L}\\p{N}]+"));
+    return value;
+}
+
+bool isValidIsbn10(const QString& isbn)
+{
+    if (isbn.size() != 10)
+        return false;
+    int sum = 0;
+    for (int i = 0; i < 9; ++i) {
+        if (!isbn.at(i).isDigit())
+            return false;
+        sum += (10 - i) * isbn.at(i).digitValue();
+    }
+    const QChar last = isbn.at(9).toUpper();
+    sum += (last == 'X') ? 10 : (last.isDigit() ? last.digitValue() : -1000);
+    return sum % 11 == 0;
+}
+
+bool isValidIsbn13(const QString& isbn)
+{
+    if (isbn.size() != 13)
+        return false;
+    int sum = 0;
+    for (int i = 0; i < 12; ++i) {
+        if (!isbn.at(i).isDigit())
+            return false;
+        sum += isbn.at(i).digitValue() * ((i % 2 == 0) ? 1 : 3);
+    }
+    if (!isbn.at(12).isDigit())
+        return false;
+    const int check = (10 - (sum % 10)) % 10;
+    return isbn.at(12).digitValue() == check;
+}
+
+QString sanitizeIsbn(const QString& value)
+{
+    QString out;
+    for (const QChar ch : value) {
+        if (ch.isDigit() || ch.toUpper() == 'X')
+            out.append(ch.toUpper());
+    }
+    return out;
+}
+
+QString extractIsbnFromText(const QString& text)
+{
+    static const QRegularExpression re(QStringLiteral(R"((?:97[89][-\s]?)?\d[-\s\d]{8,20}[\dXx])"));
+    QRegularExpressionMatchIterator it = re.globalMatch(text);
+    while (it.hasNext()) {
+        const QString isbn = sanitizeIsbn(it.next().captured(0));
+        if (isbn.size() == 13 && isValidIsbn13(isbn))
+            return isbn;
+        if (isbn.size() == 10 && isValidIsbn10(isbn))
+            return isbn;
+    }
+    return {};
+}
+
+QString readBookProbeText(const Book& book)
+{
+    QFile file(book.filePath);
+    if (!file.open(QIODevice::ReadOnly))
+        return {};
+
+    QByteArray bytes = file.read(1024 * 1024);
+    if (file.size() > 1024 * 1024 && file.seek(qMax<qint64>(0, file.size() - 256 * 1024)))
+        bytes += '\n' + file.read(256 * 1024);
+
+    QString text = QString::fromUtf8(bytes);
+    if (text.contains(QChar::ReplacementCharacter))
+        text = QString::fromLatin1(bytes);
+    return text;
+}
+
+QString runCommandCapture(const QString& program, const QStringList& arguments, int timeoutMs = 20000)
+{
+    QProcess proc;
+    proc.start(program, arguments);
+    if (!proc.waitForStarted(3000))
+        return {};
+    if (!proc.waitForFinished(timeoutMs)) {
+        proc.kill();
+        proc.waitForFinished(1000);
+        return {};
+    }
+
+    const QByteArray stdoutBytes = proc.readAllStandardOutput();
+    const QByteArray stderrBytes = proc.readAllStandardError();
+    QString text = QString::fromUtf8(stdoutBytes);
+    if (text.contains(QChar::ReplacementCharacter))
+        text = QString::fromLocal8Bit(stdoutBytes);
+    if (text.trimmed().isEmpty())
+        text = QString::fromLocal8Bit(stderrBytes);
+    return text.trimmed();
+}
+
+QString extractTextWithPdftotext(const Book& book)
+{
+    const QString tool = QStandardPaths::findExecutable("pdftotext");
+    if (tool.isEmpty())
+        return {};
+
+    QTemporaryDir tempDir;
+    if (!tempDir.isValid())
+        return {};
+
+    const QString outputPath = tempDir.filePath("probe.txt");
+    QProcess proc;
+    proc.start(tool, QStringList() << "-enc" << "UTF-8" << "-f" << "1" << "-l" << "5" << book.filePath << outputPath);
+    if (!proc.waitForStarted(3000))
+        return {};
+    if (!proc.waitForFinished(25000)) {
+        proc.kill();
+        proc.waitForFinished(1000);
+        return {};
+    }
+
+    QFile outFile(outputPath);
+    if (!outFile.open(QIODevice::ReadOnly))
+        return {};
+    QString text = QString::fromUtf8(outFile.readAll());
+    return text.trimmed();
+}
+
+QString ocrPdfWithExternalTools(const Book& book)
+{
+    const QString pdftoppm = QStandardPaths::findExecutable("pdftoppm");
+    const QString tesseract = QStandardPaths::findExecutable("tesseract");
+    if (pdftoppm.isEmpty() || tesseract.isEmpty())
+        return {};
+
+    QTemporaryDir tempDir;
+    if (!tempDir.isValid())
+        return {};
+
+    const QString prefix = tempDir.filePath("page");
+    QProcess renderProc;
+    renderProc.start(pdftoppm, QStringList() << "-png" << "-f" << "1" << "-l" << "2" << book.filePath << prefix);
+    if (!renderProc.waitForStarted(3000))
+        return {};
+    if (!renderProc.waitForFinished(30000)) {
+        renderProc.kill();
+        renderProc.waitForFinished(1000);
+        return {};
+    }
+
+    QString combined;
+    const QStringList images = QDir(tempDir.path()).entryList(QStringList() << "page-*.png", QDir::Files, QDir::Name);
+    for (const QString& imageName : images) {
+        const QString imagePath = tempDir.filePath(imageName);
+        const QString text = runCommandCapture(tesseract, QStringList() << imagePath << "stdout" << "-l" << "eng", 25000);
+        if (!text.isEmpty()) {
+            if (!combined.isEmpty())
+                combined += '\n';
+            combined += text;
+        }
+    }
+
+    return combined.trimmed();
+}
+
+QString ocrImageArchiveWithTesseract(const Book& book)
+{
+    const QString tesseract = QStandardPaths::findExecutable("tesseract");
+    if (tesseract.isEmpty())
+        return {};
+
+    const QString lowerFormat = book.format.toLower();
+    if (lowerFormat != "cbz" && lowerFormat != "cbr")
+        return {};
+
+    return {};
+}
+
+QString ocrExistingCoverWithTesseract(const Book& book)
+{
+    const QString tesseract = QStandardPaths::findExecutable("tesseract");
+    if (tesseract.isEmpty() || book.coverPath.isEmpty() || !QFileInfo::exists(book.coverPath))
+        return {};
+
+    return runCommandCapture(tesseract, QStringList() << book.coverPath << "stdout" << "-l" << "eng", 20000);
+}
+
+QStringList uniqueCaseInsensitive(QStringList values)
+{
+    QStringList out;
+    QSet<QString> seen;
+    for (QString value : values) {
+        value = value.trimmed();
+        if (value.isEmpty())
+            continue;
+        const QString key = value.toLower();
+        if (!seen.contains(key)) {
+            seen.insert(key);
+            out << value;
+        }
+    }
+    return out;
+}
+
+QJsonObject loadLibraryProfiles(const QSettings& settings)
+{
+    const QJsonDocument doc = QJsonDocument::fromJson(settings.value("library/profiles").toByteArray());
+    if (doc.isObject() && !doc.object().isEmpty())
+        return doc.object();
+
+    QJsonObject fallback;
+    QJsonArray folders;
+    const QStringList legacyFolders = settings.value("library/folders").toStringList();
+    for (const QString& folder : legacyFolders)
+        folders.append(folder);
+    fallback.insert(settings.value("library/currentName", "Main Library").toString(), folders);
+    return fallback;
+}
+
+QStringList foldersForLibrary(const QJsonObject& profiles, const QString& libraryName)
+{
+    QStringList folders;
+    for (const QJsonValue& value : profiles.value(libraryName).toArray())
+        folders << value.toString();
+    folders.removeDuplicates();
+    folders.sort(Qt::CaseInsensitive);
+    return folders;
+}
+
+QString buildLookupQuery(const Book& book)
+{
+    QStringList parts;
+    if (!book.displayTitle().trimmed().isEmpty())
+        parts << book.displayTitle().trimmed();
+    if (!book.author.trimmed().isEmpty())
+        parts << book.author.trimmed();
+    if (!book.isbn.trimmed().isEmpty())
+        parts << book.isbn.trimmed();
+    return parts.join(' ');
+}
+
+QUrl searchUrl(const QString& baseUrl, const QString& queryKey, const QString& term)
+{
+    QUrl url(baseUrl);
+    QUrlQuery query;
+    query.addQueryItem(queryKey, term);
+    url.setQuery(query);
+    return url;
+}
+
+QString csvEscape(QString value)
+{
+    value.replace('"', "\"\"");
+    if (value.contains(',') || value.contains('"') || value.contains('\n') || value.contains('\r'))
+        value = '"' + value + '"';
+    return value;
+}
+
+bool hasControlCharacters(const QString& value)
+{
+    for (const QChar ch : value) {
+        if (ch.category() == QChar::Other_Control && ch != QChar('\n') && ch != QChar('\r') && ch != QChar('\t'))
+            return true;
+    }
+    return false;
+}
+
+bool hasReplacementGlyphs(const QString& value)
+{
+    return value.contains(QChar::ReplacementCharacter)
+        || value.contains(QStringLiteral("\u25A1"))
+        || value.contains(QStringLiteral("\u25A0"))
+        || value.contains(QStringLiteral("\uFFFD"));
+}
+
+bool looksLikeMojibake(const QString& value)
+{
+    static const QStringList markers = {
+        QStringLiteral("Ã"), QStringLiteral("Â"), QStringLiteral("Ð"),
+        QStringLiteral("Ñ"), QStringLiteral("â€"), QStringLiteral("â€œ"),
+        QStringLiteral("â€"), QStringLiteral("â€“"), QStringLiteral("â€”"),
+        QStringLiteral("ï»¿")
+    };
+    for (const QString& marker : markers) {
+        if (value.contains(marker))
+            return true;
+    }
+    return false;
+}
+
+QStringList suspiciousTextReasons(const Book& book)
+{
+    QStringList reasons;
+    const QString title = book.title.trimmed();
+    const QString author = book.author.trimmed();
+    const QString publisher = book.publisher.trimmed();
+    const QString fileBase = QFileInfo(book.filePath).completeBaseName().trimmed();
+
+    const auto inspect = [&](const QString& fieldName, const QString& value) {
+        if (value.isEmpty())
+            return;
+        if (hasReplacementGlyphs(value))
+            reasons << QString("%1 has replacement/square characters").arg(fieldName);
+        if (hasControlCharacters(value))
+            reasons << QString("%1 has control characters").arg(fieldName);
+        if (looksLikeMojibake(value))
+            reasons << QString("%1 looks mojibake-encoded").arg(fieldName);
+    };
+
+    inspect("Title", title);
+    inspect("Author", author);
+    inspect("Publisher", publisher);
+
+    if (title.isEmpty())
+        reasons << "Title is empty";
+    else if (!fileBase.isEmpty() && title.compare(fileBase, Qt::CaseInsensitive) == 0)
+        reasons << "Title still equals raw filename";
+    else if (title.size() <= 2)
+        reasons << "Title is suspiciously short";
+
+    if (!title.isEmpty()) {
+        int punctuationCount = 0;
+        for (const QChar ch : title) {
+            if (!ch.isLetterOrNumber() && !ch.isSpace())
+                ++punctuationCount;
+        }
+        if (title.size() >= 6 && punctuationCount > title.size() / 2)
+            reasons << "Title has too much punctuation/noise";
+    }
+
+    if (!author.isEmpty() && author.size() <= 1)
+        reasons << "Author is suspiciously short";
+
+    reasons.removeDuplicates();
+    return reasons;
+}
+
+struct ReferenceTarget {
+    QString label;
+    QUrl url;
+};
+
+bool isTrustedReferenceUrl(const QUrl& url)
+{
+    if (!url.isValid() || url.scheme() != "https")
+        return false;
+
+    static const QHash<QString, QStringList> allowedHosts = {
+        { "en.wikipedia.org", { "/w/index.php" } },
+        { "www.amazon.com", { "/s" } },
+        { "openlibrary.org", { "/search" } },
+        { "books.google.com", { "/books" } },
+        { "search.worldcat.org", { "/search" } },
+        { "catalog.loc.gov", { "/vwebv/search" } }
+    };
+
+    const QString host = url.host().toLower();
+    if (!allowedHosts.contains(host))
+        return false;
+
+    const QString path = url.path();
+    for (const QString& allowedPath : allowedHosts.value(host)) {
+        if (path == allowedPath)
+            return true;
+    }
+    return false;
+}
+
+QVector<ReferenceTarget> trustedReferenceTargets(const Book& book)
+{
+    const QString query = buildLookupQuery(book).trimmed();
+    if (query.isEmpty())
+        return {};
+
+    const QVector<ReferenceTarget> candidates = {
+        { "Wikipedia", searchUrl("https://en.wikipedia.org/w/index.php", "search", query) },
+        { "Amazon Books", searchUrl("https://www.amazon.com/s", "k", query) },
+        { "Open Library", searchUrl("https://openlibrary.org/search", "q", query) },
+        { "Google Books", searchUrl("https://books.google.com/books", "q", query) },
+        { "WorldCat", searchUrl("https://search.worldcat.org/search", "q", query) },
+        { "Library of Congress", searchUrl("https://catalog.loc.gov/vwebv/search", "searchArg", query) }
+    };
+
+    QVector<ReferenceTarget> valid;
+    for (const ReferenceTarget& candidate : candidates) {
+        if (isTrustedReferenceUrl(candidate.url))
+            valid.push_back(candidate);
+    }
+    return valid;
+}
+
+QString verifiedContentIsbn(const Book& book)
+{
+    if (book.format.compare("PDF", Qt::CaseInsensitive) == 0) {
+        QString text = extractTextWithPdftotext(book);
+        if (text.trimmed().isEmpty())
+            text = ocrPdfWithExternalTools(book);
+        return extractIsbnFromText(text);
+    }
+
+    return extractIsbnFromText(readBookProbeText(book));
+}
+
+bool exportBooksToCsv(const QString& path, const QVector<Book>& books)
+{
+    QSaveFile file(path);
+    if (!file.open(QIODevice::WriteOnly | QIODevice::Text))
+        return false;
+
+    QTextStream out(&file);
+    out << "title,author,publisher,year,format,isbn,language,pages,rating,category,tags,file_path\n";
+    for (const Book& book : books) {
+        out << csvEscape(book.displayTitle()) << ','
+            << csvEscape(book.author) << ','
+            << csvEscape(book.publisher) << ','
+            << csvEscape(book.year > 0 ? QString::number(book.year) : QString()) << ','
+            << csvEscape(book.format) << ','
+            << csvEscape(book.isbn) << ','
+            << csvEscape(book.language) << ','
+            << csvEscape(book.pages > 0 ? QString::number(book.pages) : QString()) << ','
+            << csvEscape(book.rating > 0 ? QString::number(book.rating, 'f', 2) : QString()) << ','
+            << csvEscape(book.classificationTag()) << ','
+            << csvEscape(book.tags.join("; ")) << ','
+            << csvEscape(book.filePath) << '\n';
+    }
+    return file.commit();
+}
+
+bool exportBooksToBibTex(const QString& path, const QVector<Book>& books)
+{
+    QSaveFile file(path);
+    if (!file.open(QIODevice::WriteOnly | QIODevice::Text))
+        return false;
+
+    QTextStream out(&file);
+    int index = 1;
+    for (const Book& book : books) {
+        const QString entryKey = QString("%1%2%3")
+            .arg(normalizedText(book.author).left(12).isEmpty() ? QStringLiteral("eagle") : normalizedText(book.author).left(12))
+            .arg(book.year > 0 ? QString::number(book.year) : QString::number(index))
+            .arg(normalizedText(book.displayTitle()).left(18).isEmpty() ? QString::number(index) : normalizedText(book.displayTitle()).left(18));
+        out << "@book{" << entryKey << ",\n";
+        out << "  title = {" << book.displayTitle() << "},\n";
+        if (!book.author.isEmpty()) out << "  author = {" << book.author << "},\n";
+        if (!book.publisher.isEmpty()) out << "  publisher = {" << book.publisher << "},\n";
+        if (book.year > 0) out << "  year = {" << book.year << "},\n";
+        if (!book.isbn.isEmpty()) out << "  isbn = {" << book.isbn << "},\n";
+        if (!book.language.isEmpty()) out << "  language = {" << book.language << "},\n";
+        out << "  note = {" << book.filePath << "}\n";
+        out << "}\n\n";
+        ++index;
+    }
+    return file.commit();
+}
+
+bool exportBooksToRis(const QString& path, const QVector<Book>& books)
+{
+    QSaveFile file(path);
+    if (!file.open(QIODevice::WriteOnly | QIODevice::Text))
+        return false;
+
+    QTextStream out(&file);
+    for (const Book& book : books) {
+        out << "TY  - " << (book.isLikelyDocument() ? "GEN" : "BOOK") << '\n';
+        out << "TI  - " << book.displayTitle() << '\n';
+        if (!book.author.isEmpty()) out << "AU  - " << book.author << '\n';
+        if (!book.publisher.isEmpty()) out << "PB  - " << book.publisher << '\n';
+        if (book.year > 0) out << "PY  - " << book.year << '\n';
+        if (!book.isbn.isEmpty()) out << "SN  - " << book.isbn << '\n';
+        if (!book.language.isEmpty()) out << "LA  - " << book.language << '\n';
+        out << "N1  - " << book.filePath << '\n';
+        out << "ER  - \n\n";
+    }
+    return file.commit();
+}
+
+QStringList inferSmartTags(const Book& book)
+{
+    struct CategoryRule {
+        QString label;
+        QStringList keywords;
+    };
+
+    static const QVector<CategoryRule> rules = {
+        { "Programming", {"programming","software","developer","algorithm","coding","source code","api","object oriented","design pattern","c++","java","python","c#","rust","go "} },
+        { "Web", {"html","css","javascript","typescript","react","frontend","backend","node.js","php","web development","http"} },
+        { "Databases", {"database","sql","postgres","mysql","sqlite","oracle","query optimization","nosql"} },
+        { "Data Science", {"machine learning","predictive modeling","neural","data science","deep learning","nlp","statistics","pandas","tensorflow"} },
+        { "Networking", {"network","tcp","ip","routing","switching","wireless","dns","http/2","socket"} },
+        { "Security", {"security","cryptography","penetration","malware","forensics","exploit","vulnerability","authentication"} },
+        { "DevOps", {"docker","kubernetes","devops","ci/cd","terraform","ansible","observability","sre","linux administration"} },
+        { "Math", {"mathematics","calculus","algebra","geometry","probability","equation","theorem"} },
+        { "Science", {"physics","chemistry","biology","scientific","laboratory","astronomy"} },
+        { "Business", {"business","management","leadership","strategy","startup","entrepreneur"} },
+        { "Finance", {"finance","investing","accounting","trading","economics","portfolio","valuation"} },
+        { "History", {"history","historical","civilization","empire","war","biography"} },
+        { "Philosophy", {"philosophy","ethics","metaphysics","logic","epistemology"} },
+        { "Design", {"design","typography","ux","ui","graphic design","visual design"} },
+        { "Fiction", {"novel","fiction","chapter one","prologue","fantasy","mystery","thriller","romance","science fiction"} }
+    };
+
+    QString probe = book.title + '\n' + book.author + '\n' + book.publisher + '\n'
+        + book.description + '\n' + book.subjects.join(' ') + '\n';
+    probe += readBookProbeText(book).left(240000);
+    const QString haystack = probe.toLower();
+
+    QMap<int, QStringList> scored;
+    for (const CategoryRule& rule : rules) {
+        int hits = 0;
+        for (const QString& keyword : rule.keywords) {
+            if (haystack.contains(keyword.toLower()))
+                ++hits;
+        }
+        if (hits > 0)
+            scored[hits] << rule.label;
+    }
+
+    QStringList tags = book.tags;
+    QList<int> scoreKeys = scored.keys();
+    std::sort(scoreKeys.begin(), scoreKeys.end(), std::greater<int>());
+    for (int score : scoreKeys) {
+        QStringList labels = scored.value(score);
+        std::sort(labels.begin(), labels.end());
+        for (const QString& label : labels) {
+            tags << label;
+            if (uniqueCaseInsensitive(tags).size() >= 6)
+                return uniqueCaseInsensitive(tags);
+        }
+    }
+
+    if (tags.isEmpty()) {
+        if (book.format.compare("PDF", Qt::CaseInsensitive) == 0)
+            tags << "Reference";
+        else if (book.format.compare("EPUB", Qt::CaseInsensitive) == 0)
+            tags << "Reading";
+    }
+    return uniqueCaseInsensitive(tags);
+}
+
+QString extractIsbnFromBookContent(const Book& book)
+{
+    QStringList textCandidates;
+    const QString directText = readBookProbeText(book);
+    if (!directText.isEmpty())
+        textCandidates << directText;
+
+    if (book.format.compare("PDF", Qt::CaseInsensitive) == 0) {
+        const QString pdftotext = extractTextWithPdftotext(book);
+        if (!pdftotext.isEmpty())
+            textCandidates << pdftotext;
+    }
+
+    for (const QString& candidateText : textCandidates) {
+        const QString isbn = extractIsbnFromText(candidateText);
+        if (!isbn.isEmpty())
+            return isbn;
+    }
+
+    if (book.format.compare("PDF", Qt::CaseInsensitive) == 0) {
+        const QString ocrText = ocrPdfWithExternalTools(book);
+        const QString isbn = extractIsbnFromText(ocrText);
+        if (!isbn.isEmpty())
+            return isbn;
+    }
+
+    const QString archiveOcr = ocrImageArchiveWithTesseract(book);
+    const QString archiveIsbn = extractIsbnFromText(archiveOcr);
+    if (!archiveIsbn.isEmpty())
+        return archiveIsbn;
+
+    const QString coverOcr = ocrExistingCoverWithTesseract(book);
+    const QString coverIsbn = extractIsbnFromText(coverOcr);
+    if (!coverIsbn.isEmpty())
+        return coverIsbn;
+
+    return {};
+}
+
+int estimatePagesForBook(const Book& book)
+{
+    if (book.format.compare("PDF", Qt::CaseInsensitive) == 0) {
+        const QString text = readBookProbeText(book);
+        const int pages = text.count(QRegularExpression("/Type\\s*/Page\\b"));
+        return pages > 0 ? pages : 0;
+    }
+
+    const QString text = readBookProbeText(book);
+    if (text.isEmpty())
+        return 0;
+    const int words = text.split(QRegularExpression("\\s+"), Qt::SkipEmptyParts).size();
+    if (words <= 0)
+        return 0;
+    return qMax(1, words / 300);
+}
+
+bool saveGeneratedCover(const Book& book, const QString& path)
+{
+    if (!AppConfig::isManagedCoverPath(path))
+        return false;
+
+    QImage image(900, 1350, QImage::Format_ARGB32_Premultiplied);
+    image.fill(QColor("#10233b"));
+    QPainter p(&image);
+    p.setRenderHint(QPainter::Antialiasing);
+    p.setRenderHint(QPainter::TextAntialiasing);
+
+    QLinearGradient bg(0, 0, 900, 1350);
+    bg.setColorAt(0.0, QColor("#17314d"));
+    bg.setColorAt(0.55, QColor("#10233b"));
+    bg.setColorAt(1.0, QColor("#244d75"));
+    p.fillRect(image.rect(), bg);
+
+    p.fillRect(QRect(64, 64, 22, 1220), QColor(255, 255, 255, 28));
+    p.setPen(QColor("#f0d88e"));
+    QFont titleFont = QApplication::font();
+    titleFont.setPointSize(26);
+    titleFont.setBold(true);
+    p.setFont(titleFont);
+    p.drawText(QRect(120, 150, 660, 680), Qt::TextWordWrap, book.displayTitle());
+
+    QFont authorFont = QApplication::font();
+    authorFont.setPointSize(16);
+    p.setFont(authorFont);
+    p.setPen(QColor("#e7dcc0"));
+    p.drawText(QRect(120, 900, 660, 120), Qt::TextWordWrap, book.displayAuthor());
+
+    p.setPen(QColor(255, 255, 255, 130));
+    QFont metaFont = QApplication::font();
+    metaFont.setPointSize(12);
+    p.setFont(metaFont);
+    p.drawText(QRect(120, 1140, 660, 120), Qt::TextWordWrap,
+               QString("%1  %2").arg(book.format, book.year > 0 ? QString::number(book.year) : QString()));
+    p.end();
+
+    QDir().mkpath(QFileInfo(path).absolutePath());
+    return image.save(path, "JPG", 92);
+}
+
+bool normalizeCoverFile(const QString& path)
+{
+    if (path.isEmpty() || !QFileInfo::exists(path) || !AppConfig::isManagedCoverPath(path))
+        return false;
+
+    QImageReader reader(path);
+    reader.setAutoTransform(true);
+    QImage image = reader.read();
+    if (image.isNull())
+        return false;
+
+    const QSize target(600, 900);
+    image = image.scaled(target, Qt::KeepAspectRatioByExpanding, Qt::SmoothTransformation);
+    if (image.width() > target.width() || image.height() > target.height()) {
+        const QRect crop((image.width() - target.width()) / 2,
+                         (image.height() - target.height()) / 2,
+                         target.width(),
+                         target.height());
+        image = image.copy(crop);
+    }
+    return image.save(path, QFileInfo(path).suffix().toUpper().toLatin1().constData(), 92);
+}
+
+QVector<Book> selectedBooks(const BookModel* model, const BookFilterModel* filter, QListView* view)
+{
+    QVector<Book> books;
+    QSet<qint64> seen;
+    const QModelIndexList selection = view->selectionModel() ? view->selectionModel()->selectedIndexes() : QModelIndexList{};
+    for (const QModelIndex& proxyIdx : selection) {
+        const QModelIndex srcIdx = filter->mapToSource(proxyIdx);
+        if (!srcIdx.isValid())
+            continue;
+        const Book& book = model->bookAt(srcIdx.row());
+        if (!seen.contains(book.id)) {
+            seen.insert(book.id);
+            books << book;
+        }
+    }
+    return books;
+}
+
+class AdvancedSearchDialog : public QDialog
+{
+public:
+    explicit AdvancedSearchDialog(QWidget* parent = nullptr)
+        : QDialog(parent)
+    {
+        setWindowTitle("Advanced Search");
+        resize(460, 280);
+
+        auto* layout = new QVBoxLayout(this);
+        auto* form = new QFormLayout;
+
+        m_text = new QLineEdit(this);
+        m_text->setPlaceholderText("Use tokens like author:, title:, tag:, category:, isbn:, path:");
+        form->addRow("Search text", m_text);
+
+        m_author = new QLineEdit(this);
+        form->addRow("Author", m_author);
+
+        m_format = new QComboBox(this);
+        m_format->addItem("Any format");
+        m_format->addItems(Database::instance().allFormats());
+        form->addRow("Format", m_format);
+
+        m_category = new QComboBox(this);
+        m_category->addItem("Any category");
+        m_category->addItem("Book");
+        m_category->addItem("Document");
+        m_category->addItems(Database::instance().allTags());
+        form->addRow("Category", m_category);
+
+        auto* years = new QWidget(this);
+        auto* yearsLayout = new QHBoxLayout(years);
+        yearsLayout->setContentsMargins(0, 0, 0, 0);
+        yearsLayout->setSpacing(8);
+        m_yearFrom = new QSpinBox(years);
+        m_yearFrom->setRange(0, 3000);
+        m_yearFrom->setPrefix("From ");
+        m_yearTo = new QSpinBox(years);
+        m_yearTo->setRange(0, 3000);
+        m_yearTo->setPrefix("To ");
+        yearsLayout->addWidget(m_yearFrom);
+        yearsLayout->addWidget(m_yearTo);
+        form->addRow("Year range", years);
+
+        m_favourites = new QCheckBox("Favourites only", this);
+        m_noCover = new QCheckBox("Missing cover only", this);
+        m_noMeta = new QCheckBox("Weak metadata only", this);
+        form->addRow("Flags", m_favourites);
+        form->addRow("", m_noCover);
+        form->addRow("", m_noMeta);
+
+        layout->addLayout(form);
+
+        auto* buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel | QDialogButtonBox::Reset, this);
+        connect(buttons, &QDialogButtonBox::accepted, this, &QDialog::accept);
+        connect(buttons, &QDialogButtonBox::rejected, this, &QDialog::reject);
+        connect(buttons->button(QDialogButtonBox::Reset), &QAbstractButton::clicked, this, [this]() {
+            m_text->clear();
+            m_author->clear();
+            m_format->setCurrentIndex(0);
+            m_category->setCurrentIndex(0);
+            m_yearFrom->setValue(0);
+            m_yearTo->setValue(0);
+            m_favourites->setChecked(false);
+            m_noCover->setChecked(false);
+            m_noMeta->setChecked(false);
+        });
+        layout->addWidget(buttons);
+    }
+
+    QString text() const { return m_text->text().trimmed(); }
+    QString author() const { return m_author->text().trimmed(); }
+    QString format() const { return m_format->currentIndex() == 0 ? QString() : m_format->currentText(); }
+    QString category() const { return m_category->currentIndex() == 0 ? QString() : m_category->currentText(); }
+    int yearFrom() const { return m_yearFrom->value(); }
+    int yearTo() const { return m_yearTo->value(); }
+    bool favouritesOnly() const { return m_favourites->isChecked(); }
+    bool noCoverOnly() const { return m_noCover->isChecked(); }
+    bool noMetaOnly() const { return m_noMeta->isChecked(); }
+
+private:
+    QLineEdit* m_text = nullptr;
+    QLineEdit* m_author = nullptr;
+    QComboBox* m_format = nullptr;
+    QComboBox* m_category = nullptr;
+    QSpinBox* m_yearFrom = nullptr;
+    QSpinBox* m_yearTo = nullptr;
+    QCheckBox* m_favourites = nullptr;
+    QCheckBox* m_noCover = nullptr;
+    QCheckBox* m_noMeta = nullptr;
+};
+
+class DatabaseEditorDialog : public QDialog
+{
+public:
+    explicit DatabaseEditorDialog(QWidget* parent = nullptr)
+        : QDialog(parent)
+    {
+        setWindowTitle("Database Editor");
+        resize(1380, 820);
+        setMinimumSize(980, 620);
+
+        auto* layout = new QVBoxLayout(this);
+        auto* topRow = new QHBoxLayout;
+        auto* hint = new QLabel("Edit library records directly. Save writes the changed rows back to the SQLite database.", this);
+        hint->setWordWrap(true);
+        topRow->addWidget(hint, 1);
+        m_search = new QLineEdit(this);
+        m_search->setPlaceholderText("Filter rows by title, author, category, ISBN, tags, or path...");
+        m_search->setMinimumWidth(320);
+        topRow->addWidget(m_search);
+        layout->addLayout(topRow);
+
+        m_table = new QTableWidget(this);
+        m_table->setColumnCount(11);
+        m_table->setHorizontalHeaderLabels({"ID", "Category", "Title", "Author", "Publisher", "Year", "Format", "ISBN", "Language", "Tags", "File Path"});
+        m_table->setAlternatingRowColors(true);
+        m_table->setWordWrap(false);
+        m_table->setTextElideMode(Qt::ElideMiddle);
+        m_table->setHorizontalScrollMode(QAbstractItemView::ScrollPerPixel);
+        m_table->setVerticalScrollMode(QAbstractItemView::ScrollPerPixel);
+        m_table->setCornerButtonEnabled(true);
+        m_table->setSelectionBehavior(QAbstractItemView::SelectRows);
+        m_table->setSelectionMode(QAbstractItemView::ExtendedSelection);
+        m_table->setEditTriggers(QAbstractItemView::DoubleClicked | QAbstractItemView::SelectedClicked | QAbstractItemView::EditKeyPressed);
+        m_table->horizontalHeader()->setSectionsMovable(true);
+        m_table->horizontalHeader()->setStretchLastSection(false);
+        m_table->horizontalHeader()->setSectionResizeMode(QHeaderView::Interactive);
+        m_table->verticalHeader()->setDefaultSectionSize(28);
+        layout->addWidget(m_table, 1);
+
+        auto* buttons = new QDialogButtonBox(QDialogButtonBox::Save | QDialogButtonBox::Close, this);
+        QPushButton* reloadBtn = buttons->addButton("Reload", QDialogButtonBox::ActionRole);
+        QPushButton* deleteBtn = buttons->addButton("Delete Selected", QDialogButtonBox::DestructiveRole);
+        connect(buttons, &QDialogButtonBox::accepted, this, [this]() {
+            saveEdits();
+            accept();
+        });
+        connect(buttons, &QDialogButtonBox::rejected, this, &QDialog::reject);
+        connect(reloadBtn, &QPushButton::clicked, this, [this]() { loadRows(); });
+        connect(deleteBtn, &QPushButton::clicked, this, [this]() { deleteSelected(); });
+        connect(m_search, &QLineEdit::textChanged, this, [this](const QString& text) { applyFilter(text); });
+        layout->addWidget(buttons);
+
+        loadRows();
+    }
+
+private:
+    void loadRows()
+    {
+        m_books = Database::instance().allBooks(SortField::Title, SortOrder::Asc);
+        m_table->clearContents();
+        m_table->setRowCount(m_books.size());
+        for (int row = 0; row < m_books.size(); ++row) {
+            const Book& b = m_books.at(row);
+            const QStringList values = {
+                QString::number(b.id),
+                b.classificationTag(),
+                b.title,
+                b.author,
+                b.publisher,
+                b.year > 0 ? QString::number(b.year) : QString(),
+                b.format,
+                b.isbn,
+                b.language,
+                b.tags.join(", "),
+                b.filePath
+            };
+            for (int col = 0; col < values.size(); ++col) {
+                auto* item = new QTableWidgetItem(values.at(col));
+                if (col == 0 || col == 1 || col == 6 || col == 10)
+                    item->setFlags(item->flags() & ~Qt::ItemIsEditable);
+                m_table->setItem(row, col, item);
+            }
+            if (b.isLikelyDocument()) {
+                for (int col = 0; col < m_table->columnCount(); ++col)
+                    m_table->item(row, col)->setBackground(QColor(103, 49, 38, 70));
+            }
+        }
+        m_table->setColumnWidth(0, 72);
+        m_table->setColumnWidth(1, 92);
+        m_table->setColumnWidth(2, 280);
+        m_table->setColumnWidth(3, 220);
+        m_table->setColumnWidth(4, 180);
+        m_table->setColumnWidth(5, 70);
+        m_table->setColumnWidth(6, 84);
+        m_table->setColumnWidth(7, 150);
+        m_table->setColumnWidth(8, 100);
+        m_table->setColumnWidth(9, 220);
+        m_table->setColumnWidth(10, 420);
+        applyFilter(m_search ? m_search->text() : QString());
+    }
+
+    void applyFilter(const QString& text)
+    {
+        const QString needle = text.trimmed();
+        for (int row = 0; row < m_table->rowCount(); ++row) {
+            bool visible = needle.isEmpty();
+            if (!visible) {
+                QString blob;
+                for (int col = 0; col < m_table->columnCount(); ++col) {
+                    QTableWidgetItem* item = m_table->item(row, col);
+                    if (item)
+                        blob += item->text() + '\n';
+                }
+                visible = blob.contains(needle, Qt::CaseInsensitive);
+            }
+            m_table->setRowHidden(row, !visible);
+        }
+    }
+
+    void saveEdits()
+    {
+        for (int row = 0; row < m_table->rowCount(); ++row) {
+            const qint64 id = m_table->item(row, 0)->text().toLongLong();
+            Book book = Database::instance().bookById(id);
+            if (book.id == 0)
+                continue;
+            book.title = m_table->item(row, 2)->text().trimmed();
+            book.author = m_table->item(row, 3)->text().trimmed();
+            book.publisher = m_table->item(row, 4)->text().trimmed();
+            book.year = m_table->item(row, 5)->text().trimmed().toInt();
+            book.isbn = m_table->item(row, 7)->text().trimmed();
+            book.language = m_table->item(row, 8)->text().trimmed();
+            book.tags = m_table->item(row, 9)->text().split(",", Qt::SkipEmptyParts);
+            for (QString& tag : book.tags)
+                tag = tag.trimmed();
+            Database::instance().updateBook(book);
+        }
+    }
+
+    void deleteSelected()
+    {
+        const auto selected = m_table->selectionModel()->selectedRows();
+        if (selected.isEmpty())
+            return;
+        if (QMessageBox::question(this, "Delete Records", QString("Delete %1 selected database rows?").arg(selected.size()),
+                                  QMessageBox::Yes | QMessageBox::Cancel) != QMessageBox::Yes) {
+            return;
+        }
+        for (const QModelIndex& index : selected) {
+            const qint64 id = m_table->item(index.row(), 0)->text().toLongLong();
+            Database::instance().removeBook(id);
+        }
+        loadRows();
+    }
+
+    QVector<Book> m_books;
+    QLineEdit* m_search = nullptr;
+    QTableWidget* m_table = nullptr;
+};
+
+class ReferenceLookupDialog : public QDialog
+{
+public:
+    explicit ReferenceLookupDialog(const Book& book, QWidget* parent = nullptr)
+        : QDialog(parent)
+    {
+        setWindowTitle("Related References");
+        resize(640, 360);
+
+        const QVector<ReferenceTarget> links = trustedReferenceTargets(book);
+
+        auto* layout = new QVBoxLayout(this);
+        auto* title = new QLabel(QString("<b>%1</b><br>%2")
+                                     .arg(book.displayTitle().toHtmlEscaped(),
+                                          book.displayAuthor().toHtmlEscaped()), this);
+        title->setWordWrap(true);
+        layout->addWidget(title);
+
+        auto* hint = new QLabel("Open trusted reference searches for the current book or document. Only validated whitelisted reference URLs are shown.", this);
+        hint->setWordWrap(true);
+        layout->addWidget(hint);
+
+        auto* grid = new QGridLayout;
+        int row = 0;
+        for (const auto& link : links) {
+            auto* name = new QLabel(link.label, this);
+            auto* value = new QLabel(QString("<a href=\"%1\">%1</a>").arg(link.url.toString().toHtmlEscaped()), this);
+            value->setOpenExternalLinks(true);
+            value->setTextInteractionFlags(Qt::TextBrowserInteraction);
+            auto* openButton = new QPushButton("Open", this);
+            connect(openButton, &QPushButton::clicked, this, [url = link.url]() {
+                QDesktopServices::openUrl(url);
+            });
+            grid->addWidget(name, row, 0);
+            grid->addWidget(value, row, 1);
+            grid->addWidget(openButton, row, 2);
+            ++row;
+        }
+        if (links.isEmpty()) {
+            auto* none = new QLabel("No safe reference URLs could be built for this item yet. Add a title, author, or ISBN first.", this);
+            none->setWordWrap(true);
+            layout->addWidget(none);
+        } else {
+            grid->setColumnStretch(1, 1);
+            layout->addLayout(grid);
+        }
+
+        auto* buttons = new QDialogButtonBox(QDialogButtonBox::Close, this);
+        connect(buttons, &QDialogButtonBox::rejected, this, &QDialog::reject);
+        layout->addWidget(buttons);
+    }
+};
+
+class ExternalToolsDialog : public QDialog
+{
+public:
+    explicit ExternalToolsDialog(QWidget* parent = nullptr)
+        : QDialog(parent)
+    {
+        setWindowTitle("PDF and OCR Tools");
+        resize(700, 420);
+
+        auto* layout = new QVBoxLayout(this);
+
+        auto toolRow = [this, layout](const QString& title,
+                                      const QString& description,
+                                      const QString& executable,
+                                      const QString& installLabel,
+                                      std::function<void()> installAction,
+                                      const QString& siteLabel,
+                                      const QUrl& siteUrl) {
+            auto* box = new QGroupBox(title, this);
+            auto* boxLayout = new QVBoxLayout(box);
+            auto* status = new QLabel(box);
+            const QString found = QStandardPaths::findExecutable(executable);
+            status->setText(found.isEmpty()
+                                ? QString("Status: not detected in PATH (%1)").arg(executable)
+                                : QString("Status: detected at %1").arg(QDir::toNativeSeparators(found)));
+            status->setWordWrap(true);
+            auto* desc = new QLabel(description, box);
+            desc->setWordWrap(true);
+
+            auto* buttons = new QHBoxLayout;
+            auto* installBtn = new QPushButton(installLabel, box);
+            connect(installBtn, &QPushButton::clicked, box, [installAction]() { installAction(); });
+            auto* siteBtn = new QPushButton(siteLabel, box);
+            connect(siteBtn, &QPushButton::clicked, box, [siteUrl]() { QDesktopServices::openUrl(siteUrl); });
+            buttons->addWidget(installBtn);
+            buttons->addWidget(siteBtn);
+            buttons->addStretch();
+
+            boxLayout->addWidget(status);
+            boxLayout->addWidget(desc);
+            boxLayout->addLayout(buttons);
+            layout->addWidget(box);
+        };
+
+        auto startDetached = [this](const QString& program, const QStringList& arguments, const QString& failureText) {
+            if (!QProcess::startDetached(program, arguments))
+                QMessageBox::warning(this, "External Tools", failureText);
+        };
+
+        toolRow(
+            "PDF text extraction (pdftotext / pdftoppm)",
+            "Eagle uses Poppler tools for fast PDF text extraction and OCR page rendering. Poppler is not guaranteed to exist in winget, so Eagle opens the trusted release page for Windows builds.",
+            "pdftotext",
+            "Open Poppler Download",
+            [this]() {
+                QDesktopServices::openUrl(QUrl("https://github.com/oschwartz10612/poppler-windows/releases/"));
+            },
+            "Open Install Guide",
+            QUrl("https://github.com/UB-Mannheim/zotero-ocr/wiki/Install-pdftoppm"));
+
+        toolRow(
+            "OCR engine (Tesseract)",
+            "Eagle can call Tesseract for OCR when embedded metadata and direct text extraction are not enough. The install command opens in Windows Terminal or Command Prompt so you can approve it normally.",
+            "tesseract",
+            "Install with winget",
+            [startDetached, this]() {
+                if (QMessageBox::question(this,
+                                          "Install Tesseract",
+                                          "Launch a Windows terminal to install Tesseract with winget?",
+                                          QMessageBox::Yes | QMessageBox::No,
+                                          QMessageBox::Yes) != QMessageBox::Yes) {
+                    return;
+                }
+                startDetached("cmd.exe",
+                              QStringList() << "/c"
+                                            << "start"
+                                            << ""
+                                            << "cmd.exe"
+                                            << "/k"
+                                            << "winget install --id tesseract-ocr.tesseract -e --accept-package-agreements --accept-source-agreements || winget install --id UB-Mannheim.TesseractOCR -e --accept-package-agreements --accept-source-agreements",
+                              "Could not launch the winget install command.");
+            },
+            "Open Tesseract Project",
+            QUrl("https://github.com/tesseract-ocr/tesseract"));
+
+        auto* note = new QLabel("After installing tools, restart Eagle Library or run the same command in a new scan/repair action so the updated PATH is detected.", this);
+        note->setWordWrap(true);
+        layout->addWidget(note);
+
+        auto* buttons = new QDialogButtonBox(QDialogButtonBox::Close, this);
+        connect(buttons, &QDialogButtonBox::rejected, this, &QDialog::reject);
+        layout->addWidget(buttons);
+    }
+};
+
+} // namespace
 
 MainWindow::MainWindow(QWidget* parent)
     : QMainWindow(parent)
 {
-    setWindowTitle("Eagle Library  --  Eagle Software");
+    setWindowTitle(trl("app.windowTitle", "Eagle Library | Professional Workspace"));
     setMinimumSize(1100, 680);
 
     // Set application icon
@@ -68,7 +1242,6 @@ MainWindow::MainWindow(QWidget* parent)
     m_filterModel->sort(0);
 
     m_scanner         = new LibraryScanner(this);
-    m_renamer         = new SmartRenamer(this);
     m_metaFetcher     = new MetadataFetcher(this);
     m_coverDownloader = new CoverDownloader(AppConfig::coversDir(), this);
 
@@ -78,26 +1251,60 @@ MainWindow::MainWindow(QWidget* parent)
     setupViews();
     setupSidebar();
     setupStatusBar();
+    setupCommandPalette();
     applyStyles();
     loadSettings();
+
+    // Apply saved theme
+    {
+        QSettings s;
+        const QString savedTheme = s.value("ui/theme", "Blue Pro").toString();
+        ThemeManager::instance().applyTheme(savedTheme);
+        if (m_themeBlueAct && m_themeWhiteAct && m_themeMacAct) {
+            if (savedTheme == "Pure White") m_themeWhiteAct->setChecked(true);
+            else if (savedTheme == "macOS") m_themeMacAct->setChecked(true);
+            else m_themeBlueAct->setChecked(true);
+        }
+    }
+
+    // Initialize plugin manager
+    PluginManager::instance().setMainWindow(this);
+    PluginManager::instance().setPluginMenu(m_pluginMenu);
+    PluginManager::instance().setToolBar(m_mainToolBar);
+    PluginManager::instance().loadAll(AppConfig::pluginsDir());
+    connect(&PluginManager::instance(), &PluginManager::statusMessage,
+            this, [this](const QString& msg) { m_statusLabel->setText(msg); });
 
     // Signals
     connect(m_scanner, &LibraryScanner::bookFound,    this, &MainWindow::onBookFound);
     connect(m_scanner, &LibraryScanner::progress,     this, &MainWindow::onScanProgress);
     connect(m_scanner, &LibraryScanner::scanFinished, this, &MainWindow::onScanFinished);
     connect(m_metaFetcher,     &MetadataFetcher::metadataReady, this, &MainWindow::onMetadataReady);
-    connect(m_metaFetcher,     &MetadataFetcher::coverUrlReady, this, &MainWindow::onCoverUrlReady);
+    connect(m_metaFetcher,     &MetadataFetcher::coverUrlsReady, this, &MainWindow::onCoverUrlsReady);
+    connect(m_metaFetcher,     &MetadataFetcher::fetchProgress, this, &MainWindow::onMetadataFetchProgress);
+    connect(m_metaFetcher,     &MetadataFetcher::fetchError, this, &MainWindow::onMetadataFetchError);
     connect(m_coverDownloader, &CoverDownloader::coverReady,    this, &MainWindow::onCoverReady);
-
-    connect(m_renamer, &SmartRenamer::renamed,   this, &MainWindow::onRenameResult);
-    connect(m_renamer, &SmartRenamer::finished,  this, &MainWindow::onRenameFinished);
+    connect(m_coverDownloader, &CoverDownloader::downloadProgress, this, &MainWindow::onCoverDownloadProgress);
+    connect(m_coverDownloader, &CoverDownloader::coverFailed, this, &MainWindow::onCoverDownloadFailed);
 
     // Ctrl+F -> search
     auto* sch = new QShortcut(QKeySequence("Ctrl+F"), this);
     connect(sch, &QShortcut::activated, m_searchBox, qOverload<>(&QLineEdit::setFocus));
 
-    m_model->loadAll();
+    // Ctrl+P -> command palette
+    auto* cpSch = new QShortcut(QKeySequence("Ctrl+P"), this);
+    connect(cpSch, &QShortcut::activated, this, &MainWindow::openCommandPalette);
+
+    refreshLibrarySelector();
+    refreshShelfOptions();
+    reloadCurrentLibrary();
     updateStatusCount();
+    refreshCategoryOptions();
+    updateWorkspaceHeader();
+
+    connect(&LanguageManager::instance(), &LanguageManager::languageChanged, this, [this]() {
+        retranslateUi();
+    });
 }
 
 MainWindow::~MainWindow() { saveSettings(); }
@@ -105,78 +1312,349 @@ MainWindow::~MainWindow() { saveSettings(); }
 // ── Menu bar ─────────────────────────────────────────────────
 void MainWindow::setupMenuBar()
 {
-    // File menu
-    QMenu* fileMenu = menuBar()->addMenu("&File");
+    menuBar()->setNativeMenuBar(false);
 
-    QAction* settingsAct = new QAction("Settings...", this);
+    // ── File ──────────────────────────────────────────────────
+    QMenu* fileMenu = menuBar()->addMenu(trl("menu.file", "&File"));
+
+    QAction* settingsAct = new QAction(trl("action.settings", "Preferences..."), this);
     settingsAct->setShortcut(QKeySequence("Ctrl+,"));
+    settingsAct->setStatusTip("Open application preferences");
     connect(settingsAct, &QAction::triggered, this, &MainWindow::openSettings);
     fileMenu->addAction(settingsAct);
 
     fileMenu->addSeparator();
 
-    QAction* quitAct = new QAction("Quit", this);
+    QAction* exportAct = new QAction("Export Library Snapshot...", this);
+    exportAct->setStatusTip("Export library metadata to JSON");
+    connect(exportAct, &QAction::triggered, this, &MainWindow::exportLibrarySnapshot);
+    fileMenu->addAction(exportAct);
+
+    QAction* importAct = new QAction("Import Library Snapshot...", this);
+    importAct->setStatusTip("Import library metadata from JSON");
+    connect(importAct, &QAction::triggered, this, &MainWindow::importLibrarySnapshot);
+    fileMenu->addAction(importAct);
+
+    fileMenu->addSeparator();
+
+    QAction* stopTasksAct = new QAction("Stop All Tasks", this);
+    stopTasksAct->setShortcut(QKeySequence("Ctrl+."));
+    stopTasksAct->setStatusTip("Cancel all running background tasks");
+    connect(stopTasksAct, &QAction::triggered, this, &MainWindow::stopAllTasks);
+    fileMenu->addAction(stopTasksAct);
+
+    fileMenu->addSeparator();
+
+    QAction* quitAct = new QAction("Quit Eagle Library", this);
     quitAct->setShortcut(QKeySequence::Quit);
     connect(quitAct, &QAction::triggered, qApp, &QApplication::quit);
     fileMenu->addAction(quitAct);
 
-    // Library menu
+    // ── Library ───────────────────────────────────────────────
     QMenu* libMenu = menuBar()->addMenu("&Library");
 
     QAction* scanAct = new QAction("Scan Folders", this);
     scanAct->setShortcut(QKeySequence("F5"));
+    scanAct->setStatusTip("Scan watched folders for new files");
     connect(scanAct, &QAction::triggered, this, &MainWindow::onScanStart);
     libMenu->addAction(scanAct);
 
+    QAction* refreshAct2 = new QAction("Refresh View", this);
+    refreshAct2->setShortcut(QKeySequence("F5"));
+    connect(refreshAct2, &QAction::triggered, this, &MainWindow::refreshLibrary);
+    // (scan already has F5, so we just connect refresh without shortcut duplicate)
+    refreshAct2->setShortcut(QKeySequence());
+
+    libMenu->addSeparator();
+
+    // Search submenu
+    QMenu* searchMenu = libMenu->addMenu("Search");
+    QAction* advancedSearchAct = new QAction("Advanced Search...", this);
+    advancedSearchAct->setShortcut(QKeySequence("Ctrl+Shift+F"));
+    advancedSearchAct->setStatusTip("Open powerful multi-field search dialog");
+    connect(advancedSearchAct, &QAction::triggered, this, &MainWindow::openAdvancedSearch);
+    searchMenu->addAction(advancedSearchAct);
+
+    QAction* saveSearchAct = new QAction("Save Current Search...", this);
+    saveSearchAct->setStatusTip("Save the current search query for quick access");
+    connect(saveSearchAct, &QAction::triggered, this, &MainWindow::saveCurrentSearch);
+    searchMenu->addAction(saveSearchAct);
+
+    libMenu->addSeparator();
+
+    // Metadata submenu
+    QMenu* metaMenu = libMenu->addMenu("Metadata");
+
     QAction* fetchAct = new QAction("Fetch All Metadata", this);
+    fetchAct->setStatusTip("Download metadata for all books from Google Books and OpenLibrary");
     connect(fetchAct, &QAction::triggered, this, &MainWindow::fetchAllMetadata);
-    libMenu->addAction(fetchAct);
+    metaMenu->addAction(fetchAct);
+
+    QAction* enrichIncompleteAct = new QAction("Enrich Incomplete Books", this);
+    enrichIncompleteAct->setStatusTip("Fetch metadata only for books with incomplete information");
+    connect(enrichIncompleteAct, &QAction::triggered, this, &MainWindow::enrichIncompleteBooksAction);
+    metaMenu->addAction(enrichIncompleteAct);
+
+    QAction* isbnAct = new QAction("Extract ISBNs \u2192 Fetch Metadata", this);
+    isbnAct->setStatusTip("Extract ISBN numbers from file content and fetch metadata");
+    connect(isbnAct, &QAction::triggered, this, &MainWindow::extractMissingIsbns);
+    metaMenu->addAction(isbnAct);
+
+    metaMenu->addSeparator();
+
+    QAction* genCoversAct = new QAction("Generate Missing Covers", this);
+    connect(genCoversAct, &QAction::triggered, this, &MainWindow::generateMissingCovers);
+    metaMenu->addAction(genCoversAct);
+
+    QAction* normCoversAct = new QAction("Normalize Covers", this);
+    connect(normCoversAct, &QAction::triggered, this, &MainWindow::normalizeCovers);
+    metaMenu->addAction(normCoversAct);
+
+    QAction* pagesAct = new QAction("Count Pages", this);
+    connect(pagesAct, &QAction::triggered, this, &MainWindow::countPagesForLibrary);
+    metaMenu->addAction(pagesAct);
+
+    // Tools submenu
+    QMenu* toolsMenu = libMenu->addMenu("Tools");
+
+    QAction* qualityAct = new QAction("Quality Check", this);
+    qualityAct->setStatusTip("Detect encoding issues and suspicious metadata");
+    connect(qualityAct, &QAction::triggered, this, &MainWindow::runQualityCheck);
+    toolsMenu->addAction(qualityAct);
+
+    QAction* dupesAct = new QAction("Find Duplicates", this);
+    dupesAct->setStatusTip("Detect duplicate files by hash");
+    connect(dupesAct, &QAction::triggered, this, &MainWindow::findDuplicates);
+    toolsMenu->addAction(dupesAct);
+
+    QAction* categorizeAct = new QAction("Smart Categorize", this);
+    categorizeAct->setStatusTip("Auto-classify books vs documents");
+    connect(categorizeAct, &QAction::triggered, this, &MainWindow::smartCategorizeLibrary);
+    toolsMenu->addAction(categorizeAct);
+
+    toolsMenu->addSeparator();
 
     QAction* renameMenuAct = new QAction("Smart Rename All...", this);
     renameMenuAct->setShortcut(QKeySequence("Ctrl+R"));
     connect(renameMenuAct, &QAction::triggered, this, &MainWindow::onSmartRenameAll);
-    libMenu->addAction(renameMenuAct);
+    toolsMenu->addAction(renameMenuAct);
+
+    QAction* renameSelectedAct2 = new QAction("Smart Rename Selected...", this);
+    renameSelectedAct2->setShortcut(QKeySequence("Ctrl+Shift+R"));
+    connect(renameSelectedAct2, &QAction::triggered, this, &MainWindow::onSmartRenameSelected);
+    toolsMenu->addAction(renameSelectedAct2);
+
+    // Collections
+    libMenu->addSeparator();
+    QAction* collectionsAct = new QAction("Manage Collections...", this);
+    collectionsAct->setStatusTip("Create and manage virtual book collections");
+    connect(collectionsAct, &QAction::triggered, this, &MainWindow::manageCollections);
+    libMenu->addAction(collectionsAct);
+
+    // Web Research
+    libMenu->addSeparator();
+    QMenu* researchMenu = libMenu->addMenu("Research");
+
+    QMenu* referenceMenu = researchMenu->addMenu("Reference Lookup");
+    QAction* referenceDialogAct = new QAction("Current Selection...", this);
+    connect(referenceDialogAct, &QAction::triggered, this, [this]() {
+        QListView* view = currentView();
+        const QModelIndexList selected = view && view->selectionModel() ? view->selectionModel()->selectedIndexes() : QModelIndexList{};
+        if (selected.isEmpty()) {
+            m_statusLabel->setText("Select a book first.");
+            return;
+        }
+        const QModelIndex srcIdx = m_filterModel->mapToSource(selected.first());
+        if (srcIdx.isValid())
+            showReferenceLookup(m_model->bookAt(srcIdx.row()));
+    });
+    referenceMenu->addAction(referenceDialogAct);
+
+    QAction* googleAct = new QAction("Search on Google...", this);
+    googleAct->setShortcut(QKeySequence("Ctrl+Shift+G"));
+    googleAct->setStatusTip("Search selected book on Google");
+    connect(googleAct, &QAction::triggered, this, &MainWindow::searchSelectedOnGoogle);
+    researchMenu->addAction(googleAct);
+
+    QAction* goodreadsAct = new QAction("Look up on Goodreads...", this);
+    goodreadsAct->setStatusTip("Open Goodreads page for selected book");
+    connect(goodreadsAct, &QAction::triggered, this, &MainWindow::lookupSelectedOnGoodreads);
+    researchMenu->addAction(goodreadsAct);
 
     libMenu->addSeparator();
 
     QAction* cleanAct = new QAction("Remove Missing Files", this);
+    cleanAct->setStatusTip("Clean up records for files that no longer exist");
     connect(cleanAct, &QAction::triggered, this, &MainWindow::cleanMissingFiles);
     libMenu->addAction(cleanAct);
 
-    libMenu->addSeparator();
-
-    QAction* removeAct = new QAction("Remove Selected", this);
+    QAction* removeAct = new QAction("Remove Selected from Library", this);
     removeAct->setShortcut(QKeySequence::Delete);
     connect(removeAct, &QAction::triggered, this, &MainWindow::removeSelectedBook);
     libMenu->addAction(removeAct);
 
-    // View menu
+    // ── View ──────────────────────────────────────────────────
     QMenu* viewMenu = menuBar()->addMenu("&View");
 
     QAction* gridAct = new QAction("Grid View", this);
     gridAct->setShortcut(QKeySequence("Ctrl+G"));
+    gridAct->setCheckable(true);
+    gridAct->setChecked(true);
     connect(gridAct, &QAction::triggered, this, &MainWindow::setGridView);
     viewMenu->addAction(gridAct);
 
     QAction* listAct = new QAction("List View", this);
     listAct->setShortcut(QKeySequence("Ctrl+L"));
+    listAct->setCheckable(true);
     connect(listAct, &QAction::triggered, this, &MainWindow::setListView);
     viewMenu->addAction(listAct);
 
     viewMenu->addSeparator();
 
+    QAction* cmdPaletteAct = new QAction("Command Palette", this);
+    cmdPaletteAct->setShortcut(QKeySequence("Ctrl+P"));
+    cmdPaletteAct->setStatusTip("Open VS Code-style command launcher");
+    connect(cmdPaletteAct, &QAction::triggered, this, &MainWindow::openCommandPalette);
+    viewMenu->addAction(cmdPaletteAct);
+
+    viewMenu->addSeparator();
+
+    // Theme submenu
+    QMenu* themeMenu = viewMenu->addMenu("Appearance");
+
+    auto* themeGroup = new QActionGroup(this);
+    themeGroup->setExclusive(true);
+
+    m_themeBlueAct = new QAction("Blue Pro (Dark)", themeGroup);
+    m_themeBlueAct->setCheckable(true);
+    m_themeBlueAct->setChecked(true);
+    connect(m_themeBlueAct, &QAction::triggered, this, [this]() { switchTheme("Blue Pro"); });
+    themeMenu->addAction(m_themeBlueAct);
+
+    m_themeWhiteAct = new QAction("Pure White (Light)", themeGroup);
+    m_themeWhiteAct->setCheckable(true);
+    connect(m_themeWhiteAct, &QAction::triggered, this, [this]() { switchTheme("Pure White"); });
+    themeMenu->addAction(m_themeWhiteAct);
+
+    m_themeMacAct = new QAction("macOS Style", themeGroup);
+    m_themeMacAct->setCheckable(true);
+    connect(m_themeMacAct, &QAction::triggered, this, [this]() { switchTheme("macOS"); });
+    themeMenu->addAction(m_themeMacAct);
+
+    viewMenu->addSeparator();
+
     QAction* refreshAct = new QAction("Refresh", this);
+    refreshAct->setShortcut(QKeySequence("F5"));
     connect(refreshAct, &QAction::triggered, this, &MainWindow::refreshLibrary);
     viewMenu->addAction(refreshAct);
 
-    // Help menu
+    // ── Plugins ───────────────────────────────────────────────
+    m_pluginMenu = menuBar()->addMenu("&Plugins");
+
+    QAction* pluginManagerAct = new QAction("Manage Plugins...", this);
+    pluginManagerAct->setStatusTip("View, enable, and disable installed plugins");
+    connect(pluginManagerAct, &QAction::triggered, this, &MainWindow::openPluginManager);
+    m_pluginMenu->addAction(pluginManagerAct);
+
+    QAction* pluginFolderAct = new QAction("Open Plugins Folder", this);
+    connect(pluginFolderAct, &QAction::triggered, this, [this]() {
+        const QString dir = AppConfig::pluginsDir();
+        QDir().mkpath(dir);
+        QDesktopServices::openUrl(QUrl::fromLocalFile(dir));
+    });
+    m_pluginMenu->addAction(pluginFolderAct);
+
+    m_pluginMenu->addSeparator();
+    // Plugin-contributed items will appear below this separator
+
+    // ── Database ──────────────────────────────────────────────
+    QMenu* dbMenu = menuBar()->addMenu("&Database");
+
+    QAction* dbSummaryAct = new QAction("Database Summary", this);
+    connect(dbSummaryAct, &QAction::triggered, this, &MainWindow::consultDatabaseSummary);
+    dbMenu->addAction(dbSummaryAct);
+
+    dbMenu->addSeparator();
+
+    QAction* dbDiagnoseAct = new QAction("Diagnose Text Issues", this);
+    connect(dbDiagnoseAct, &QAction::triggered, this, &MainWindow::diagnoseDatabaseText);
+    dbMenu->addAction(dbDiagnoseAct);
+
+    QAction* dbRepairAct = new QAction("Repair Text Issues...", this);
+    connect(dbRepairAct, &QAction::triggered, this, &MainWindow::repairDatabaseText);
+    dbMenu->addAction(dbRepairAct);
+
+    dbMenu->addSeparator();
+
+    QAction* dbFolderAct = new QAction("Open Database Folder", this);
+    connect(dbFolderAct, &QAction::triggered, this, &MainWindow::openDatabaseFolder);
+    dbMenu->addAction(dbFolderAct);
+
+    QAction* dbEditorAct = new QAction("Database Editor...", this);
+    connect(dbEditorAct, &QAction::triggered, this, &MainWindow::openDatabaseEditor);
+    dbMenu->addAction(dbEditorAct);
+
+    dbMenu->addSeparator();
+
+    QAction* optimizeAct = new QAction("Optimize", this);
+    connect(optimizeAct, &QAction::triggered, this, [this]() {
+        showTaskProgress("Optimizing Database", "Running SQLite optimize...", 0, 0);
+        Database::instance().optimize();
+        hideTaskProgress("Optimization complete.");
+    });
+    dbMenu->addAction(optimizeAct);
+
+    QAction* vacuumAct = new QAction("Vacuum", this);
+    connect(vacuumAct, &QAction::triggered, this, [this]() {
+        Database::instance().vacuum();
+        m_statusLabel->setText("Vacuum complete.");
+    });
+    dbMenu->addAction(vacuumAct);
+
+    QAction* reindexAct = new QAction("Reindex", this);
+    connect(reindexAct, &QAction::triggered, this, [this]() {
+        Database::instance().reindex();
+        m_statusLabel->setText("Reindex complete.");
+    });
+    dbMenu->addAction(reindexAct);
+
+    // ── Help ──────────────────────────────────────────────────
     QMenu* helpMenu = menuBar()->addMenu("&Help");
 
     QAction* aboutAct = new QAction("About Eagle Library", this);
     connect(aboutAct, &QAction::triggered, this, &MainWindow::showAbout);
     helpMenu->addAction(aboutAct);
 
-    QAction* webAct = new QAction("Visit Website", this);
+    helpMenu->addSeparator();
+
+    QAction* guideAct = new QAction("User Guide", this);
+    guideAct->setShortcut(QKeySequence::HelpContents);
+    connect(guideAct, &QAction::triggered, this, [this]() {
+        const QDir appDir(QCoreApplication::applicationDirPath());
+        const QStringList candidates = {
+            appDir.absoluteFilePath("help/EagleLibrary.chm"),
+            appDir.absoluteFilePath("help/index.html"),
+            appDir.absoluteFilePath("../../docs/help/index.html"),
+            appDir.absoluteFilePath("../../../docs/help/index.html"),
+            QDir::current().absoluteFilePath("docs/help/index.html")
+        };
+        for (const QString& candidate : candidates) {
+            if (QFileInfo::exists(candidate)) {
+                QDesktopServices::openUrl(QUrl::fromLocalFile(candidate));
+                return;
+            }
+        }
+        QMessageBox::information(this, "User Guide", "Help file not found. See the documentation folder.");
+    });
+    helpMenu->addAction(guideAct);
+
+    QAction* toolsAct = new QAction("Install PDF/OCR Tools...", this);
+    connect(toolsAct, &QAction::triggered, this, &MainWindow::openExternalToolsDialog);
+    helpMenu->addAction(toolsAct);
+
+    helpMenu->addSeparator();
+
+    QAction* webAct = new QAction("Eagle Software Website", this);
     connect(webAct, &QAction::triggered, this, []() {
         QDesktopServices::openUrl(QUrl("https://eaglesoftware.biz/"));
     });
@@ -186,96 +1664,164 @@ void MainWindow::setupMenuBar()
 // ── Toolbar ──────────────────────────────────────────────────
 void MainWindow::setupToolBar()
 {
-    QToolBar* tb = addToolBar("Main Toolbar");
+    m_mainToolBar = addToolBar("Main Toolbar");
+    QToolBar* tb = m_mainToolBar;
     tb->setObjectName("mainToolBar");
     tb->setMovable(false);
-    tb->setToolButtonStyle(Qt::ToolButtonTextOnly);
+    tb->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
+    tb->setIconSize(QSize(16, 16));
+
+    // Brand widget
+    auto* brand = new QWidget(tb);
+    brand->setObjectName("toolbarBrand");
+    auto* brandLayout = new QHBoxLayout(brand);
+    brandLayout->setContentsMargins(6, 0, 14, 0);
+    brandLayout->setSpacing(7);
+    auto* brandIcon = new QLabel(brand);
+    brandIcon->setPixmap(QIcon(":/eagle_mark.svg").pixmap(24, 24));
+    auto* brandText = new QLabel("Eagle Library", brand);
+    brandText->setObjectName("toolbarBrandText");
+    brandLayout->addWidget(brandIcon);
+    brandLayout->addWidget(brandText);
+    tb->addWidget(brand);
+    tb->addSeparator();
+
+    // Library selector
+    m_libraryCombo = new QComboBox(tb);
+    m_libraryCombo->setMinimumWidth(160);
+    m_libraryCombo->setMaximumWidth(200);
+    m_libraryCombo->setToolTip("Active library profile");
+    connect(m_libraryCombo, &QComboBox::currentTextChanged, this, &MainWindow::switchLibrary);
+    tb->addWidget(m_libraryCombo);
+    tb->addSeparator();
 
     // Scan
     QAction* scanAct = new QAction("Scan", this);
-    scanAct->setToolTip("Scan library folders for new books (F5)");
+    scanAct->setIcon(style()->standardIcon(QStyle::SP_BrowserReload));
+    scanAct->setToolTip("Scan folders for new files  (F5)");
     connect(scanAct, &QAction::triggered, this, &MainWindow::onScanStart);
     tb->addAction(scanAct);
 
-    // Smart Rename
-    QAction* renameAct = new QAction("Smart Rename", this);
-    renameAct->setToolTip("Auto-rename books from filename patterns (Author - Title, Year...)");
-    connect(renameAct, &QAction::triggered, this, &MainWindow::onSmartRenameAll);
-    tb->addAction(renameAct);
     tb->addSeparator();
 
-    // Grid / List
+    // View toggle
     m_gridAction = new QAction("Grid", this);
+    m_gridAction->setIcon(style()->standardIcon(QStyle::SP_FileDialogContentsView));
     m_gridAction->setCheckable(true);
     m_gridAction->setChecked(true);
+    m_gridAction->setToolTip("Cover grid view  (Ctrl+G)");
     connect(m_gridAction, &QAction::triggered, this, &MainWindow::setGridView);
     tb->addAction(m_gridAction);
 
     m_listAction = new QAction("List", this);
+    m_listAction->setIcon(style()->standardIcon(QStyle::SP_FileDialogListView));
     m_listAction->setCheckable(true);
+    m_listAction->setToolTip("Compact list view  (Ctrl+L)");
     connect(m_listAction, &QAction::triggered, this, &MainWindow::setListView);
     tb->addAction(m_listAction);
+
     tb->addSeparator();
 
-    // Favourites filter
-    m_favAction = new QAction("Favourites", this);
+    // Favourites
+    m_favAction = new QAction(this);
+    m_favAction->setText("\u2665  Favourites");
     m_favAction->setCheckable(true);
+    m_favAction->setToolTip("Show only favourites");
     connect(m_favAction, &QAction::triggered, this, &MainWindow::showFavourites);
     tb->addAction(m_favAction);
+
+    tb->addSeparator();
+
+    // Search box (prominent)
+    m_searchBox = new QLineEdit;
+    m_searchBox->setPlaceholderText("\uD83D\uDD0D  Search title, author, ISBN, tags...");
+    m_searchBox->setMinimumWidth(240);
+    m_searchBox->setMaximumWidth(360);
+    m_searchBox->setClearButtonEnabled(true);
+    m_searchBox->setToolTip("Search across title, author, ISBN, tags, description  (Ctrl+F)");
+    connect(m_searchBox, &QLineEdit::textChanged, this, &MainWindow::searchChanged);
+    tb->addWidget(m_searchBox);
+
+    tb->addSeparator();
+
+    // Shelf selector
+    m_shelfCombo = new QComboBox(tb);
+    m_shelfCombo->setMinimumWidth(150);
+    m_shelfCombo->setMaximumWidth(180);
+    m_shelfCombo->setToolTip("Virtual shelf / filter view");
+    connect(m_shelfCombo, qOverload<int>(&QComboBox::currentIndexChanged), this, [this](int index) {
+        if (index >= 0)
+            applyShelf(m_shelfCombo->itemData(index).toString());
+    });
+    tb->addWidget(m_shelfCombo);
+
     tb->addSeparator();
 
     // Format filter
-    tb->addWidget(new QLabel("  Format: "));
     m_formatCombo = new QComboBox;
-    m_formatCombo->setMinimumWidth(90);
-    m_formatCombo->addItem("All");
-    for (const char* fmt : {"PDF","EPUB","MOBI","AZW","AZW3","DjVu","CBZ","CBR","FB2","TXT"})
+    m_formatCombo->setMinimumWidth(80);
+    m_formatCombo->setMaximumWidth(100);
+    m_formatCombo->setToolTip("Filter by format");
+    m_formatCombo->addItem("All Formats");
+    for (const char* fmt : {"PDF","EPUB","MOBI","AZW","AZW3","DjVu","CBZ","CBR","FB2","TXT","DOCX"})
         m_formatCombo->addItem(fmt);
     connect(m_formatCombo, &QComboBox::currentTextChanged, this, &MainWindow::filterByFormat);
     tb->addWidget(m_formatCombo);
+
+    // Category filter
+    m_categoryCombo = new QComboBox;
+    m_categoryCombo->setMinimumWidth(130);
+    m_categoryCombo->setMaximumWidth(160);
+    m_categoryCombo->setToolTip("Filter by category or tag");
+    connect(m_categoryCombo, &QComboBox::currentTextChanged, this, &MainWindow::filterByCategory);
+    tb->addWidget(m_categoryCombo);
+
     tb->addSeparator();
 
     // Sort
-    tb->addWidget(new QLabel("  Sort: "));
     m_sortCombo = new QComboBox;
-    m_sortCombo->setMinimumWidth(110);
-    m_sortCombo->addItem("Title",     (int)SortField::Title);
-    m_sortCombo->addItem("Author",    (int)SortField::Author);
-    m_sortCombo->addItem("Year",      (int)SortField::Year);
-    m_sortCombo->addItem("Format",    (int)SortField::Format);
-    m_sortCombo->addItem("Date Added",(int)SortField::DateAdded);
-    m_sortCombo->addItem("Rating",    (int)SortField::Rating);
-    m_sortCombo->addItem("File Size", (int)SortField::FileSize);
-    connect(m_sortCombo, qOverload<int>(&QComboBox::currentIndexChanged),
-            this, &MainWindow::sortChanged);
+    m_sortCombo->setMinimumWidth(100);
+    m_sortCombo->setMaximumWidth(130);
+    m_sortCombo->setToolTip("Sort order");
+    m_sortCombo->addItem("Title",      (int)SortField::Title);
+    m_sortCombo->addItem("Author",     (int)SortField::Author);
+    m_sortCombo->addItem("Year",       (int)SortField::Year);
+    m_sortCombo->addItem("Format",     (int)SortField::Format);
+    m_sortCombo->addItem("Date Added", (int)SortField::DateAdded);
+    m_sortCombo->addItem("Rating",     (int)SortField::Rating);
+    m_sortCombo->addItem("File Size",  (int)SortField::FileSize);
+    m_sortCombo->addItem("Series",     (int)SortField::Series);
+    connect(m_sortCombo, qOverload<int>(&QComboBox::currentIndexChanged), this, &MainWindow::sortChanged);
     tb->addWidget(m_sortCombo);
 
-    m_sortAscAct = new QAction("Asc", this);
+    m_sortAscAct = new QAction("\u2191 Asc", this);
     m_sortAscAct->setCheckable(true);
     m_sortAscAct->setChecked(true);
     m_sortAscAct->setToolTip("Toggle sort direction");
     connect(m_sortAscAct, &QAction::triggered, this, [this](bool checked){
         m_sortOrder = checked ? SortOrder::Asc : SortOrder::Desc;
-        m_sortAscAct->setText(checked ? "Asc" : "Desc");
+        m_sortAscAct->setText(checked ? "\u2191 Asc" : "\u2193 Desc");
         sortChanged(m_sortCombo->currentIndex());
     });
     tb->addAction(m_sortAscAct);
-    tb->addSeparator();
 
-    // Search
-    tb->addWidget(new QLabel("  Search: "));
-    m_searchBox = new QLineEdit;
-    m_searchBox->setPlaceholderText("Search title, author, ISBN, tags...");
-    m_searchBox->setMinimumWidth(220);
-    m_searchBox->setClearButtonEnabled(true);
-    connect(m_searchBox, &QLineEdit::textChanged, this, &MainWindow::searchChanged);
-    tb->addWidget(m_searchBox);
-
+    // Spacer
     auto* spacer = new QWidget;
     spacer->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
     tb->addWidget(spacer);
 
-    QAction* settAct = new QAction("Settings", this);
+    // Command Palette button
+    QAction* cpAct = new QAction("\u2318  Commands", this);
+    cpAct->setToolTip("Open command palette  (Ctrl+P)");
+    connect(cpAct, &QAction::triggered, this, &MainWindow::openCommandPalette);
+    tb->addAction(cpAct);
+
+    tb->addSeparator();
+
+    // Settings
+    QAction* settAct = new QAction(this);
+    settAct->setIcon(style()->standardIcon(QStyle::SP_FileDialogInfoView));
+    settAct->setToolTip("Preferences  (Ctrl+,)");
     connect(settAct, &QAction::triggered, this, &MainWindow::openSettings);
     tb->addAction(settAct);
 }
@@ -283,14 +1829,17 @@ void MainWindow::setupToolBar()
 // ── Sidebar ──────────────────────────────────────────────────
 void MainWindow::setupSidebar()
 {
-    auto* dock = new QDockWidget("Browse", this);
+    m_sidebarDock = new QDockWidget(trl("sidebar.browse", "Browse"), this);
+    auto* dock = m_sidebarDock;
     dock->setObjectName("sidebarDock");
     dock->setFeatures(QDockWidget::NoDockWidgetFeatures);
-    dock->setMinimumWidth(180);
-    dock->setMaximumWidth(220);
+    dock->setMinimumWidth(170);
+    dock->setMaximumWidth(240);
 
-    auto* sideWidget = new QWidget;
-    auto* sideLayout = new QVBoxLayout(sideWidget);
+    m_sidebarContent = new QWidget;
+    auto* sideWidget = m_sidebarContent;
+    m_sidebarLayout = new QVBoxLayout(sideWidget);
+    auto* sideLayout = m_sidebarLayout;
     sideLayout->setContentsMargins(4, 8, 4, 8);
     sideLayout->setSpacing(4);
 
@@ -308,39 +1857,59 @@ void MainWindow::setupSidebar()
         sideLayout->addWidget(btn);
     };
 
-    makeHeader("LIBRARY");
-    makeBtn("All Books", [this]() {
-        m_filterModel->clearFilters();
-        m_searchBox->clear();
-        m_favAction->setChecked(false);
+    makeHeader(trl("sidebar.library", "LIBRARY"));
+    makeBtn(trl("sidebar.allBooks", "All Books"), [this]() {
+        if (m_shelfCombo) m_shelfCombo->setCurrentIndex(m_shelfCombo->findData(QStringLiteral("all")));
+        else applyShelf(QStringLiteral("all"));
     });
-    makeBtn("Favourites", [this]() {
-        m_filterModel->clearFilters();
-        m_filterModel->setFilterFavourites(true);
-        m_favAction->setChecked(true);
+    makeBtn(trl("sidebar.favourites", "Favourites"), [this]() {
+        if (m_shelfCombo) m_shelfCombo->setCurrentIndex(m_shelfCombo->findData(QStringLiteral("favourites")));
+        else applyShelf(QStringLiteral("favourites"));
     });
-    makeBtn("Recently Added", [this]() {
-        m_filterModel->clearFilters();
-        m_filterModel->sortBy(SortField::DateAdded, SortOrder::Desc);
+    makeBtn(trl("sidebar.recentlyAdded", "Recently Added"), [this]() {
+        if (m_shelfCombo) m_shelfCombo->setCurrentIndex(m_shelfCombo->findData(QStringLiteral("recent")));
+        else applyShelf(QStringLiteral("recent"));
     });
-    makeBtn("Most Opened", [this]() {
-        m_filterModel->clearFilters();
-        m_filterModel->sortBy(SortField::OpenCount, SortOrder::Desc);
+    makeBtn(trl("sidebar.mostOpened", "Most Opened"), [this]() {
+        if (m_shelfCombo) m_shelfCombo->setCurrentIndex(m_shelfCombo->findData(QStringLiteral("opened")));
+        else applyShelf(QStringLiteral("opened"));
     });
 
     sideLayout->addSpacing(8);
-    makeHeader("SMART VIEWS");
-    makeBtn("No Cover Art", [this]() {
-        m_filterModel->clearFilters();
-        m_filterModel->setFilterNoCover(true);
+    makeHeader(trl("sidebar.smartViews", "SMART VIEWS"));
+    makeBtn(trl("sidebar.noCoverArt", "No Cover Art"), [this]() {
+        if (m_shelfCombo) m_shelfCombo->setCurrentIndex(m_shelfCombo->findData(QStringLiteral("no_cover")));
+        else applyShelf(QStringLiteral("no_cover"));
     });
-    makeBtn("Missing Metadata", [this]() {
-        m_filterModel->clearFilters();
-        m_filterModel->setFilterNoMeta(true);
+    makeBtn(trl("sidebar.missingMetadata", "Missing Metadata"), [this]() {
+        if (m_shelfCombo) m_shelfCombo->setCurrentIndex(m_shelfCombo->findData(QStringLiteral("missing_metadata")));
+        else applyShelf(QStringLiteral("missing_metadata"));
+    });
+    makeBtn(trl("sidebar.booksOnly", "Books Only"), [this]() {
+        if (m_shelfCombo) m_shelfCombo->setCurrentIndex(m_shelfCombo->findData(QStringLiteral("books")));
+        else applyShelf(QStringLiteral("books"));
+    });
+    makeBtn(trl("sidebar.documentsOnly", "Documents Only"), [this]() {
+        if (m_shelfCombo) m_shelfCombo->setCurrentIndex(m_shelfCombo->findData(QStringLiteral("documents")));
+        else applyShelf(QStringLiteral("documents"));
     });
 
     sideLayout->addSpacing(8);
-    makeHeader("FORMAT");
+    m_smartCategorySection = new QWidget(sideWidget);
+    auto* smartSectionLayout = new QVBoxLayout(m_smartCategorySection);
+    smartSectionLayout->setContentsMargins(0, 0, 0, 0);
+    smartSectionLayout->setSpacing(4);
+    auto* smartHeader = new QLabel(trl("sidebar.smartCategories", "SMART CATEGORIES"));
+    smartHeader->setObjectName("sideHeader");
+    smartSectionLayout->addWidget(smartHeader);
+    m_smartCategoryButtonsLayout = new QVBoxLayout;
+    m_smartCategoryButtonsLayout->setContentsMargins(0, 0, 0, 0);
+    m_smartCategoryButtonsLayout->setSpacing(2);
+    smartSectionLayout->addLayout(m_smartCategoryButtonsLayout);
+    sideLayout->addWidget(m_smartCategorySection);
+
+    sideLayout->addSpacing(8);
+    makeHeader(trl("sidebar.format", "FORMAT"));
     for (const char* fmt : {"PDF","EPUB","MOBI","AZW","CBZ","DjVu","TXT"}) {
         QString f = fmt;
         makeBtn(f, [this, f]() {
@@ -351,24 +1920,75 @@ void MainWindow::setupSidebar()
 
     sideLayout->addStretch();
 
-    auto* statsLbl = new QLabel;
-    statsLbl->setObjectName("statsLabel");
-    statsLbl->setAlignment(Qt::AlignCenter);
-    statsLbl->setWordWrap(true);
-    connect(m_model, &QAbstractItemModel::modelReset, this, [this, statsLbl]() {
-        statsLbl->setText(QString("%1 books").arg(m_model->rowCount()));
+    m_sidebarStatsLabel = new QLabel;
+    m_sidebarStatsLabel->setObjectName("statsLabel");
+    m_sidebarStatsLabel->setAlignment(Qt::AlignCenter);
+    m_sidebarStatsLabel->setWordWrap(true);
+    connect(m_model, &QAbstractItemModel::modelReset, this, [this]() {
+        if (m_sidebarStatsLabel)
+            m_sidebarStatsLabel->setText(trl("status.itemsInLibrary", "%1 items in library").arg(m_model->rowCount()));
     });
-    sideLayout->addWidget(statsLbl);
+    sideLayout->addWidget(m_sidebarStatsLabel);
 
     dock->setWidget(sideWidget);
     addDockWidget(Qt::LeftDockWidgetArea, dock);
+    rebuildSmartCategorySidebar();
 }
 
 // ── Central views ────────────────────────────────────────────
 void MainWindow::setupViews()
 {
-    m_stack = new QStackedWidget(this);
-    setCentralWidget(m_stack);
+    auto* central = new QWidget(this);
+    auto* centralLayout = new QVBoxLayout(central);
+    centralLayout->setContentsMargins(0, 0, 0, 0);
+    centralLayout->setSpacing(0);
+
+    m_workspaceHeader = new QWidget(central);
+    m_workspaceHeader->setObjectName("workspaceHeader");
+    auto* headerLayout = new QVBoxLayout(m_workspaceHeader);
+    headerLayout->setContentsMargins(20, 18, 20, 16);
+    headerLayout->setSpacing(10);
+
+    auto* headerTopLayout = new QHBoxLayout;
+    headerTopLayout->setSpacing(14);
+
+    auto* headingLayout = new QVBoxLayout;
+    headingLayout->setSpacing(4);
+    m_workspaceTitleLabel = new QLabel(trl("workspace.titleDefault", "Library Workspace"), m_workspaceHeader);
+    m_workspaceTitleLabel->setObjectName("workspaceTitle");
+    m_workspaceMetaLabel = new QLabel(m_workspaceHeader);
+    m_workspaceMetaLabel->setObjectName("workspaceMeta");
+    m_workspaceMetaLabel->setWordWrap(true);
+    headingLayout->addWidget(m_workspaceTitleLabel);
+    headingLayout->addWidget(m_workspaceMetaLabel);
+    headerTopLayout->addLayout(headingLayout, 1);
+
+    m_workspaceHintLabel = new QLabel(m_workspaceHeader);
+    m_workspaceHintLabel->setObjectName("workspaceHint");
+    m_workspaceHintLabel->setWordWrap(true);
+    m_workspaceHintLabel->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+    m_workspaceHintLabel->hide();
+    headerTopLayout->addWidget(m_workspaceHintLabel, 1);
+    headerLayout->addLayout(headerTopLayout);
+
+    auto* chipsLayout = new QHBoxLayout;
+    chipsLayout->setSpacing(8);
+    m_workspaceLibraryChip = new QLabel(m_workspaceHeader);
+    m_workspaceLibraryChip->setObjectName("workspaceChip");
+    m_workspaceViewChip = new QLabel(m_workspaceHeader);
+    m_workspaceViewChip->setObjectName("workspaceChip");
+    m_workspaceActionChip = new QLabel(m_workspaceHeader);
+    m_workspaceActionChip->setObjectName("workspaceChip");
+    chipsLayout->addWidget(m_workspaceLibraryChip);
+    chipsLayout->addWidget(m_workspaceViewChip);
+    chipsLayout->addWidget(m_workspaceActionChip);
+    chipsLayout->addStretch();
+    headerLayout->addLayout(chipsLayout);
+    centralLayout->addWidget(m_workspaceHeader);
+
+    m_stack = new QStackedWidget(central);
+    centralLayout->addWidget(m_stack, 1);
+    setCentralWidget(central);
 
     // Grid view
     m_gridView = new QListView;
@@ -377,18 +1997,25 @@ void MainWindow::setupViews()
     m_gridView->setViewMode(QListView::IconMode);
     m_gridView->setResizeMode(QListView::Adjust);
     m_gridView->setMovement(QListView::Static);
-    m_gridView->setSpacing(4);
+    m_gridView->setSpacing(14);
     m_gridView->setUniformItemSizes(true);
     m_gridView->setSelectionMode(QAbstractItemView::ExtendedSelection);
     m_gridView->setEditTriggers(QAbstractItemView::NoEditTriggers);
     m_gridView->setMouseTracking(true);
+    m_gridView->setLayoutMode(QListView::Batched);
+    m_gridView->setBatchSize(48);
+    m_gridView->setGridSize(QSize(180, 264));
+    m_gridView->setWrapping(true);
+    m_gridView->setSpacing(12);
+    m_gridView->setVerticalScrollMode(QAbstractItemView::ScrollPerPixel);
+    m_gridView->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
 
     m_gridDelegate = new BookDelegate(m_gridView);
     m_gridDelegate->setGridMode(true);
     m_gridView->setItemDelegate(m_gridDelegate);
 
     connect(m_gridView, &QListView::doubleClicked,
-            this, [this](const QModelIndex& idx) { openBookDetail(idx); });
+            this, [this](const QModelIndex& idx) { openBookFile(idx); });
 
     // List view
     m_listView = new QListView;
@@ -398,17 +2025,31 @@ void MainWindow::setupViews()
     m_listView->setSelectionMode(QAbstractItemView::ExtendedSelection);
     m_listView->setEditTriggers(QAbstractItemView::NoEditTriggers);
     m_listView->setMouseTracking(true);
+    m_listView->setUniformItemSizes(true);
+    m_listView->setLayoutMode(QListView::Batched);
+    m_listView->setBatchSize(80);
+    m_listView->setSpacing(6);
+    m_listView->setVerticalScrollMode(QAbstractItemView::ScrollPerPixel);
 
     m_listDelegate = new BookDelegate(m_listView);
     m_listDelegate->setGridMode(false);
     m_listView->setItemDelegate(m_listDelegate);
 
     connect(m_listView, &QListView::doubleClicked,
-            this, [this](const QModelIndex& idx) { openBookDetail(idx); });
+            this, [this](const QModelIndex& idx) { openBookFile(idx); });
 
     m_stack->addWidget(m_gridView);
     m_stack->addWidget(m_listView);
     m_stack->setCurrentWidget(m_gridView);
+
+    if (m_gridView->selectionModel()) {
+        connect(m_gridView->selectionModel(), &QItemSelectionModel::selectionChanged,
+                this, [this]() { updateWorkspaceHeader(); });
+    }
+    if (m_listView->selectionModel()) {
+        connect(m_listView->selectionModel(), &QItemSelectionModel::selectionChanged,
+                this, [this]() { updateWorkspaceHeader(); });
+    }
 
     // Context menu for both views
     for (QListView* v : {m_gridView, m_listView}) {
@@ -421,15 +2062,23 @@ void MainWindow::setupViews()
             menu.setStyleSheet(styleSheet());
             if (idx.isValid()) {
                 QAction* openAct = menu.addAction("Open");
-                connect(openAct, &QAction::triggered, this, [this]() { openBookDetail(); });
-                QAction* editAct = menu.addAction("Edit Details...");
-                connect(editAct, &QAction::triggered, this, [this]() { openBookDetail(); });
+                connect(openAct, &QAction::triggered, this, [this, idx]() { openBookFile(idx); });
+                QAction* editAct = menu.addAction("Properties...");
+                connect(editAct, &QAction::triggered, this, [this, idx]() { openBookDetail(idx); });
                 menu.addSeparator();
+                QAction* renameSelectedAct = menu.addAction("Smart Rename Selected");
+                connect(renameSelectedAct, &QAction::triggered, this, &MainWindow::onSmartRenameSelected);
                 QAction* fetchAct = menu.addAction("Fetch Metadata");
                 connect(fetchAct, &QAction::triggered, this, [this, idx]() {
                     QModelIndex src = m_filterModel->mapToSource(idx);
                     const Book& b = m_model->bookAt(src.row());
                     scheduleMetadataFetch(b);
+                });
+                QAction* refsAct = menu.addAction("Related References...");
+                connect(refsAct, &QAction::triggered, this, [this, idx]() {
+                    const QModelIndex src = m_filterModel->mapToSource(idx);
+                    if (src.isValid())
+                        showReferenceLookup(m_model->bookAt(src.row()));
                 });
                 menu.addSeparator();
                 QAction* removeAct = menu.addAction("Remove from Library");
@@ -444,64 +2093,223 @@ void MainWindow::setupViews()
 // ── Status bar ───────────────────────────────────────────────
 void MainWindow::setupStatusBar()
 {
+    // Main status message
     m_statusLabel = new QLabel("Ready");
+    m_statusLabel->setObjectName("statusPrimary");
+    m_statusLabel->setMinimumWidth(200);
     statusBar()->addWidget(m_statusLabel, 1);
 
+    // Background task label
     m_scanLabel = new QLabel;
-    statusBar()->addWidget(m_scanLabel);
+    m_scanLabel->setObjectName("statusSecondary");
+    m_scanLabel->setMinimumWidth(180);
+    statusBar()->addWidget(m_scanLabel, 1);
 
+    // Progress bar (compact, only visible during tasks)
     m_progressBar = new QProgressBar;
+    m_progressBar->setObjectName("statusProgress");
     m_progressBar->setRange(0, 100);
-    m_progressBar->setFixedWidth(200);
-    m_progressBar->setFixedHeight(14);
+    m_progressBar->setFixedWidth(180);
+    m_progressBar->setFixedHeight(5);
+    m_progressBar->setTextVisible(false);
     m_progressBar->setVisible(false);
-    statusBar()->addPermanentWidget(m_progressBar);
+    statusBar()->addWidget(m_progressBar);
+
+    // Permanent: library stats pill
+    m_libraryStatsLabel = new QLabel;
+    m_libraryStatsLabel->setObjectName("infoChip");
+    statusBar()->addPermanentWidget(m_libraryStatsLabel);
+
+    // Permanent: version badge
+    auto* versionLabel = new QLabel("v" + AppConfig::version());
+    versionLabel->setObjectName("infoChip");
+    versionLabel->setToolTip("Eagle Library " + AppConfig::version());
+    statusBar()->addPermanentWidget(versionLabel);
+
+    statusBar()->setSizeGripEnabled(false);
+}
+
+void MainWindow::retranslateUi()
+{
+    const QString currentLibrary = m_libraryCombo ? m_libraryCombo->currentText() : m_currentLibraryName;
+    const QString currentShelf = normalizeShelfId(m_activeShelfName);
+    const QString currentFormat = m_formatCombo ? m_formatCombo->currentText() : QStringLiteral("All");
+    const QString currentCategory = m_categoryCombo ? m_categoryCombo->currentData().toString() : QString();
+    const int currentSortField = m_sortCombo ? m_sortCombo->currentData().toInt() : static_cast<int>(SortField::Title);
+    const bool favChecked = m_favAction ? m_favAction->isChecked() : false;
+    const QString searchText = m_searchBox ? m_searchBox->text() : QString();
+    const bool sidebarVisible = m_sidebarDock ? m_sidebarDock->isVisible() : false;
+
+    setWindowTitle(trl("app.windowTitle", "Eagle Library | Professional Workspace"));
+    menuBar()->clear();
+    setupMenuBar();
+
+    if (m_mainToolBar) {
+        removeToolBar(m_mainToolBar);
+        m_mainToolBar->deleteLater();
+        m_mainToolBar = nullptr;
+    }
+    setupToolBar();
+    refreshLibrarySelector();
+    if (m_libraryCombo) {
+        const int libIndex = m_libraryCombo->findText(currentLibrary);
+        m_libraryCombo->setCurrentIndex(libIndex >= 0 ? libIndex : 0);
+    }
+    refreshShelfOptions();
+    if (m_shelfCombo) {
+        const int shelfIndex = m_shelfCombo->findData(currentShelf);
+        m_shelfCombo->setCurrentIndex(shelfIndex >= 0 ? shelfIndex : 0);
+    }
+    if (m_formatCombo)
+        m_formatCombo->setCurrentText(currentFormat);
+    refreshCategoryOptions();
+    if (m_categoryCombo) {
+        const int categoryIndex = m_categoryCombo->findData(currentCategory);
+        m_categoryCombo->setCurrentIndex(categoryIndex >= 0 ? categoryIndex : 0);
+    }
+    if (m_sortCombo) {
+        const int sortIndex = m_sortCombo->findData(currentSortField);
+        m_sortCombo->setCurrentIndex(sortIndex >= 0 ? sortIndex : 0);
+    }
+    if (m_favAction)
+        m_favAction->setChecked(favChecked);
+    if (m_searchBox)
+        m_searchBox->setText(searchText);
+
+    if (m_sidebarDock) {
+        removeDockWidget(m_sidebarDock);
+        m_sidebarDock->deleteLater();
+        m_sidebarDock = nullptr;
+        m_sidebarContent = nullptr;
+        m_sidebarLayout = nullptr;
+        m_smartCategorySection = nullptr;
+        m_smartCategoryButtonsLayout = nullptr;
+        m_sidebarStatsLabel = nullptr;
+    }
+    setupSidebar();
+    if (m_sidebarDock)
+        m_sidebarDock->setVisible(sidebarVisible);
+
+    if (m_statusLabel && (m_statusLabel->text().trimmed().isEmpty() || m_statusLabel->text() == QStringLiteral("Ready")))
+        m_statusLabel->setText(trl("status.ready", "Ready"));
+    if (m_scanLabel && (m_scanLabel->text().trimmed().isEmpty() || m_scanLabel->text() == QStringLiteral("Idle")))
+        m_scanLabel->setText(trl("status.idle", "Idle"));
+
+    updateStatusCount();
+    updateWorkspaceHeader();
+}
+
+void MainWindow::showTaskProgress(const QString& title, const QString& status, int current, int total, const QString& detail)
+{
+    if (!m_taskProgressDialog) {
+        m_taskProgressDialog = new QProgressDialog(this);
+        m_taskProgressDialog->setMinimumDuration(0);
+        m_taskProgressDialog->setAutoClose(false);
+        m_taskProgressDialog->setAutoReset(false);
+        m_taskProgressDialog->setWindowModality(Qt::WindowModal);
+        m_taskProgressDialog->setMinimumWidth(460);
+        m_taskProgressDialog->setCancelButtonText("Stop");
+        connect(m_taskProgressDialog, &QProgressDialog::canceled, this, &MainWindow::stopAllTasks);
+    }
+
+    const QString detailLine = detail.trimmed().isEmpty()
+        ? QString()
+        : QString("\n%1").arg(detail.left(120));
+
+    m_taskProgressDialog->setWindowTitle(title);
+    m_taskProgressDialog->setLabelText(status + detailLine);
+    if (total > 0) {
+        m_taskProgressDialog->setRange(0, total);
+        m_taskProgressDialog->setValue(qBound(0, current, total));
+    } else {
+        m_taskProgressDialog->setRange(0, 0);
+    }
+
+    if (!m_taskProgressDialog->isVisible())
+        m_taskProgressDialog->show();
+
+    m_statusLabel->setText(status);
+    m_scanLabel->setText(detail.left(50));
+    if (total > 0) {
+        m_progressBar->setRange(0, 100);
+        m_progressBar->setVisible(true);
+        m_progressBar->setValue((current * 100) / qMax(1, total));
+    } else {
+        m_progressBar->setVisible(true);
+        m_progressBar->setRange(0, 0);
+    }
+    QApplication::processEvents(QEventLoop::ExcludeUserInputEvents);
+}
+
+void MainWindow::hideTaskProgress(const QString& finalStatus)
+{
+    if (m_taskProgressDialog) {
+        m_taskProgressDialog->hide();
+    }
+    if (m_progressBar->maximum() > 0)
+        m_progressBar->setValue(100);
+    m_progressBar->setRange(0, 100);
+    m_progressBar->setVisible(false);
+    m_scanLabel->setText(trl("status.idle", "Idle"));
+    if (!finalStatus.isEmpty())
+        m_statusLabel->setText(finalStatus);
 }
 
 // ── Slots ─────────────────────────────────────────────────────
 void MainWindow::onScanStart()
 {
     if (m_watchFolders.isEmpty()) { openSettings(); return; }
-    m_progressBar->setVisible(true);
-    m_progressBar->setValue(0);
-    m_statusLabel->setText("Scanning library folders...");
-    m_scanner->startScan(m_watchFolders, 0); // 0 = auto-detect CPU count
+    m_recentlyAddedBooks.clear();
+    const QString modeLabel = m_fastScanMode ? "Fast scan mode enabled" : "Deep metadata scan enabled";
+    showTaskProgress("Scanning Library", "Scanning library folders...", 0, 0, modeLabel);
+    m_scanner->startScan(m_watchFolders, m_scanThreads, m_fastScanMode); // 0 = auto-detect CPU count
 }
 
 void MainWindow::onScanProgress(int done, int total, const QString& file)
 {
-    if (total > 0) m_progressBar->setValue(done * 100 / total);
-    m_scanLabel->setText(file.left(50));
+    showTaskProgress("Scanning Library",
+                     QString("Scanning %1/%2").arg(done).arg(total),
+                     done,
+                     total,
+                     file);
 }
 
 void MainWindow::onBookFound(Book book)
 {
     m_model->addBook(book);
+    m_recentlyAddedBooks << book;
     QSettings s("Eagle Software", "Eagle Library");
-    if (s.value("options/autoMeta", true).toBool())
+    if (!m_autoEnrichAfterScan && s.value("options/autoMeta", true).toBool())
         scheduleMetadataFetch(book);
 }
 
 void MainWindow::onScanFinished(int added, int skipped)
 {
-    m_progressBar->setVisible(false);
-    m_scanLabel->clear();
-    m_statusLabel->setText(
-        QString("Scan complete -- %1 new, %2 already indexed").arg(added).arg(skipped));
+    hideTaskProgress(QString("Scan complete -- %1 new, %2 already indexed").arg(added).arg(skipped));
     updateStatusCount();
+    if (m_autoEnrichAfterScan && !m_recentlyAddedBooks.isEmpty())
+        enrichIncompleteBooks(m_recentlyAddedBooks, "Post-Scan Enrichment");
 }
 
 void MainWindow::onMetadataReady(qint64 id, Book updated)
 {
-    m_model->updateMetadata(id, updated);
-    Database::instance().updateBook(updated);
+    const Book* current = m_model->bookById(id);
+    if (!current) return;
+
+    Book merged = mergeFetchedMetadata(*current, updated);
+    m_model->updateBook(merged);
+    Database::instance().updateBook(merged);
 }
 
-void MainWindow::onCoverUrlReady(qint64 id, const QString& url)
+void MainWindow::onCoverUrlsReady(qint64 id, const QStringList& urls)
 {
     QSettings s("Eagle Software", "Eagle Library");
-    if (s.value("options/autoCover", true).toBool())
-        m_coverDownloader->enqueue(id, url);
+    const bool forceCover = m_forceCoverFetchIds.remove(id);
+    if (!forceCover && !s.value("options/autoCover", true).toBool())
+        return;
+
+    const Book* book = m_model->bookById(id);
+    m_coverDownloader->enqueue(id, urls, book ? book->displayTitle() : QString::number(id));
 }
 
 void MainWindow::onCoverReady(qint64 id, const QString& path)
@@ -510,13 +2318,65 @@ void MainWindow::onCoverReady(qint64 id, const QString& path)
     Database::instance().updateCoverPath(id, path);
 }
 
+void MainWindow::onMetadataFetchProgress(int completed, int total, const QString& currentFile, const QString& stage)
+{
+    showTaskProgress("Fetching Metadata",
+                     QString("Metadata %1/%2").arg(completed).arg(total),
+                     completed,
+                     total,
+                     QString("%1  %2").arg(stage, currentFile));
+
+    if (completed >= total && total > 0)
+        hideTaskProgress(QString("Metadata fetch complete for %1 books.").arg(total));
+}
+
+void MainWindow::onMetadataFetchError(qint64 id, const QString& msg)
+{
+    m_forceCoverFetchIds.remove(id);
+    const Book* book = m_model->bookById(id);
+    m_statusLabel->setText(QString("Metadata skipped for %1: %2")
+                           .arg(book ? book->displayTitle() : QString::number(id), msg));
+}
+
+void MainWindow::onCoverDownloadProgress(int completed, int total, const QString& currentLabel)
+{
+    if (total <= 0) return;
+    showTaskProgress("Downloading Covers",
+                     QString("Covers %1/%2").arg(completed).arg(total),
+                     completed,
+                     total,
+                     currentLabel);
+
+    if (completed >= total)
+        hideTaskProgress(QString("Cover download complete for %1 books.").arg(total));
+}
+
+void MainWindow::onCoverDownloadFailed(qint64 id, const QString& reason)
+{
+    const Book* book = m_model->bookById(id);
+    m_statusLabel->setText(QString("No cover found for %1: %2")
+                           .arg(book ? book->displayTitle() : QString::number(id), reason));
+}
+
 void MainWindow::openSettings()
 {
+    const QStringList previousFolders = m_watchFolders;
+    const QString previousLibrary = m_currentLibraryName;
     SettingsDialog dlg(this);
     if (dlg.exec() == QDialog::Accepted) {
-        m_watchFolders = dlg.watchedFolders();
+        loadSettings();
+        applyResponsiveLayout();
+        reloadCurrentLibrary();
+
         if (!m_watchFolders.isEmpty())
             QTimer::singleShot(200, this, &MainWindow::onScanStart);
+
+        if (previousLibrary != m_currentLibraryName)
+            m_statusLabel->setText(QString("Switched to library \"%1\".").arg(m_currentLibraryName));
+        else if (previousFolders != m_watchFolders)
+            m_statusLabel->setText(QString("Updated watched folders for \"%1\".").arg(m_currentLibraryName));
+        else
+            updateStatusCount();
     }
 }
 
@@ -543,12 +2403,30 @@ void MainWindow::openBookDetail()
     if (!sel.isEmpty()) openBookDetail(sel.first());
 }
 
+void MainWindow::openBookFile(const QModelIndex& index)
+{
+    QModelIndex srcIdx = m_filterModel->mapToSource(index);
+    if (!srcIdx.isValid()) return;
+
+    const Book& b = m_model->bookAt(srcIdx.row());
+    QDesktopServices::openUrl(QUrl::fromLocalFile(b.filePath));
+    Database::instance().markOpened(b.id);
+}
+
+void MainWindow::openBookFile()
+{
+    QListView* v = currentView();
+    QModelIndexList sel = v->selectionModel()->selectedIndexes();
+    if (!sel.isEmpty()) openBookFile(sel.first());
+}
+
 void MainWindow::setGridView()
 {
     m_isGridView = true;
     m_stack->setCurrentWidget(m_gridView);
     m_gridAction->setChecked(true);
     m_listAction->setChecked(false);
+    updateWorkspaceHeader();
 }
 
 void MainWindow::setListView()
@@ -557,14 +2435,79 @@ void MainWindow::setListView()
     m_stack->setCurrentWidget(m_listView);
     m_listAction->setChecked(true);
     m_gridAction->setChecked(false);
+    updateWorkspaceHeader();
 }
 
 
-void MainWindow::searchChanged(const QString& text)   { m_filterModel->setFilterText(text); }
-void MainWindow::filterByFormat(const QString& fmt)   { m_filterModel->setFilterFormat(fmt == "All" ? QString() : fmt); }
-void MainWindow::showFavourites(bool on)              { m_filterModel->setFilterFavourites(on); }
-void MainWindow::showNoCoverFilter(bool on)           { m_filterModel->setFilterNoCover(on); }
-void MainWindow::showNoMetaFilter(bool on)            { m_filterModel->setFilterNoMeta(on); }
+void MainWindow::searchChanged(const QString& text)
+{
+    m_filterModel->setFilterText(text);
+    updateStatusCount();
+}
+
+void MainWindow::filterByFormat(const QString& fmt)
+{
+    m_filterModel->setFilterFormat(fmt == "All" ? QString() : fmt);
+    updateStatusCount();
+}
+
+void MainWindow::filterByCategory(const QString& category)
+{
+    if (!m_categoryCombo)
+        return;
+    QString value = m_categoryCombo->currentData().toString();
+    if (value.isEmpty() && category != trl("category.all", "All Categories"))
+        value = category;
+    m_filterModel->setFilterCategory(value);
+    updateStatusCount();
+}
+
+void MainWindow::showFavourites(bool on)
+{
+    m_filterModel->setFilterFavourites(on);
+    updateStatusCount();
+}
+
+void MainWindow::showNoCoverFilter(bool on)
+{
+    m_filterModel->setFilterNoCover(on);
+    updateStatusCount();
+}
+
+void MainWindow::showNoMetaFilter(bool on)
+{
+    m_filterModel->setFilterNoMeta(on);
+    updateStatusCount();
+}
+
+void MainWindow::openAdvancedSearch()
+{
+    AdvancedSearchDialog dlg(this);
+    dlg.setStyleSheet(styleSheet());
+    if (dlg.exec() != QDialog::Accepted)
+        return;
+
+    m_searchBox->setText(dlg.text());
+    m_filterModel->setFilterText(dlg.text());
+    m_filterModel->setFilterAuthor(dlg.author());
+    m_filterModel->setFilterYear(dlg.yearFrom(), dlg.yearTo());
+    m_filterModel->setFilterFavourites(dlg.favouritesOnly());
+    m_filterModel->setFilterNoCover(dlg.noCoverOnly());
+    m_filterModel->setFilterNoMeta(dlg.noMetaOnly());
+
+    const QString format = dlg.format();
+    if (m_formatCombo)
+        m_formatCombo->setCurrentText(format.isEmpty() ? "All" : format);
+    m_filterModel->setFilterFormat(format);
+
+    const QString category = dlg.category();
+    if (m_categoryCombo)
+        m_categoryCombo->setCurrentText(category.isEmpty() ? "All Categories" : category);
+    m_filterModel->setFilterCategory(category);
+
+    updateStatusCount();
+    m_statusLabel->setText("Advanced search applied.");
+}
 
 void MainWindow::sortChanged(int idx)
 {
@@ -572,50 +2515,151 @@ void MainWindow::sortChanged(int idx)
     m_filterModel->sortBy(sf, m_sortOrder);
     // Also reload model from DB with same sort for consistency
     m_model->reload(m_model->currentFilter(), sf, m_sortOrder);
+    updateStatusCount();
 }
 
 // ── Smart Rename ─────────────────────────────────────────────
 void MainWindow::onSmartRenameAll()
 {
-    QVector<Book> books = Database::instance().allBooks();
+    QVector<Book> books = currentLibraryBooks();
     if (books.isEmpty()) {
         m_statusLabel->setText("No books in library to rename.");
         return;
     }
 
-    int reply = QMessageBox::question(this, "Smart Rename",
+    startSmartRename(
+        books,
+        "Smart Rename",
         QString("Analyse %1 books and auto-rename those whose title\n"
                 "matches their filename (i.e. no real metadata yet)?\n\n"
                 "Books with good metadata are NOT touched.\n"
+                "Embedded PDF metadata is used when available.\n"
                 "This reads filename patterns like:\n"
                 "  Author - Title (Year)\n"
                 "  Title - Author\n"
-                "  Title (Year)").arg(books.size()),
-        QMessageBox::Yes | QMessageBox::Cancel);
+                "  Title (Year)").arg(books.size()));
+}
+
+void MainWindow::onSmartRenameSelected()
+{
+    QListView* v = currentView();
+    QModelIndexList sel = v->selectionModel()->selectedIndexes();
+    if (sel.isEmpty()) {
+        m_statusLabel->setText("No selected books to rename.");
+        return;
+    }
+
+    QVector<Book> books;
+    QSet<qint64> seen;
+    for (const QModelIndex& proxyIdx : sel) {
+        QModelIndex srcIdx = m_filterModel->mapToSource(proxyIdx);
+        if (!srcIdx.isValid())
+            continue;
+        const Book& book = m_model->bookAt(srcIdx.row());
+        if (!seen.contains(book.id)) {
+            seen.insert(book.id);
+            books << book;
+        }
+    }
+
+    if (books.isEmpty()) {
+        m_statusLabel->setText("No selected books to rename.");
+        return;
+    }
+
+    startSmartRename(
+        books,
+        "Smart Rename Selected",
+        QString("Analyse %1 selected books and update only their metadata in the library database?\n\n"
+                "Files on disk will not be renamed or moved.\n"
+                "Books with good metadata are not touched.\n"
+                "Embedded PDF metadata and filename patterns will be used when available.")
+            .arg(books.size()));
+}
+
+void MainWindow::startSmartRename(const QVector<Book>& books, const QString& title, const QString& prompt)
+{
+    int reply = QMessageBox::question(this, title, prompt, QMessageBox::Yes | QMessageBox::Cancel);
     if (reply != QMessageBox::Yes) return;
 
-    m_progressBar->setVisible(true);
-    m_progressBar->setValue(0);
-    m_statusLabel->setText("Smart renaming...");
-
     // Run renamer on background thread
-    if (m_renameThread && m_renameThread->isRunning()) return;
+    if (m_renameThread && m_renameThread->isRunning()) {
+        m_statusLabel->setText("Smart rename is already running.");
+        return;
+    }
+
+    showTaskProgress(title, "Preparing smart rename...", 0, books.size(), "Analyzing selected metadata");
+
     m_renameThread = new QThread(this);
-    m_renamer->moveToThread(m_renameThread);
-    connect(m_renameThread, &QThread::started, this, [this, books]() {
-        m_renamer->renameAll(books);
-    });
-    connect(m_renamer, &SmartRenamer::progress, this, [this](int done, int total) {
-        if (total > 0) m_progressBar->setValue(done * 100 / total);
+    m_activeRenamer = new SmartRenamer;
+    m_activeRenamer->moveToThread(m_renameThread);
+
+    connect(m_activeRenamer, &SmartRenamer::renamed, this, &MainWindow::onRenameResult, Qt::QueuedConnection);
+    connect(m_activeRenamer, &SmartRenamer::progress, this, [this](int done, int total, const QString& currentFile, const QString& detail) {
+        showTaskProgress("Smart Rename",
+                         QString("Smart rename %1/%2").arg(done).arg(total),
+                         done,
+                         total,
+                         QString("%1  %2").arg(detail, currentFile));
     }, Qt::QueuedConnection);
+    connect(m_activeRenamer, &SmartRenamer::finished, this, &MainWindow::onRenameFinished, Qt::QueuedConnection);
+
+    connect(m_renameThread, &QThread::started, m_activeRenamer, [this, books]() {
+        if (m_activeRenamer)
+            m_activeRenamer->renameAll(books);
+    }, Qt::QueuedConnection);
+    connect(m_renameThread, &QThread::finished, m_activeRenamer, &QObject::deleteLater);
     connect(m_renameThread, &QThread::finished, m_renameThread, &QObject::deleteLater);
     m_renameThread->start(QThread::LowPriority);
+}
+
+QVector<Book> MainWindow::chooseBooksScope(const QString& featureName)
+{
+    const QVector<Book> selected = selectedBooks(m_model, m_filterModel, currentView());
+    if (selected.isEmpty())
+        return currentLibraryBooks();
+
+    QMessageBox box(this);
+    box.setWindowTitle(featureName);
+    box.setText(QString("Choose the scope for %1.").arg(featureName));
+    box.setInformativeText(QString("%1 books are currently selected.").arg(selected.size()));
+    QPushButton* selectedBtn = box.addButton("Selected Books", QMessageBox::AcceptRole);
+    QPushButton* allBtn = box.addButton("All Books", QMessageBox::ActionRole);
+    box.addButton(QMessageBox::Cancel);
+    box.setDefaultButton(selectedBtn);
+    box.setStyleSheet(styleSheet());
+    box.exec();
+
+    if (box.clickedButton() == selectedBtn)
+        return selected;
+    if (box.clickedButton() == allBtn)
+        return currentLibraryBooks();
+    return {};
+}
+
+QString MainWindow::saveJsonArtifact(const QString& baseName, const QJsonObject& payload) const
+{
+    QDir().mkpath(AppConfig::jsonDir());
+    const QString fileName = QString("%1/%2-%3.json")
+        .arg(AppConfig::jsonDir(),
+             baseName,
+             QDateTime::currentDateTime().toString("yyyyMMdd-HHmmss"));
+
+    QSaveFile file(fileName);
+    if (!file.open(QIODevice::WriteOnly))
+        return {};
+
+    const QByteArray json = QJsonDocument(payload).toJson(QJsonDocument::Indented);
+    if (file.write(json) != json.size() || !file.commit())
+        return {};
+
+    return fileName;
 }
 
 void MainWindow::onRenameResult(RenameResult r)
 {
     // Apply to DB
-    Database::instance().batchUpdateTitle(r.bookId, r.newTitle, r.newAuthor, {}, r.newYear);
+    Database::instance().batchUpdateTitle(r.bookId, r.newTitle, r.newAuthor, r.newPublisher, r.newYear);
 
     // Update model in place
     const Book* b = m_model->bookById(r.bookId);
@@ -623,6 +2667,7 @@ void MainWindow::onRenameResult(RenameResult r)
         Book updated = *b;
         updated.title  = r.newTitle;
         updated.author = r.newAuthor.isEmpty() ? updated.author : r.newAuthor;
+        updated.publisher = r.newPublisher.isEmpty() ? updated.publisher : r.newPublisher;
         if (r.newYear > 0) updated.year = r.newYear;
         m_model->updateBook(updated);
     }
@@ -630,45 +2675,356 @@ void MainWindow::onRenameResult(RenameResult r)
 
 void MainWindow::onRenameFinished(int changed)
 {
-    m_progressBar->setVisible(false);
     if (m_renameThread) {
         m_renameThread->quit();
+        m_renameThread->wait(3000);
         m_renameThread = nullptr;
     }
-    // Move renamer back to main thread
-    m_renamer->moveToThread(QCoreApplication::instance()->thread());
-    m_statusLabel->setText(QString("Smart rename complete — %1 books updated.").arg(changed));
-    if (changed > 0) m_model->loadAll(); // full reload to reflect all changes
+    m_activeRenamer = nullptr;
+    hideTaskProgress(QString("Smart rename complete - %1 books updated.").arg(changed));
+    if (changed > 0) reloadCurrentLibrary();
 }
 
 void MainWindow::cleanMissingFiles()
 {
+    showTaskProgress("Cleaning Library", "Removing missing file records...", 0, 0);
     int removed = Database::instance().removeMissingFiles();
-    m_model->loadAll();
-    m_statusLabel->setText(QString("Cleaned %1 missing file records.").arg(removed));
+    reloadCurrentLibrary();
+    hideTaskProgress(QString("Cleaned %1 missing file records.").arg(removed));
     updateStatusCount();
 }
 
 void MainWindow::fetchAllMetadata()
 {
-    QVector<Book> books = Database::instance().allBooks();
+    QVector<Book> books = currentLibraryBooks();
     int count = 0;
     for (const auto& b : books) {
-        if (b.title.isEmpty() || b.author.isEmpty()) {
+        const bool missingCoreMeta = b.title.isEmpty() || b.author.isEmpty()
+            || b.publisher.isEmpty() || b.isbn.isEmpty() || b.year == 0;
+        if (missingCoreMeta) {
             scheduleMetadataFetch(b);
             ++count;
         }
     }
-    m_statusLabel->setText(QString("Queued metadata fetch for %1 books...").arg(count));
+    if (count == 0)
+        m_statusLabel->setText("No books need metadata fetching.");
+    else
+        m_statusLabel->setText(QString("Queued metadata fetch for %1 books...").arg(count));
 }
 
-void MainWindow::scheduleMetadataFetch(const Book& book)
+void MainWindow::enrichIncompleteBooksAction()
 {
+    const QVector<Book> scoped = chooseBooksScope("Enrich Incomplete Books");
+    if (scoped.isEmpty())
+        return;
+    enrichIncompleteBooks(scoped, "Enrich Incomplete Books");
+}
+
+void MainWindow::runQualityCheck()
+{
+    const QVector<Book> books = chooseBooksScope("Quality Check");
+    if (books.isEmpty())
+        return;
+    int missingAuthor = 0, missingCover = 0, missingIsbn = 0, weakTitle = 0, badIsbn = 0, suspectPublisher = 0;
+    int index = 0;
+    for (const Book& book : books) {
+        ++index;
+        showTaskProgress("Quality Check",
+                         QString("Checking %1/%2 books").arg(index).arg(books.size()),
+                         index,
+                         books.size(),
+                         book.displayTitle());
+        if (book.author.trimmed().isEmpty()) ++missingAuthor;
+        if (!book.hasCover || book.coverPath.isEmpty()) ++missingCover;
+        if (book.isbn.trimmed().isEmpty()) ++missingIsbn;
+        if (book.title.trimmed().isEmpty() || book.title.compare(QFileInfo(book.filePath).completeBaseName(), Qt::CaseInsensitive) == 0)
+            ++weakTitle;
+        const QString isbn = sanitizeIsbn(book.isbn);
+        if (!isbn.isEmpty() && !(isValidIsbn10(isbn) || isValidIsbn13(isbn))) ++badIsbn;
+        const QString publisher = book.publisher.toLower();
+        if (publisher.contains("tcpdf") || publisher.contains("acrobat") || publisher.contains("libreoffice"))
+            ++suspectPublisher;
+    }
+
+    QJsonObject report;
+    report["feature"] = "quality_check";
+    report["checked_books"] = books.size();
+    report["weak_title"] = weakTitle;
+    report["missing_author"] = missingAuthor;
+    report["missing_isbn"] = missingIsbn;
+    report["missing_cover"] = missingCover;
+    report["malformed_isbn"] = badIsbn;
+    report["suspicious_publisher"] = suspectPublisher;
+    const QString reportPath = saveJsonArtifact("quality-check", report);
+    hideTaskProgress(QString("Quality check complete for %1 books.").arg(books.size()));
+
+    QMessageBox::information(
+        this,
+        "Quality Check",
+        QString("Checked %1 books.\n\n"
+                "Weak title metadata: %2\n"
+                "Missing author: %3\n"
+                "Missing ISBN: %4\n"
+                "Missing cover: %5\n"
+                "Malformed ISBN: %6\n"
+                "Suspicious generated publisher metadata: %7\n\n"
+                "JSON report: %8")
+            .arg(books.size()).arg(weakTitle).arg(missingAuthor).arg(missingIsbn).arg(missingCover).arg(badIsbn).arg(suspectPublisher)
+            .arg(reportPath.isEmpty() ? "not saved" : QDir::toNativeSeparators(reportPath)));
+}
+
+void MainWindow::findDuplicates()
+{
+    const QVector<Book> books = chooseBooksScope("Find Duplicates");
+    if (books.isEmpty())
+        return;
+    QHash<QString, QStringList> groups;
+    int index = 0;
+    for (const Book& book : books) {
+        ++index;
+        showTaskProgress("Finding Duplicates",
+                         QString("Analyzing %1/%2 books").arg(index).arg(books.size()),
+                         index,
+                         books.size(),
+                         book.displayTitle());
+        if (!book.fileHash.isEmpty())
+            groups["hash:" + book.fileHash] << book.displayTitle();
+        if (!book.isbn.trimmed().isEmpty())
+            groups["isbn:" + sanitizeIsbn(book.isbn)] << book.displayTitle();
+        groups["meta:" + normalizedText(book.displayTitle()) + "|" + normalizedText(book.displayAuthor())] << book.displayTitle();
+    }
+
+    QStringList hits;
+    QJsonArray groupsJson;
+    for (auto it = groups.cbegin(); it != groups.cend(); ++it) {
+        QStringList titles = it.value();
+        titles.removeDuplicates();
+        if (titles.size() > 1) {
+            hits << QString("%1\n  %2").arg(it.key(), titles.join("\n  "));
+            QJsonObject group;
+            group["key"] = it.key();
+            group["titles"] = QJsonArray::fromStringList(titles);
+            groupsJson.append(group);
+        }
+    }
+
+    QJsonObject report;
+    report["feature"] = "find_duplicates";
+    report["checked_books"] = books.size();
+    report["duplicate_groups"] = groupsJson;
+    const QString reportPath = saveJsonArtifact("duplicate-report", report);
+    hideTaskProgress(QString("Duplicate analysis complete for %1 books.").arg(books.size()));
+
+    QMessageBox::information(
+        this,
+        "Duplicate Finder",
+        hits.isEmpty() ? QString("No duplicate groups found.\n\nJSON report: %1")
+                              .arg(reportPath.isEmpty() ? "not saved" : QDir::toNativeSeparators(reportPath))
+                       : QString("Potential duplicate groups:\n\n%1\n\nJSON report: %2")
+                              .arg(hits.mid(0, 20).join("\n\n"),
+                                   reportPath.isEmpty() ? "not saved" : QDir::toNativeSeparators(reportPath)));
+}
+
+void MainWindow::extractMissingIsbns()
+{
+    QVector<Book> books = chooseBooksScope("Extract Missing ISBNs");
+    if (books.isEmpty())
+        return;
+    int updated = 0;
+    int queuedMetadata = 0;
+    int invalidDetected = 0;
+    QJsonArray updates;
+    int index = 0;
+    for (Book book : books) {
+        ++index;
+        showTaskProgress("Extracting ISBNs",
+                         QString("Scanning %1/%2 books").arg(index).arg(books.size()),
+                         index,
+                         books.size(),
+                         book.displayTitle());
+        const QString existingIsbn = sanitizeIsbn(book.isbn);
+        if (!existingIsbn.isEmpty()) {
+            if (!(isValidIsbn10(existingIsbn) || isValidIsbn13(existingIsbn)))
+                ++invalidDetected;
+            continue;
+        }
+        const QString isbn = extractIsbnFromBookContent(book);
+        if (isbn.isEmpty())
+            continue;
+        const QString cleanIsbn = sanitizeIsbn(isbn);
+        if (!(isValidIsbn10(cleanIsbn) || isValidIsbn13(cleanIsbn))) {
+            ++invalidDetected;
+            continue;
+        }
+        book.isbn = cleanIsbn;
+        Database::instance().updateBook(book);
+        m_model->updateBook(book);
+        scheduleMetadataFetch(book, true);
+        ++queuedMetadata;
+        QJsonObject item;
+        item["title"] = book.displayTitle();
+        item["file_path"] = book.filePath;
+        item["isbn"] = cleanIsbn;
+        item["metadata_queued"] = true;
+        updates.append(item);
+        ++updated;
+    }
+    QJsonObject report;
+    report["feature"] = "extract_missing_isbns";
+    report["updated_books"] = updated;
+    report["queued_metadata_fetches"] = queuedMetadata;
+    report["invalid_isbn_candidates"] = invalidDetected;
+    report["items"] = updates;
+    saveJsonArtifact("isbn-extraction", report);
+    hideTaskProgress(QString("ISBN extraction complete. Updated %1 books and queued %2 metadata lookups.").arg(updated).arg(queuedMetadata));
+}
+
+void MainWindow::countPagesForLibrary()
+{
+    QVector<Book> books = chooseBooksScope("Count Pages");
+    if (books.isEmpty())
+        return;
+    int updated = 0;
+    QJsonArray updates;
+    int index = 0;
+    for (Book book : books) {
+        ++index;
+        showTaskProgress("Counting Pages",
+                         QString("Estimating %1/%2 books").arg(index).arg(books.size()),
+                         index,
+                         books.size(),
+                         book.displayTitle());
+        if (book.pages > 0)
+            continue;
+        const int pages = estimatePagesForBook(book);
+        if (pages <= 0)
+            continue;
+        book.pages = pages;
+        Database::instance().updateBook(book);
+        m_model->updateBook(book);
+        QJsonObject item;
+        item["title"] = book.displayTitle();
+        item["file_path"] = book.filePath;
+        item["pages"] = pages;
+        updates.append(item);
+        ++updated;
+    }
+    QJsonObject report;
+    report["feature"] = "count_pages";
+    report["updated_books"] = updated;
+    report["items"] = updates;
+    saveJsonArtifact("page-count", report);
+    hideTaskProgress(QString("Page counting complete. Updated %1 books.").arg(updated));
+}
+
+void MainWindow::generateMissingCovers()
+{
+    QVector<Book> books = chooseBooksScope("Generate Missing Covers");
+    if (books.isEmpty())
+        return;
+    int generated = 0;
+    int index = 0;
+    for (Book book : books) {
+        ++index;
+        showTaskProgress("Generating Covers",
+                         QString("Creating %1/%2 covers").arg(index).arg(books.size()),
+                         index,
+                         books.size(),
+                         book.displayTitle());
+        if (book.hasCover && !book.coverPath.isEmpty() && QFileInfo::exists(book.coverPath))
+            continue;
+        const QString path = AppConfig::coversDir() + "/" + QString::number(book.id) + "_generated.jpg";
+        if (!saveGeneratedCover(book, path))
+            continue;
+        book.coverPath = path;
+        book.hasCover = true;
+        Database::instance().updateBook(book);
+        m_model->updateBook(book);
+        ++generated;
+    }
+    hideTaskProgress(QString("Generated covers for %1 books.").arg(generated));
+}
+
+void MainWindow::normalizeCovers()
+{
+    QVector<Book> books = chooseBooksScope("Normalize Covers");
+    if (books.isEmpty())
+        return;
+    int normalized = 0;
+    int index = 0;
+    for (const Book& book : books) {
+        ++index;
+        showTaskProgress("Normalizing Covers",
+                         QString("Improving %1/%2 covers").arg(index).arg(books.size()),
+                         index,
+                         books.size(),
+                         book.displayTitle());
+        if (normalizeCoverFile(book.coverPath))
+            ++normalized;
+    }
+    if (normalized > 0)
+        reloadCurrentLibrary();
+    hideTaskProgress(QString("Normalized %1 managed covers. Original book files were not modified.").arg(normalized));
+}
+
+void MainWindow::smartCategorizeLibrary()
+{
+    QVector<Book> books = chooseBooksScope("Smart Categorize");
+    if (books.isEmpty())
+        return;
+
+    int updated = 0;
+    QJsonArray items;
+    int index = 0;
+    for (Book book : books) {
+        ++index;
+        showTaskProgress("Smart Categorize",
+                         QString("Categorizing %1/%2 books").arg(index).arg(books.size()),
+                         index,
+                         books.size(),
+                         book.displayTitle());
+
+        const QStringList inferredTags = inferSmartTags(book);
+        const QStringList mergedTags = uniqueCaseInsensitive(book.tags + inferredTags);
+        if (mergedTags == book.tags)
+            continue;
+
+        book.tags = mergedTags;
+        if (book.subjects.isEmpty())
+            book.subjects = mergedTags.mid(0, qMin(3, mergedTags.size()));
+
+        Database::instance().updateBook(book);
+        m_model->updateBook(book);
+
+        QJsonObject item;
+        item["title"] = book.displayTitle();
+        item["file_path"] = book.filePath;
+        item["tags"] = QJsonArray::fromStringList(book.tags);
+        items.append(item);
+        ++updated;
+    }
+
+    QJsonObject report;
+    report["feature"] = "smart_categorize";
+    report["updated_books"] = updated;
+    report["items"] = items;
+    saveJsonArtifact("smart-categorize", report);
+    rebuildSmartCategorySidebar();
+    hideTaskProgress(QString("Smart categorization complete. Updated %1 books.").arg(updated));
+}
+
+void MainWindow::scheduleMetadataFetch(const Book& book, bool forceCover)
+{
+    if (forceCover)
+        m_forceCoverFetchIds.insert(book.id);
+
     FetchRequest req;
     req.bookId = book.id;
     req.title  = book.title;
     req.author = book.author;
     req.isbn   = book.isbn;
+    req.filePath = book.filePath;
+    req.format = book.format;
     m_metaFetcher->enqueue(req);
 }
 
@@ -692,18 +3048,456 @@ void MainWindow::removeSelectedBook()
 
 void MainWindow::refreshLibrary()
 {
-    m_model->loadAll();
+    reloadCurrentLibrary();
     updateStatusCount();
+    updateWorkspaceHeader();
+    rebuildSmartCategorySidebar();
+}
+
+void MainWindow::exportLibrarySnapshot()
+{
+    const QVector<Book> books = currentLibraryBooks();
+    if (books.isEmpty()) {
+        QMessageBox::information(this, "Export Library", "The active library has no books to export.");
+        return;
+    }
+    const QString path = QFileDialog::getSaveFileName(
+        this,
+        "Export Library",
+        QDir::homePath() + "/" + m_currentLibraryName.toLower().replace(' ', '-') + "-export.json",
+        "Eagle Library Export (*.json);;CSV Spreadsheet (*.csv);;BibTeX (*.bib);;RIS (*.ris)");
+    if (path.isEmpty())
+        return;
+
+    bool ok = false;
+    if (path.endsWith(".csv", Qt::CaseInsensitive))
+        ok = exportBooksToCsv(path, books);
+    else if (path.endsWith(".bib", Qt::CaseInsensitive))
+        ok = exportBooksToBibTex(path, books);
+    else if (path.endsWith(".ris", Qt::CaseInsensitive))
+        ok = exportBooksToRis(path, books);
+    else
+        ok = Database::instance().exportLibrary(path, m_watchFolders);
+
+    if (ok)
+        m_statusLabel->setText(QString("Library exported to %1").arg(QFileInfo(path).fileName()));
+    else
+        QMessageBox::warning(this, "Export Library", "Failed to export the active library.");
+}
+
+void MainWindow::importLibrarySnapshot()
+{
+    const QString path = QFileDialog::getOpenFileName(
+        this,
+        "Import Library",
+        QDir::homePath(),
+        "Eagle Library Export (*.json)");
+    if (path.isEmpty())
+        return;
+
+    QStringList importedFolders;
+    const int imported = Database::instance().importLibrary(path, &importedFolders);
+    if (imported <= 0) {
+        QMessageBox::warning(this, "Import Library", "No books were imported from this file.");
+        return;
+    }
+
+    if (!importedFolders.isEmpty()) {
+        QSettings s("Eagle Software", "Eagle Library");
+        m_libraryProfiles = loadLibraryProfiles(s);
+        const QStringList existingFolders = foldersForLibrary(m_libraryProfiles, m_currentLibraryName);
+        QSet<QString> merged(existingFolders.begin(), existingFolders.end());
+        for (const QString& folder : importedFolders)
+            merged.insert(folder);
+        m_watchFolders = QStringList(merged.begin(), merged.end());
+        m_watchFolders.sort(Qt::CaseInsensitive);
+        QJsonArray foldersJson;
+        for (const QString& folder : m_watchFolders)
+            foldersJson.append(folder);
+        m_libraryProfiles[m_currentLibraryName] = foldersJson;
+        s.setValue("library/profiles", QJsonDocument(m_libraryProfiles).toJson(QJsonDocument::Compact));
+        s.setValue("library/folders", m_watchFolders);
+    }
+
+    reloadCurrentLibrary();
+    updateStatusCount();
+    m_statusLabel->setText(QString("Imported %1 books from %2").arg(imported).arg(QFileInfo(path).fileName()));
+}
+
+void MainWindow::stopAllTasks()
+{
+    m_recentlyAddedBooks.clear();
+    m_forceCoverFetchIds.clear();
+
+    if (m_scanner && m_scanner->isRunning())
+        m_scanner->cancel();
+
+    if (m_activeRenamer)
+        m_activeRenamer->cancel();
+
+    if (m_renameThread && m_renameThread->isRunning()) {
+        m_renameThread->quit();
+        m_renameThread->wait(3000);
+        m_renameThread = nullptr;
+    }
+    m_activeRenamer = nullptr;
+
+    if (m_metaFetcher)
+        m_metaFetcher->cancelAll();
+    if (m_coverDownloader)
+        m_coverDownloader->cancelAll();
+
+    hideTaskProgress("All running tasks were stopped safely.");
+}
+
+void MainWindow::consultDatabaseSummary()
+{
+    const QVector<Book> books = currentLibraryBooks();
+    QSet<QString> formats;
+    QSet<QString> tags;
+    QSet<QString> authors;
+    QSet<QString> languages;
+    QMap<QString, int> formatCounts;
+    for (const Book& book : books) {
+        if (!book.format.isEmpty()) {
+            formats.insert(book.format);
+            formatCounts[book.format] += 1;
+        }
+        if (!book.author.isEmpty())
+            authors.insert(book.author);
+        if (!book.language.isEmpty())
+            languages.insert(book.language);
+        for (const QString& tag : book.tags)
+            if (!tag.trimmed().isEmpty())
+                tags.insert(tag.trimmed());
+    }
+
+    QStringList lines;
+    lines << QString("Database file:\n%1").arg(QDir::toNativeSeparators(AppConfig::dbPath()));
+    lines << QString("Active library: %1").arg(m_currentLibraryName);
+    lines << QString("Books in active library: %1").arg(books.size());
+    lines << QString("Formats indexed: %1").arg(formats.size());
+    lines << QString("Authors indexed: %1").arg(authors.size());
+    lines << QString("Languages indexed: %1").arg(languages.size());
+    lines << QString("Tags indexed: %1").arg(tags.size());
+
+    QStringList formatPreview;
+    QStringList formatKeys = formatCounts.keys();
+    formatKeys.sort(Qt::CaseInsensitive);
+    for (const QString& fmt : formatKeys.mid(0, 8))
+        formatPreview << QString("%1 (%2)").arg(fmt).arg(formatCounts.value(fmt));
+    if (!formatPreview.isEmpty())
+        lines << QString("Top formats: %1").arg(formatPreview.join(", "));
+
+    QMessageBox box(this);
+    box.setWindowTitle("Database Summary");
+    box.setText(lines.join("\n\n"));
+    box.setStyleSheet(styleSheet());
+    box.exec();
+}
+
+void MainWindow::diagnoseDatabaseText()
+{
+    const QVector<Book> books = currentLibraryBooks();
+    if (books.isEmpty()) {
+        QMessageBox::information(this, "Diagnose Text Problems", "The active library has no records to inspect.");
+        return;
+    }
+
+    int suspiciousCount = 0;
+    int emptyTitleCount = 0;
+    int filenameTitleCount = 0;
+    int replacementCount = 0;
+    int mojibakeCount = 0;
+    int controlCharCount = 0;
+    QJsonArray items;
+    QStringList previewLines;
+
+    int index = 0;
+    for (const Book& book : books) {
+        ++index;
+        showTaskProgress("Diagnosing Database Text",
+                         QString("Inspecting %1/%2 records").arg(index).arg(books.size()),
+                         index,
+                         books.size(),
+                         book.displayTitle());
+
+        const QStringList reasons = suspiciousTextReasons(book);
+        if (reasons.isEmpty())
+            continue;
+
+        ++suspiciousCount;
+        for (const QString& reason : reasons) {
+            if (reason.contains("empty", Qt::CaseInsensitive))
+                ++emptyTitleCount;
+            if (reason.contains("filename", Qt::CaseInsensitive))
+                ++filenameTitleCount;
+            if (reason.contains("replacement", Qt::CaseInsensitive) || reason.contains("square", Qt::CaseInsensitive))
+                ++replacementCount;
+            if (reason.contains("mojibake", Qt::CaseInsensitive))
+                ++mojibakeCount;
+            if (reason.contains("control characters", Qt::CaseInsensitive))
+                ++controlCharCount;
+        }
+
+        QJsonObject item;
+        item["id"] = QString::number(book.id);
+        item["title"] = book.title;
+        item["author"] = book.author;
+        item["publisher"] = book.publisher;
+        item["file_path"] = book.filePath;
+        item["reasons"] = QJsonArray::fromStringList(reasons);
+        items.append(item);
+
+        if (previewLines.size() < 12)
+            previewLines << QString("%1\n  %2").arg(book.displayTitle(), reasons.join(", "));
+    }
+
+    QJsonObject report;
+    report["feature"] = "diagnose_database_text";
+    report["active_library"] = m_currentLibraryName;
+    report["checked_records"] = books.size();
+    report["suspicious_records"] = suspiciousCount;
+    report["empty_title_hits"] = emptyTitleCount;
+    report["filename_title_hits"] = filenameTitleCount;
+    report["replacement_character_hits"] = replacementCount;
+    report["mojibake_hits"] = mojibakeCount;
+    report["control_character_hits"] = controlCharCount;
+    report["items"] = items;
+    const QString reportPath = saveJsonArtifact("database-text-diagnosis", report);
+
+    hideTaskProgress(QString("Database text diagnosis complete. %1 suspicious records found.").arg(suspiciousCount));
+
+    QString message = QString("Checked %1 records in \"%2\".\n\n"
+                              "Suspicious records: %3\n"
+                              "Empty titles: %4\n"
+                              "Filename-based titles: %5\n"
+                              "Replacement or square characters: %6\n"
+                              "Mojibake-like text: %7\n"
+                              "Control-character issues: %8")
+        .arg(books.size())
+        .arg(m_currentLibraryName)
+        .arg(suspiciousCount)
+        .arg(emptyTitleCount)
+        .arg(filenameTitleCount)
+        .arg(replacementCount)
+        .arg(mojibakeCount)
+        .arg(controlCharCount);
+
+    if (!previewLines.isEmpty())
+        message += QString("\n\nExamples:\n%1").arg(previewLines.join("\n\n"));
+    if (!reportPath.isEmpty())
+        message += QString("\n\nJSON report: %1").arg(QDir::toNativeSeparators(reportPath));
+
+    QMessageBox box(this);
+    box.setWindowTitle("Diagnose Text Problems");
+    box.setText(message);
+    box.setStyleSheet(styleSheet());
+    box.exec();
+}
+
+void MainWindow::repairDatabaseText()
+{
+    const QVector<Book> books = currentLibraryBooks();
+    if (books.isEmpty()) {
+        QMessageBox::information(this, "Repair Text Problems", "The active library has no records to repair.");
+        return;
+    }
+
+    QVector<Book> targets;
+    for (const Book& book : books) {
+        if (!suspiciousTextReasons(book).isEmpty())
+            targets.push_back(book);
+    }
+
+    if (targets.isEmpty()) {
+        QMessageBox::information(this, "Repair Text Problems", "No suspicious records were found in the active library.");
+        return;
+    }
+
+    const int answer = QMessageBox::question(
+        this,
+        "Repair Text Problems",
+        QString("Repair %1 suspicious records in \"%2\"?\n\n"
+                "This will rescan suspicious titles and verify PDF ISBNs from extracted text before updating the database.")
+            .arg(targets.size())
+            .arg(m_currentLibraryName),
+        QMessageBox::Yes | QMessageBox::No,
+        QMessageBox::Yes);
+    if (answer != QMessageBox::Yes)
+        return;
+
+    int repairedCount = 0;
+    int titleCount = 0;
+    int authorCount = 0;
+    int publisherCount = 0;
+    int yearCount = 0;
+    int isbnClearedCount = 0;
+    int isbnReplacedCount = 0;
+    QJsonArray items;
+    QStringList previewLines;
+
+    for (int index = 0; index < targets.size(); ++index) {
+        const Book& original = targets.at(index);
+        showTaskProgress("Repairing Database Text",
+                         QString("Repairing %1/%2 records").arg(index + 1).arg(targets.size()),
+                         index + 1,
+                         targets.size(),
+                         original.displayTitle());
+
+        Book repaired = original;
+        QStringList changes;
+
+        const RenameResult analysis = SmartRenamer::analyseBook(original);
+        if (!analysis.newTitle.trimmed().isEmpty() && analysis.newTitle != original.title) {
+            repaired.title = analysis.newTitle.trimmed();
+            ++titleCount;
+            changes << "title";
+        }
+        if (!analysis.newAuthor.trimmed().isEmpty() && analysis.newAuthor != original.author) {
+            repaired.author = analysis.newAuthor.trimmed();
+            ++authorCount;
+            changes << "author";
+        }
+        if (!analysis.newPublisher.trimmed().isEmpty() && analysis.newPublisher != original.publisher) {
+            repaired.publisher = analysis.newPublisher.trimmed();
+            ++publisherCount;
+            changes << "publisher";
+        }
+        if (analysis.newYear > 0 && analysis.newYear != original.year) {
+            repaired.year = analysis.newYear;
+            ++yearCount;
+            changes << "year";
+        }
+
+        if (!original.isbn.trimmed().isEmpty()) {
+            const QString verifiedIsbn = verifiedContentIsbn(original);
+            if (!verifiedIsbn.isEmpty() && verifiedIsbn != original.isbn) {
+                repaired.isbn = verifiedIsbn;
+                ++isbnReplacedCount;
+                changes << "isbn replaced";
+            } else if (verifiedIsbn.isEmpty()
+                       && original.format.compare("PDF", Qt::CaseInsensitive) == 0
+                       && !suspiciousTextReasons(original).isEmpty()) {
+                repaired.isbn.clear();
+                ++isbnClearedCount;
+                changes << "isbn cleared";
+            }
+        }
+
+        if (changes.isEmpty())
+            continue;
+
+        Database::instance().updateBook(repaired);
+        m_model->updateBook(repaired);
+        ++repairedCount;
+
+        QJsonObject item;
+        item["id"] = QString::number(repaired.id);
+        item["file_path"] = repaired.filePath;
+        item["before_title"] = original.title;
+        item["after_title"] = repaired.title;
+        item["before_author"] = original.author;
+        item["after_author"] = repaired.author;
+        item["before_publisher"] = original.publisher;
+        item["after_publisher"] = repaired.publisher;
+        item["before_isbn"] = original.isbn;
+        item["after_isbn"] = repaired.isbn;
+        item["changes"] = QJsonArray::fromStringList(changes);
+        items.append(item);
+
+        if (previewLines.size() < 10)
+            previewLines << QString("%1\n  %2").arg(repaired.displayTitle(), changes.join(", "));
+    }
+
+    reloadCurrentLibrary();
+    rebuildSmartCategorySidebar();
+    refreshCategoryOptions();
+    updateStatusCount();
+
+    QJsonObject report;
+    report["feature"] = "repair_database_text";
+    report["active_library"] = m_currentLibraryName;
+    report["checked_records"] = books.size();
+    report["targeted_records"] = targets.size();
+    report["repaired_records"] = repairedCount;
+    report["title_updates"] = titleCount;
+    report["author_updates"] = authorCount;
+    report["publisher_updates"] = publisherCount;
+    report["year_updates"] = yearCount;
+    report["isbn_cleared"] = isbnClearedCount;
+    report["isbn_replaced"] = isbnReplacedCount;
+    report["items"] = items;
+    const QString reportPath = saveJsonArtifact("database-text-repair", report);
+
+    hideTaskProgress(QString("Database text repair complete. %1 records updated.").arg(repairedCount));
+
+    QString message = QString("Checked %1 records in \"%2\".\n\n"
+                              "Suspicious records targeted: %3\n"
+                              "Records repaired: %4\n"
+                              "Titles updated: %5\n"
+                              "Authors updated: %6\n"
+                              "Publishers updated: %7\n"
+                              "Years updated: %8\n"
+                              "ISBNs cleared: %9\n"
+                              "ISBNs replaced: %10")
+        .arg(books.size())
+        .arg(m_currentLibraryName)
+        .arg(targets.size())
+        .arg(repairedCount)
+        .arg(titleCount)
+        .arg(authorCount)
+        .arg(publisherCount)
+        .arg(yearCount)
+        .arg(isbnClearedCount)
+        .arg(isbnReplacedCount);
+
+    if (!previewLines.isEmpty())
+        message += QString("\n\nExamples:\n%1").arg(previewLines.join("\n\n"));
+    if (!reportPath.isEmpty())
+        message += QString("\n\nJSON report: %1").arg(QDir::toNativeSeparators(reportPath));
+
+    QMessageBox box(this);
+    box.setWindowTitle("Repair Text Problems");
+    box.setText(message);
+    box.setStyleSheet(styleSheet());
+    box.exec();
+}
+
+void MainWindow::openExternalToolsDialog()
+{
+    ExternalToolsDialog dlg(this);
+    dlg.setStyleSheet(styleSheet());
+    dlg.exec();
+}
+
+void MainWindow::openDatabaseFolder()
+{
+    const QString dir = QFileInfo(AppConfig::dbPath()).absolutePath();
+    QDesktopServices::openUrl(QUrl::fromLocalFile(dir));
+}
+
+void MainWindow::openDatabaseEditor()
+{
+    DatabaseEditorDialog dlg(this);
+    dlg.setStyleSheet(styleSheet());
+    if (dlg.exec() == QDialog::Accepted) {
+        reloadCurrentLibrary();
+        rebuildSmartCategorySidebar();
+        refreshCategoryOptions();
+        updateStatusCount();
+        m_statusLabel->setText("Database changes saved.");
+    }
 }
 
 void MainWindow::showAbout()
 {
     QMessageBox box(this);
-    box.setWindowTitle("About Eagle Library");
+    box.setWindowTitle(trl("action.about", "About Eagle Library"));
     box.setText(
         "<h2 style='color:#c8aa50;'>Eagle Library</h2>"
-        "<p style='color:#aaa;'>Version 1.0.0</p>"
-        "<p>Copyright &copy; 2024 Eagle Software. All rights reserved.</p>"
+        "<p style='color:#aaa;'>Version 1.1.0</p>"
+        "<p>Copyright &copy; 2026 Eagle Software. All rights reserved.</p>"
         "<p>Professional eBook library manager. Manage thousands of books "
         "across any folder structure, fetch metadata from the internet, "
         "auto-download cover art, and build your personal reading collection.</p>"
@@ -718,123 +3512,988 @@ void MainWindow::updateStatusCount()
     int total = m_model->rowCount();
     int shown = m_filterModel->rowCount();
     if (total == shown)
-        m_statusLabel->setText(QString("%1 books in library").arg(total));
+        m_libraryStatsLabel->setText(trl("status.itemsInLibrary", "%1 items in library").arg(total));
     else
-        m_statusLabel->setText(QString("Showing %1 of %2 books").arg(shown).arg(total));
+        m_libraryStatsLabel->setText(trl("status.showingItems", "Showing %1 of %2 items").arg(shown).arg(total));
+    if (m_sidebarStatsLabel)
+        m_sidebarStatsLabel->setText(trl("status.itemsInLibrary", "%1 items in library").arg(total));
+    updateWorkspaceHeader();
 }
 
 void MainWindow::closeEvent(QCloseEvent* event)
 {
-    m_scanner->cancel();
+    stopAllTasks();
     saveSettings();
     event->accept();
+}
+
+void MainWindow::resizeEvent(QResizeEvent* event)
+{
+    QMainWindow::resizeEvent(event);
+    applyResponsiveLayout();
 }
 
 void MainWindow::loadSettings()
 {
     QSettings s("Eagle Software", "Eagle Library");
-    m_watchFolders = s.value("library/folders").toStringList();
-    m_isGridView   = s.value("view/isGrid", true).toBool();
+    m_libraryProfiles = loadLibraryProfiles(s);
+    m_currentLibraryName = s.value("library/currentName").toString().trimmed();
+    if (m_currentLibraryName.isEmpty() || !m_libraryProfiles.contains(m_currentLibraryName)) {
+        const QStringList keys = m_libraryProfiles.keys();
+        m_currentLibraryName = keys.isEmpty() ? QStringLiteral("Main Library") : keys.first();
+    }
+    m_watchFolders = foldersForLibrary(m_libraryProfiles, m_currentLibraryName);
+    m_showSidebarPreference = s.value("view/showSidebar", true).toBool();
+    m_showSmartCategories = s.value("view/showSmartCategories", false).toBool();
+    m_autoEnrichAfterScan = s.value("options/autoEnrichAfterScan", true).toBool();
+    m_fastScanMode = s.value("options/fastScanMode", true).toBool();
+    m_compactMode = s.value("view/compactMode", false).toBool();
+    m_rememberWindowState = s.value("view/rememberWindowState", true).toBool();
+    m_scanThreads = s.value("options/scanThreads", 0).toInt();
+    m_startViewMode = s.value("view/startMode", "remember").toString();
+    m_isGridView = (m_startViewMode == "grid")
+        ? true
+        : (m_startViewMode == "list" ? false : s.value("view/isGrid", true).toBool());
+    m_activeShelfName = normalizeShelfId(s.value("library/activeShelf", "all").toString());
     if (m_isGridView) setGridView(); else setListView();
-    if (s.contains("window/geometry")) restoreGeometry(s.value("window/geometry").toByteArray());
-    if (s.contains("window/state"))    restoreState(s.value("window/state").toByteArray());
+    if (m_rememberWindowState && s.contains("window/geometry")) restoreGeometry(s.value("window/geometry").toByteArray());
+    if (m_rememberWindowState && s.contains("window/state"))    restoreState(s.value("window/state").toByteArray());
+    refreshLibrarySelector();
+    refreshShelfOptions();
+    applyResponsiveLayout();
+    updateWorkspaceHeader();
 }
 
 void MainWindow::saveSettings()
 {
     QSettings s("Eagle Software", "Eagle Library");
-    s.setValue("view/isGrid",     m_isGridView);
-    s.setValue("window/geometry", saveGeometry());
-    s.setValue("window/state",    saveState());
+    s.setValue("view/isGrid", m_isGridView);
+    s.setValue("library/currentName", m_currentLibraryName);
+    s.setValue("library/activeShelf", m_activeShelfName);
+    s.setValue("library/profiles", QJsonDocument(m_libraryProfiles).toJson(QJsonDocument::Compact));
+    s.setValue("library/folders", m_watchFolders);
+    s.setValue("view/showSidebar", m_showSidebarPreference);
+    s.setValue("view/showSmartCategories", m_showSmartCategories);
+    s.setValue("options/autoEnrichAfterScan", m_autoEnrichAfterScan);
+    s.setValue("options/fastScanMode", m_fastScanMode);
+    s.setValue("view/compactMode", m_compactMode);
+    s.setValue("view/rememberWindowState", m_rememberWindowState);
+    s.setValue("view/startMode", m_startViewMode);
+    s.setValue("options/scanThreads", m_scanThreads);
+    if (m_rememberWindowState) {
+        s.setValue("window/geometry", saveGeometry());
+        s.setValue("window/state", saveState());
+    } else {
+        s.remove("window/geometry");
+        s.remove("window/state");
+    }
 }
 
 QListView* MainWindow::currentView() const { return m_isGridView ? m_gridView : m_listView; }
 
+void MainWindow::updateWorkspaceHeader()
+{
+    if (!m_workspaceTitleLabel || !m_workspaceMetaLabel)
+        return;
+
+    const int total = m_model ? m_model->rowCount() : 0;
+    const int shown = m_filterModel ? m_filterModel->rowCount() : total;
+    const int selected = currentView() && currentView()->selectionModel()
+        ? currentView()->selectionModel()->selectedIndexes().size()
+        : 0;
+
+    m_workspaceTitleLabel->setText(selected > 0
+        ? trl("workspace.itemsSelected", "%1 items selected").arg(selected)
+        : trl("workspace.libraryTitle", "%1 Library").arg(m_currentLibraryName.isEmpty() ? QStringLiteral("Main") : m_currentLibraryName));
+    m_workspaceMetaLabel->setText(
+        trl("workspace.meta", "Showing %1 of %2 items across %3 watched folders in the %4 library.")
+            .arg(shown)
+            .arg(total)
+            .arg(m_watchFolders.size())
+            .arg(m_currentLibraryName));
+
+    const QString viewName = m_isGridView ? trl("view.grid", "Grid") : trl("view.list", "List");
+    const QString density = m_compactMode ? trl("view.compact", "Compact") : trl("view.comfort", "Comfort");
+    m_workspaceLibraryChip->setText(trl("workspace.libraryChip", "Library  %1 | %2 items").arg(m_currentLibraryName, QString::number(total)));
+    m_workspaceViewChip->setText(trl("workspace.viewChip", "View  %1 | %2 | %3").arg(viewName, density, shelfLabel(m_activeShelfName.isEmpty() ? QStringLiteral("all") : m_activeShelfName)));
+    m_workspaceActionChip->setText(selected > 0
+        ? trl("workspace.selectionChip", "Selection  %1 items").arg(selected)
+        : trl("workspace.tipChip", "Tip  Double-click opens the file"));
+
+    const QString contextualHint = selected > 0
+        ? trl("workspace.tipSelection", "Run tools on the current selection, or choose All Books at the next prompt to process the whole library.")
+        : (!m_watchFolders.isEmpty()
+            ? trl("workspace.tipCatalog", "Use search, filters, sorting, and the right-click menu to focus the catalog quickly.")
+            : trl("workspace.tipSettings", "Open Settings and add one or more watched folders before scanning the library."));
+
+    m_workspaceHeader->setToolTip(contextualHint);
+    m_workspaceTitleLabel->setToolTip(contextualHint);
+    m_workspaceMetaLabel->setToolTip(contextualHint);
+    m_workspaceLibraryChip->setToolTip(trl("workspace.tooltip.library", "Current library size and filter coverage"));
+    m_workspaceViewChip->setToolTip(trl("workspace.tooltip.view", "Current presentation mode and density"));
+    m_workspaceActionChip->setToolTip(contextualHint);
+
+    if (selected > 0) {
+        m_workspaceHintLabel->setToolTip(contextualHint);
+    } else if (!m_watchFolders.isEmpty()) {
+        m_workspaceHintLabel->setToolTip(contextualHint);
+    } else {
+        m_workspaceHintLabel->setToolTip(contextualHint);
+    }
+}
+
+void MainWindow::refreshCategoryOptions()
+{
+    if (!m_categoryCombo)
+        return;
+
+    const QString current = m_categoryCombo->currentData().toString().isEmpty()
+        ? m_categoryCombo->currentText()
+        : m_categoryCombo->currentData().toString();
+    QSignalBlocker blocker(m_categoryCombo);
+    m_categoryCombo->clear();
+    m_categoryCombo->addItem(trl("category.all", "All Categories"), QString());
+    m_categoryCombo->addItem(trl("category.book", "Book"), QStringLiteral("Book"));
+    m_categoryCombo->addItem(trl("category.document", "Document"), QStringLiteral("Document"));
+
+    QSet<QString> categorySet;
+    for (const Book& book : currentLibraryBooks()) {
+        for (const QString& tag : book.tags)
+            if (!tag.trimmed().isEmpty())
+                categorySet.insert(tag.trimmed());
+    }
+    QStringList categories(categorySet.begin(), categorySet.end());
+    categories.removeDuplicates();
+    categories.sort(Qt::CaseInsensitive);
+    for (const QString& category : categories) {
+        if (category.compare("Book", Qt::CaseInsensitive) != 0
+            && category.compare("Document", Qt::CaseInsensitive) != 0) {
+            m_categoryCombo->addItem(category, category);
+        }
+    }
+
+    const int idx = m_categoryCombo->findData(current);
+    m_categoryCombo->setCurrentIndex(idx >= 0 ? idx : 0);
+}
+
+void MainWindow::refreshLibrarySelector()
+{
+    if (!m_libraryCombo)
+        return;
+    QSignalBlocker blocker(m_libraryCombo);
+    m_libraryCombo->clear();
+    QStringList names = m_libraryProfiles.keys();
+    names.sort(Qt::CaseInsensitive);
+    for (const QString& name : names)
+        m_libraryCombo->addItem(name);
+    const int idx = m_libraryCombo->findText(m_currentLibraryName);
+    m_libraryCombo->setCurrentIndex(idx >= 0 ? idx : 0);
+}
+
+void MainWindow::refreshShelfOptions()
+{
+    if (!m_shelfCombo)
+        return;
+    const QString current = normalizeShelfId(m_activeShelfName.isEmpty() ? QStringLiteral("all") : m_activeShelfName);
+    QSignalBlocker blocker(m_shelfCombo);
+    m_shelfCombo->clear();
+    const QList<QPair<QString, QString>> shelves = {
+        {trl("shelf.allItems", "All Items"), QStringLiteral("all")},
+        {trl("shelf.booksOnly", "Books Only"), QStringLiteral("books")},
+        {trl("shelf.documentsOnly", "Documents Only"), QStringLiteral("documents")},
+        {trl("shelf.favourites", "Favourites"), QStringLiteral("favourites")},
+        {trl("shelf.recentlyAdded", "Recently Added"), QStringLiteral("recent")},
+        {trl("shelf.mostOpened", "Most Opened"), QStringLiteral("opened")},
+        {trl("shelf.missingMetadata", "Missing Metadata"), QStringLiteral("missing_metadata")},
+        {trl("shelf.noCover", "No Cover"), QStringLiteral("no_cover")}
+    };
+    for (const auto& shelf : shelves)
+        m_shelfCombo->addItem(shelf.first, shelf.second);
+    const int idx = m_shelfCombo->findData(current);
+    m_shelfCombo->setCurrentIndex(idx >= 0 ? idx : 0);
+}
+
+void MainWindow::reloadCurrentLibrary()
+{
+    BookFilter filter;
+    filter.restrictToPathPrefixes = true;
+    filter.pathPrefixes = m_watchFolders;
+    const SortField sortField = m_sortCombo ? static_cast<SortField>(m_sortCombo->currentData().toInt()) : SortField::Title;
+    m_model->reload(filter, sortField, m_sortOrder);
+    refreshCategoryOptions();
+    rebuildSmartCategorySidebar();
+    applyShelf(normalizeShelfId(m_activeShelfName.isEmpty() ? QStringLiteral("all") : m_activeShelfName));
+}
+
+QVector<Book> MainWindow::currentLibraryBooks(SortField sort, SortOrder order) const
+{
+    BookFilter filter;
+    filter.restrictToPathPrefixes = true;
+    filter.pathPrefixes = m_watchFolders;
+    return Database::instance().query(filter, sort, order);
+}
+
+void MainWindow::switchLibrary(const QString& libraryName)
+{
+    const QString trimmed = libraryName.trimmed();
+    if (trimmed.isEmpty() || trimmed == m_currentLibraryName)
+        return;
+
+    m_currentLibraryName = trimmed;
+    m_watchFolders = foldersForLibrary(m_libraryProfiles, m_currentLibraryName);
+    reloadCurrentLibrary();
+    updateStatusCount();
+    m_statusLabel->setText(QString("Active library: %1").arg(m_currentLibraryName));
+}
+
+void MainWindow::applyShelf(const QString& shelfName)
+{
+    m_activeShelfName = normalizeShelfId(shelfName);
+
+    m_filterModel->clearFilters();
+    if (m_searchBox)
+        m_searchBox->clear();
+    if (m_favAction)
+        m_favAction->setChecked(false);
+    if (m_formatCombo)
+        m_formatCombo->setCurrentText("All");
+    if (m_categoryCombo)
+        m_categoryCombo->setCurrentIndex(m_categoryCombo->findData(QString()));
+
+    if (m_activeShelfName == QStringLiteral("books")) {
+        m_filterModel->setFilterCategory("Book");
+        if (m_categoryCombo)
+            m_categoryCombo->setCurrentIndex(m_categoryCombo->findData(QStringLiteral("Book")));
+    } else if (m_activeShelfName == QStringLiteral("documents")) {
+        m_filterModel->setFilterCategory("Document");
+        if (m_categoryCombo)
+            m_categoryCombo->setCurrentIndex(m_categoryCombo->findData(QStringLiteral("Document")));
+    } else if (m_activeShelfName == QStringLiteral("favourites")) {
+        m_filterModel->setFilterFavourites(true);
+        if (m_favAction)
+            m_favAction->setChecked(true);
+    } else if (m_activeShelfName == QStringLiteral("recent")) {
+        m_filterModel->sortBy(SortField::DateAdded, SortOrder::Desc);
+    } else if (m_activeShelfName == QStringLiteral("opened")) {
+        m_filterModel->sortBy(SortField::OpenCount, SortOrder::Desc);
+    } else if (m_activeShelfName == QStringLiteral("missing_metadata")) {
+        m_filterModel->setFilterNoMeta(true);
+    } else if (m_activeShelfName == QStringLiteral("no_cover")) {
+        m_filterModel->setFilterNoCover(true);
+    }
+
+    updateStatusCount();
+}
+
+void MainWindow::showReferenceLookup(const Book& book)
+{
+    ReferenceLookupDialog dlg(book, this);
+    dlg.setStyleSheet(styleSheet());
+    dlg.exec();
+}
+
+void MainWindow::applyResponsiveLayout()
+{
+    const int widthPx = width();
+    const bool narrow = widthPx < 1180;
+    const bool compactWindow = widthPx < 920;
+
+    if (m_sidebarDock) {
+        const bool showSidebarNow = m_showSidebarPreference && !compactWindow;
+        m_sidebarDock->setVisible(showSidebarNow);
+        if (showSidebarNow) {
+            const int dockWidth = narrow ? 184 : (widthPx > 1600 ? 236 : 208);
+            m_sidebarDock->setMinimumWidth(dockWidth);
+            m_sidebarDock->setMaximumWidth(dockWidth + 10);
+        }
+    }
+
+    if (m_searchBox) {
+        m_searchBox->setMinimumWidth(compactWindow ? 150 : (narrow ? 190 : 240));
+        m_searchBox->setMaximumWidth(compactWindow ? 210 : (narrow ? 260 : 360));
+    }
+    if (m_libraryCombo)
+        m_libraryCombo->setMinimumWidth(compactWindow ? 120 : 170);
+    if (m_shelfCombo)
+        m_shelfCombo->setMinimumWidth(compactWindow ? 120 : 160);
+    if (m_formatCombo)
+        m_formatCombo->setMinimumWidth(compactWindow ? 78 : 96);
+    if (m_categoryCombo)
+        m_categoryCombo->setMinimumWidth(compactWindow ? 110 : 140);
+    if (m_sortCombo)
+        m_sortCombo->setMinimumWidth(compactWindow ? 96 : 118);
+    if (m_scanLabel)
+        m_scanLabel->setVisible(!compactWindow);
+    if (m_workspaceHintLabel)
+        m_workspaceHintLabel->setVisible(false);
+
+    const QSettings s("Eagle Software", "Eagle Library");
+    int cardWidth = qBound(120, s.value("options/iconSize", 160).toInt(), 280);
+    if (m_compactMode)
+        cardWidth -= 14;
+    if (compactWindow)
+        cardWidth = qMin(cardWidth, 132);
+    else if (narrow)
+        cardWidth = qMin(cardWidth, 150);
+    else if (widthPx > 1700)
+        cardWidth = qMin(220, cardWidth + 16);
+
+    const int cardHeight = cardWidth + (m_compactMode ? 78 : 94);
+    const int coverHeight = qRound(cardHeight * 0.72);
+    const int listRowHeight = m_compactMode || compactWindow ? 56 : 66;
+    const int padding = m_compactMode ? 7 : 9;
+    const int spacing = m_compactMode ? 8 : 12;
+
+    if (m_gridDelegate)
+        m_gridDelegate->setMetrics(cardWidth, cardHeight, coverHeight, listRowHeight, padding);
+    if (m_listDelegate)
+        m_listDelegate->setMetrics(cardWidth, cardHeight, coverHeight, listRowHeight, padding);
+    if (m_gridView) {
+        m_gridView->setGridSize(QSize(cardWidth + 20, cardHeight + 18));
+        m_gridView->setSpacing(spacing);
+    }
+    if (m_listView)
+        m_listView->setSpacing(m_compactMode ? 4 : 6);
+}
+
+void MainWindow::rebuildSmartCategorySidebar()
+{
+    if (!m_smartCategorySection || !m_smartCategoryButtonsLayout)
+        return;
+
+    refreshCategoryOptions();
+
+    while (QLayoutItem* item = m_smartCategoryButtonsLayout->takeAt(0)) {
+        if (QWidget* widget = item->widget())
+            widget->deleteLater();
+        delete item;
+    }
+
+    m_smartCategorySection->setVisible(m_showSmartCategories);
+    if (!m_showSmartCategories)
+        return;
+
+    QMap<QString, int> tagCounts;
+    const QVector<Book> books = currentLibraryBooks();
+    for (const Book& book : books) {
+        for (const QString& tag : book.tags)
+            tagCounts[tag] += 1;
+    }
+
+    QList<QPair<QString, int>> ranked;
+    for (auto it = tagCounts.cbegin(); it != tagCounts.cend(); ++it) {
+        if (it.value() >= 2)
+            ranked.append({it.key(), it.value()});
+    }
+    std::sort(ranked.begin(), ranked.end(), [](const auto& a, const auto& b) {
+        if (a.second != b.second)
+            return a.second > b.second;
+        return a.first < b.first;
+    });
+
+    const int maxButtons = qMin(8, ranked.size());
+    for (int i = 0; i < maxButtons; ++i) {
+        const QString tag = ranked.at(i).first;
+        auto* btn = new QPushButton(QString("%1 (%2)").arg(tag).arg(ranked.at(i).second), m_smartCategorySection);
+        btn->setObjectName("navBtn");
+        btn->setFlat(true);
+        connect(btn, &QPushButton::clicked, this, [this, tag]() {
+            m_filterModel->clearFilters();
+            m_filterModel->setFilterTag(tag);
+            updateStatusCount();
+        });
+        m_smartCategoryButtonsLayout->addWidget(btn);
+    }
+
+    if (maxButtons == 0) {
+        auto* label = new QLabel("Run Smart Categorize to build category shortcuts.", m_smartCategorySection);
+        label->setObjectName("statsLabel");
+        label->setWordWrap(true);
+        m_smartCategoryButtonsLayout->addWidget(label);
+    }
+}
+
+bool MainWindow::bookNeedsEnrichment(const Book& book) const
+{
+    const bool missingCoreMeta = book.title.trimmed().isEmpty()
+        || book.author.trimmed().isEmpty()
+        || book.publisher.trimmed().isEmpty()
+        || book.year <= 0
+        || book.description.trimmed().isEmpty()
+        || book.language.trimmed().isEmpty();
+    const bool missingDiscovery = book.isbn.trimmed().isEmpty()
+        || (!book.hasCover || book.coverPath.trimmed().isEmpty())
+        || book.tags.isEmpty();
+    return missingCoreMeta || missingDiscovery;
+}
+
+void MainWindow::enrichIncompleteBooks(const QVector<Book>& books, const QString& title)
+{
+    QVector<Book> targets;
+    for (const Book& book : books) {
+        if (bookNeedsEnrichment(book))
+            targets << book;
+    }
+
+    if (targets.isEmpty()) {
+        m_statusLabel->setText("No incomplete books need enrichment.");
+        return;
+    }
+
+    int isbnUpdated = 0;
+    int categorized = 0;
+    int metadataQueued = 0;
+
+    int index = 0;
+    for (Book book : targets) {
+        ++index;
+        showTaskProgress(title,
+                         QString("Checking %1/%2 books").arg(index).arg(targets.size()),
+                         index,
+                         targets.size(),
+                         book.displayTitle());
+
+        bool changed = false;
+        if (book.isbn.trimmed().isEmpty()) {
+            const QString extracted = sanitizeIsbn(extractIsbnFromBookContent(book));
+            if (!extracted.isEmpty() && (isValidIsbn10(extracted) || isValidIsbn13(extracted))) {
+                book.isbn = extracted;
+                ++isbnUpdated;
+                changed = true;
+            }
+        }
+
+        if (book.tags.isEmpty()) {
+            const QStringList inferredTags = inferSmartTags(book);
+            if (!inferredTags.isEmpty()) {
+                book.tags = uniqueCaseInsensitive(book.tags + inferredTags);
+                if (book.subjects.isEmpty())
+                    book.subjects = book.tags.mid(0, qMin(3, book.tags.size()));
+                ++categorized;
+                changed = true;
+            }
+        }
+
+        if (changed) {
+            Database::instance().updateBook(book);
+            m_model->updateBook(book);
+        }
+
+        if (book.title.trimmed().isEmpty() || book.author.trimmed().isEmpty() || book.publisher.trimmed().isEmpty()
+            || book.year <= 0 || book.description.trimmed().isEmpty() || book.language.trimmed().isEmpty()
+            || !book.hasCover || book.coverPath.trimmed().isEmpty()) {
+            scheduleMetadataFetch(book, true);
+            ++metadataQueued;
+        }
+    }
+
+    rebuildSmartCategorySidebar();
+    hideTaskProgress(QString("%1 complete. ISBN updated: %2, categorized: %3, metadata queued: %4.")
+                         .arg(title)
+                         .arg(isbnUpdated)
+                         .arg(categorized)
+                         .arg(metadataQueued));
+}
+
 void MainWindow::applyStyles()
 {
     qApp->setStyle("Fusion");
+    // Theme is applied by ThemeManager::applyTheme(); do not set a global QSS here
+    // so the QSS theme files in resources/themes/ take full effect.
+    // Legacy inline styles kept ONLY as fallback during first launch before theme loads.
+    if (!qApp->styleSheet().isEmpty())
+        return; // theme already applied
     setStyleSheet(R"(
 QMainWindow, QWidget {
-    background-color: #0c1530;
-    color: #d8d0b8;
-    font-family: "Segoe UI", Arial, sans-serif;
+    background-color: #09111f;
+    color: #e7dcc0;
     font-size: 12px;
 }
 QMenuBar {
-    background: #080f22;
-    color: #b0a880;
-    border-bottom: 1px solid #1e2f60;
-    padding: 2px 4px;
+    background: qlineargradient(x1:0,y1:0,x2:1,y2:0, stop:0 #050c17, stop:0.35 #0b1524, stop:1 #09111f);
+    color: #d7c48d;
+    border-bottom: 1px solid #264e74;
+    padding: 5px 8px;
 }
-QMenuBar::item:selected { background: #1a2f70; color: #e8d890; border-radius: 4px; }
-QMenu { background: #0f1e48; color: #d8d0b8; border: 1px solid #2a3a70; }
-QMenu::item:selected { background: #2040a0; color: #fff; }
-QMenu::separator { background: #2a3a70; height: 1px; margin: 2px 0; }
+QMenuBar::item {
+    padding: 7px 12px;
+    border-radius: 7px;
+    margin: 1px 2px;
+    background: transparent;
+}
+QMenuBar::item:selected { background: rgba(37, 85, 127, 0.78); color: #fff0ba; }
+QMenu { background: #0d1b2d; color: #e7dcc0; border: 1px solid #29527b; padding: 6px; }
+QMenu::item { padding: 8px 16px; border-radius: 6px; }
+QMenu::item:selected { background: #20486f; color: #fff7db; }
+QMenu::separator { background: #244565; height: 1px; margin: 6px 0; }
 QToolBar#mainToolBar {
-    background: qlineargradient(x1:0,y1:0,x2:0,y2:1, stop:0 #111e48, stop:1 #0c1535);
-    border-bottom: 1px solid #1e2f60;
-    padding: 3px 6px;
-    spacing: 4px;
+    background: qlineargradient(x1:0,y1:0,x2:1,y2:0, stop:0 #14304c, stop:0.38 #10233b, stop:0.72 #0f1d31, stop:1 #1b3d5d);
+    border-top: 1px solid rgba(255, 239, 183, 0.08);
+    border-bottom: 1px solid #2c5e87;
+    padding: 10px 12px;
+    spacing: 9px;
+}
+QWidget#toolbarBrand {
+    background: rgba(5, 12, 23, 0.34);
+    border: 1px solid rgba(120, 178, 225, 0.22);
+    border-radius: 12px;
+}
+QLabel#toolbarBrandText {
+    color: #fff1bf;
+    font-weight: 800;
+    letter-spacing: 0.6px;
+}
+QWidget#workspaceHeader {
+    background: qlineargradient(x1:0,y1:0,x2:1,y2:1, stop:0 #183854, stop:0.28 #11263e, stop:0.72 #102138, stop:1 #1a4567);
+    border-bottom: 1px solid #2b5d85;
+}
+QLabel#workspaceTitle {
+    color: #fff2c7;
+    font-size: 23px;
+    font-weight: 800;
+    letter-spacing: 0.5px;
+}
+QLabel#workspaceMeta {
+    color: #b6cbe0;
+    font-size: 12px;
+}
+QLabel#workspaceHint {
+    color: #d7c690;
+    background: rgba(7, 16, 29, 0.26);
+    border: 1px solid rgba(240, 216, 142, 0.16);
+    border-radius: 12px;
+    padding: 10px 12px;
+}
+QLabel#workspaceChip {
+    color: #f7e7b0;
+    background: rgba(8, 18, 31, 0.34);
+    border: 1px solid rgba(90, 136, 182, 0.35);
+    border-radius: 10px;
+    padding: 6px 10px;
+    font-size: 11px;
+    font-weight: 600;
 }
 QToolBar QToolButton {
-    color: #b0a870; background: transparent;
-    border: 1px solid transparent; border-radius: 6px;
-    padding: 4px 10px; font-size: 12px;
+    color: #ecd69b;
+    background: rgba(255,255,255,0.03);
+    border: 1px solid rgba(255,255,255,0.05);
+    border-radius: 10px;
+    padding: 8px 13px;
+    font-size: 12px;
+    font-weight: 700;
 }
-QToolBar QToolButton:hover { background: #1a3070; border-color: #2a4090; color: #e8d890; }
-QToolBar QToolButton:checked { background: #2040a0; border-color: #3050c0; color: #fff; }
-QToolBar::separator { background: #1e2f60; width: 1px; margin: 4px 4px; }
-QToolBar QLabel { color: #8898c0; padding: 0 2px; }
+QToolBar QToolButton:hover { background: rgba(32, 76, 115, 0.95); border-color: #5e97c7; color: #fff2be; }
+QToolBar QToolButton:pressed { background: #13304a; }
+QToolBar QToolButton:checked { background: #25557f; border-color: #78b2e1; color: #fff8e3; }
+QToolBar::separator { background: #22415f; width: 1px; margin: 6px 6px; }
+QToolBar QLabel { color: #7f9cbc; padding: 0 4px; font-weight: 600; }
 QLineEdit {
-    background: #131e48; border: 1px solid #2e3f70;
-    border-radius: 6px; color: #ddd8c8; padding: 5px 10px;
+    background: #122134;
+    border: 1px solid #2b5379;
+    border-radius: 8px;
+    color: #f1e5ca;
+    padding: 7px 12px;
+    selection-background-color: #315d88;
 }
-QLineEdit:focus { border-color: #b49a46; }
+QLineEdit:focus { border-color: #d1a84f; background: #15263d; }
 QComboBox {
-    background: #131e48; border: 1px solid #2e3f70;
-    border-radius: 6px; color: #ddd8c8; padding: 4px 8px;
+    background: #122134;
+    border: 1px solid #2b5379;
+    border-radius: 8px;
+    color: #f1e5ca;
+    padding: 6px 10px;
 }
 QComboBox::drop-down { border: none; }
 QComboBox QAbstractItemView {
-    background: #0f1e48; border: 1px solid #2a3a70;
-    color: #ddd8c8; selection-background-color: #2040a0;
+    background: #0d1b2d;
+    border: 1px solid #234468;
+    color: #f1e5ca;
+    selection-background-color: #244d75;
 }
-QDockWidget { color: #8898c0; font-weight: bold; font-size: 11px; }
-QDockWidget::title { background: #0a1228; border-bottom: 1px solid #1e2f60; padding: 4px 8px; }
-QDockWidget > QWidget { background: #0a1228; }
+QDockWidget { color: #8fa7c2; font-weight: bold; font-size: 11px; }
+QDockWidget::title { background: #0a1524; border-bottom: 1px solid #1f3c58; padding: 8px 10px; }
+QDockWidget > QWidget { background: qlineargradient(x1:0,y1:0,x2:0,y2:1, stop:0 #0b1625, stop:1 #08111d); }
 QPushButton#navBtn {
-    background: transparent; color: #8898c0;
-    border: none; border-radius: 5px;
-    text-align: left; padding: 6px 12px; font-size: 12px;
+    background: transparent;
+    color: #94a9c2;
+    border: 1px solid transparent;
+    border-radius: 9px;
+    text-align: left;
+    padding: 9px 12px;
+    font-size: 12px;
+    font-weight: 600;
 }
-QPushButton#navBtn:hover { background: #1a2a60; color: #c8aa50; }
-QLabel#sideHeader { color: #5060a0; font-size: 9px; font-weight: bold; padding: 8px 12px 2px 12px; }
-QLabel#statsLabel { color: #5060a0; font-size: 10px; padding: 8px; border-top: 1px solid #1a2a50; }
-QListView { background: #0e1838; border: none; outline: none; }
+QPushButton#navBtn:hover { background: #14304b; border-color: #234c70; color: #f0d88e; }
+QLabel#sideHeader { color: #59779a; font-size: 10px; font-weight: bold; padding: 12px 12px 4px 12px; letter-spacing: 1px; }
+QLabel#statsLabel { color: #6683a2; font-size: 10px; padding: 12px 10px; border-top: 1px solid #1b3650; }
+QListView {
+    background: qlineargradient(x1:0,y1:0,x2:1,y2:1, stop:0 #0b1627, stop:1 #0f1d31);
+    border: none;
+    outline: none;
+    padding: 10px;
+}
 QListView::item:selected { background: transparent; outline: none; }
-QScrollBar:vertical { background: #0a1225; width: 8px; border-radius: 4px; }
-QScrollBar::handle:vertical { background: #2a3a70; border-radius: 4px; min-height: 30px; }
-QScrollBar::handle:vertical:hover { background: #3a50a0; }
+QScrollBar:vertical { background: #08111d; width: 10px; border-radius: 5px; margin: 4px; }
+QScrollBar::handle:vertical { background: #285378; border-radius: 5px; min-height: 36px; }
+QScrollBar::handle:vertical:hover { background: #356d9b; }
 QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }
-QScrollBar:horizontal { background: #0a1225; height: 8px; border-radius: 4px; }
-QScrollBar::handle:horizontal { background: #2a3a70; border-radius: 4px; }
+QScrollBar:horizontal { background: #08111d; height: 10px; border-radius: 5px; margin: 4px; }
+QScrollBar::handle:horizontal { background: #285378; border-radius: 5px; }
 QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal { width: 0; }
-QStatusBar { background: #080f22; color: #6878a0; border-top: 1px solid #1a2a50; font-size: 11px; }
-QProgressBar {
-    background: #1a2548; border: 1px solid #2a3a70;
-    border-radius: 4px; color: transparent; height: 14px;
+QStatusBar {
+    background: qlineargradient(x1:0,y1:0,x2:1,y2:0, stop:0 #07101d, stop:1 #0c1828);
+    color: #8ea7c1;
+    border-top: 1px solid #244866;
+    font-size: 11px;
 }
-QProgressBar::chunk {
-    background: qlineargradient(x1:0,y1:0,x2:1,y2:0, stop:0 #2040a0, stop:1 #c8a030);
-    border-radius: 4px;
+QStatusBar::item { border: none; }
+QLabel#statusPrimary {
+    color: #f4e7bf;
+    font-weight: 700;
+    padding: 0 8px;
 }
-QMessageBox { background: #0f1a38; color: #d8d0b8; }
-QMessageBox QLabel { color: #d8d0b8; }
+QLabel#statusSecondary {
+    color: #7fa0c0;
+    padding: 0 8px;
+}
+QLabel#statusPill {
+    color: #e9d69b;
+    background: rgba(29, 57, 85, 0.66);
+    border: 1px solid rgba(120, 178, 225, 0.24);
+    border-radius: 9px;
+    padding: 4px 10px;
+    font-weight: 700;
+}
+QProgressBar#statusProgress {
+    background: #122134;
+    border: 1px solid #2b5379;
+    border-radius: 6px;
+    color: #f7ecce;
+    height: 16px;
+    padding: 0 2px;
+}
+QProgressBar#statusProgress::chunk {
+    background: qlineargradient(x1:0,y1:0,x2:1,y2:0, stop:0 #2c5f92, stop:0.55 #3e83b8, stop:1 #d2a449);
+    border-radius: 5px;
+}
+QToolTip {
+    background: #10233b;
+    color: #f5e8c3;
+    border: 1px solid #4b83b3;
+    padding: 6px 8px;
+}
+QMessageBox { background: #0e1b2c; color: #e7dcc0; }
+QMessageBox QLabel { color: #e7dcc0; }
 QPushButton {
-    background-color: #1f3070; color: #c8aa50;
-    border: 1px solid #2e4090; border-radius: 6px; padding: 6px 16px;
+    background-color: #1b4062;
+    color: #ecd48d;
+    border: 1px solid #2f628d;
+    border-radius: 8px;
+    padding: 8px 16px;
+    font-weight: 600;
 }
-QPushButton:hover { background-color: #283d8a; }
-QPushButton:pressed { background-color: #162060; }
+QPushButton:hover { background-color: #25557f; }
+QPushButton:pressed { background-color: #16364f; }
     )");
+}
+
+// ── Command Palette setup ─────────────────────────────────────
+void MainWindow::setupCommandPalette()
+{
+    m_commandPalette = new CommandPalette(this);
+
+    // Register all application commands
+    const QList<Command> cmds = {
+        { "scan",         "Scan Folders",              "Scan watched folders for new files", "F5",       "Library",  [this]{ onScanStart(); } },
+        { "refresh",      "Refresh View",              "Reload the current view",            "",         "Library",  [this]{ refreshLibrary(); } },
+        { "fetch_meta",   "Fetch All Metadata",        "Download metadata for all books",    "",         "Library",  [this]{ fetchAllMetadata(); } },
+        { "enrich",       "Enrich Incomplete Books",   "Fill in missing metadata",           "",         "Library",  [this]{ enrichIncompleteBooksAction(); } },
+        { "find_dupes",   "Find Duplicates",           "Detect duplicate files by hash",     "",         "Library",  [this]{ findDuplicates(); } },
+        { "quality",      "Quality Check",             "Scan for encoding and meta issues",  "",         "Library",  [this]{ runQualityCheck(); } },
+        { "smart_cat",    "Smart Categorize",          "Auto-classify books vs documents",   "",         "Library",  [this]{ smartCategorizeLibrary(); } },
+        { "smart_rename", "Smart Rename All",          "Auto-rename from filename patterns", "Ctrl+R",   "Library",  [this]{ onSmartRenameAll(); } },
+        { "collections",  "Manage Collections",        "Create virtual book collections",    "",         "Library",  [this]{ manageCollections(); } },
+        { "google",       "Search on Google",          "Search selected book on Google",     "Ctrl+Shift+G", "Research", [this]{ searchSelectedOnGoogle(); } },
+        { "goodreads",    "Look up on Goodreads",      "Open Goodreads for selected book",   "",         "Research", [this]{ lookupSelectedOnGoodreads(); } },
+        { "adv_search",   "Advanced Search",           "Multi-field search dialog",          "Ctrl+Shift+F", "Search", [this]{ openAdvancedSearch(); } },
+        { "save_search",  "Save Current Search",       "Save search query for quick access", "",         "Search",   [this]{ saveCurrentSearch(); } },
+        { "grid_view",    "Grid View",                 "Show books as cover cards",          "Ctrl+G",   "View",     [this]{ setGridView(); } },
+        { "list_view",    "List View",                 "Show books as compact list",         "Ctrl+L",   "View",     [this]{ setListView(); } },
+        { "theme_blue",   "Theme: Blue Pro",           "Apply dark navy theme",              "",         "Appearance", [this]{ switchTheme("Blue Pro"); } },
+        { "theme_white",  "Theme: Pure White",         "Apply light theme",                  "",         "Appearance", [this]{ switchTheme("Pure White"); } },
+        { "theme_mac",    "Theme: macOS Style",        "Apply macOS-inspired theme",         "",         "Appearance", [this]{ switchTheme("macOS"); } },
+        { "settings",     "Preferences",               "Open application preferences",       "Ctrl+,",   "App",      [this]{ openSettings(); } },
+        { "plugins",      "Manage Plugins",            "View and manage installed plugins",  "",         "App",      [this]{ openPluginManager(); } },
+        { "export",       "Export Library",            "Export library metadata snapshot",   "",         "App",      [this]{ exportLibrarySnapshot(); } },
+        { "import",       "Import Library",            "Import library metadata snapshot",   "",         "App",      [this]{ importLibrarySnapshot(); } },
+        { "db_summary",   "Database Summary",          "View database statistics",           "",         "Database", [this]{ consultDatabaseSummary(); } },
+        { "db_optimize",  "Optimize Database",         "Run SQLite ANALYZE and optimize",    "",         "Database", [this]{ Database::instance().optimize(); m_statusLabel->setText("Optimization complete."); } },
+        { "stop_tasks",   "Stop All Tasks",            "Cancel all running tasks",           "Ctrl+.",   "App",      [this]{ stopAllTasks(); } },
+        { "about",        "About Eagle Library",       "Show version and credits",           "",         "Help",     [this]{ showAbout(); } },
+        { "open_book",    "Open Selected Book",        "Open the selected book file",        "Return",   "Library",  [this]{ openBookFile(); } },
+        { "book_detail",  "Edit Book Details",         "Open metadata editor for selection", "E",        "Library",  [this]{ openBookDetail(); } },
+        { "toggle_fav",   "Toggle Favourite",          "Mark/unmark selected as favourite",  "F",        "Library",  [this]{
+            QListView* view = currentView();
+            if (!view || !view->selectionModel()) return;
+            const auto sel = view->selectionModel()->selectedIndexes();
+            if (sel.isEmpty()) return;
+            const QModelIndex src = m_filterModel->mapToSource(sel.first());
+            if (!src.isValid()) return;
+            Book b = m_model->bookAt(src.row());
+            b.isFavourite = !b.isFavourite;
+            Database::instance().setFavourite(b.id, b.isFavourite);
+            m_model->updateBook(b);
+        }},
+    };
+
+    m_commandPalette->registerCommands(cmds);
+}
+
+// ── Theme ─────────────────────────────────────────────────────
+void MainWindow::switchTheme(const QString& name)
+{
+    ThemeManager::instance().applyTheme(name);
+    if (m_themeBlueAct)  m_themeBlueAct->setChecked(name == "Blue Pro");
+    if (m_themeWhiteAct) m_themeWhiteAct->setChecked(name == "Pure White");
+    if (m_themeMacAct)   m_themeMacAct->setChecked(name == "macOS");
+    m_statusLabel->setText("Theme: " + name);
+}
+
+// ── Command Palette ───────────────────────────────────────────
+void MainWindow::openCommandPalette()
+{
+    if (m_commandPalette)
+        m_commandPalette->popup();
+}
+
+// ── Web Research ──────────────────────────────────────────────
+static Book selectedBookFromView(QListView* view, BookFilterModel* filterModel, BookModel* model)
+{
+    if (!view || !view->selectionModel()) return {};
+    const auto sel = view->selectionModel()->selectedIndexes();
+    if (sel.isEmpty()) return {};
+    const QModelIndex src = filterModel->mapToSource(sel.first());
+    if (!src.isValid()) return {};
+    return model->bookAt(src.row());
+}
+
+void MainWindow::searchSelectedOnGoogle()
+{
+    searchSelectedOnWeb("google");
+}
+
+void MainWindow::searchSelectedOnWeb(const QString& engine)
+{
+    const Book b = selectedBookFromView(currentView(), m_filterModel, m_model);
+    if (b.id == 0) {
+        m_statusLabel->setText("Select a book first.");
+        return;
+    }
+
+    QString query;
+    if (!b.isbn.isEmpty())
+        query = b.isbn;
+    else if (!b.title.isEmpty() && !b.author.isEmpty())
+        query = b.displayTitle() + " " + b.author;
+    else
+        query = b.displayTitle();
+
+    query = QUrl::toPercentEncoding(query);
+
+    QUrl url;
+    if (engine == "goodreads")
+        url = QUrl("https://www.goodreads.com/search?q=" + query);
+    else
+        url = QUrl("https://www.google.com/search?q=" + query + "+book");
+
+    QDesktopServices::openUrl(url);
+    m_statusLabel->setText("Opening browser for: " + b.displayTitle());
+}
+
+void MainWindow::lookupSelectedOnGoodreads()
+{
+    searchSelectedOnWeb("goodreads");
+}
+
+// ── Collections ───────────────────────────────────────────────
+void MainWindow::manageCollections()
+{
+    auto* dlg = new QDialog(this);
+    dlg->setWindowTitle("Manage Collections");
+    dlg->setMinimumWidth(480);
+    dlg->setMinimumHeight(360);
+
+    auto* layout = new QVBoxLayout(dlg);
+
+    auto* header = new QLabel("Virtual Collections let you group books across any folders or formats.");
+    header->setWordWrap(true);
+    layout->addWidget(header);
+
+    auto* table = new QTableWidget(dlg);
+    table->setColumnCount(3);
+    table->setHorizontalHeaderLabels({"Name", "Color", "Books"});
+    table->horizontalHeader()->setStretchLastSection(false);
+    table->horizontalHeader()->setSectionResizeMode(0, QHeaderView::Stretch);
+    table->setSelectionBehavior(QAbstractItemView::SelectRows);
+    table->setEditTriggers(QAbstractItemView::NoEditTriggers);
+    table->setAlternatingRowColors(true);
+    layout->addWidget(table);
+
+    const auto loadCollections = [&]() {
+        table->setRowCount(0);
+        const auto collections = Database::instance().allCollections();
+        table->setRowCount(collections.size());
+        for (int i = 0; i < collections.size(); ++i) {
+            table->setItem(i, 0, new QTableWidgetItem(collections[i].name));
+            auto* colorItem = new QTableWidgetItem(collections[i].color);
+            colorItem->setBackground(QColor(collections[i].color));
+            table->setItem(i, 1, colorItem);
+            table->setItem(i, 2, new QTableWidgetItem(QString::number(collections[i].bookCount)));
+        }
+    };
+    loadCollections();
+
+    auto* btnBar = new QHBoxLayout;
+    auto* addBtn = new QPushButton("+ New Collection");
+    auto* deleteBtn = new QPushButton("Delete Selected");
+    auto* closeBtn = new QPushButton("Close");
+    closeBtn->setProperty("primary", true);
+    btnBar->addWidget(addBtn);
+    btnBar->addWidget(deleteBtn);
+    btnBar->addStretch();
+    btnBar->addWidget(closeBtn);
+    layout->addLayout(btnBar);
+
+    connect(addBtn, &QPushButton::clicked, dlg, [&loadCollections, dlg, this]() {
+        bool ok = false;
+        const QString name = QInputDialog::getText(dlg, "New Collection", "Collection name:", QLineEdit::Normal, {}, &ok);
+        if (ok && !name.trimmed().isEmpty()) {
+            Database::instance().createCollection(name.trimmed());
+            loadCollections();
+            refreshCategoryOptions();
+        }
+    });
+
+    connect(deleteBtn, &QPushButton::clicked, dlg, [&, this]() {
+        const int row = table->currentRow();
+        if (row < 0) return;
+        const auto collections = Database::instance().allCollections();
+        if (row >= collections.size()) return;
+        if (QMessageBox::question(dlg, "Delete Collection",
+                                  "Delete collection \"" + collections[row].name + "\"?\n"
+                                  "Books will not be deleted.",
+                                  QMessageBox::Yes | QMessageBox::Cancel) != QMessageBox::Yes)
+            return;
+        Database::instance().deleteCollection(collections[row].id);
+        loadCollections();
+        refreshCategoryOptions();
+    });
+
+    connect(closeBtn, &QPushButton::clicked, dlg, &QDialog::accept);
+    dlg->exec();
+    dlg->deleteLater();
+}
+
+void MainWindow::createCollection()
+{
+    bool ok = false;
+    const QString name = QInputDialog::getText(this, "New Collection", "Collection name:", QLineEdit::Normal, {}, &ok);
+    if (ok && !name.trimmed().isEmpty()) {
+        Database::instance().createCollection(name.trimmed());
+        refreshCategoryOptions();
+        m_statusLabel->setText("Collection created: " + name);
+    }
+}
+
+// ── Plugin Manager ────────────────────────────────────────────
+void MainWindow::openPluginManager()
+{
+    auto* dlg = new QDialog(this);
+    dlg->setWindowTitle("Plugin Manager");
+    dlg->setMinimumWidth(560);
+    dlg->setMinimumHeight(400);
+
+    auto* layout = new QVBoxLayout(dlg);
+
+    auto* intro = new QLabel(
+        "<b>Eagle Library Plugin System</b><br>"
+        "Place plugin folders containing <code>plugin.json</code> in the plugins directory. "
+        "Each plugin can add panels, toolbar buttons, and context menu actions.");
+    intro->setWordWrap(true);
+    intro->setTextFormat(Qt::RichText);
+    layout->addWidget(intro);
+
+    auto* table = new QTableWidget(dlg);
+    table->setColumnCount(4);
+    table->setHorizontalHeaderLabels({"Name", "Version", "Author", "Status"});
+    table->horizontalHeader()->setSectionResizeMode(0, QHeaderView::Stretch);
+    table->setSelectionBehavior(QAbstractItemView::SelectRows);
+    table->setEditTriggers(QAbstractItemView::NoEditTriggers);
+    table->setAlternatingRowColors(true);
+
+    const auto plugins = PluginManager::instance().loadedPlugins();
+    table->setRowCount(plugins.size());
+    for (int i = 0; i < plugins.size(); ++i) {
+        const LoadedPlugin& lp = plugins[i];
+        table->setItem(i, 0, new QTableWidgetItem(lp.info.name));
+        table->setItem(i, 1, new QTableWidgetItem(lp.info.version));
+        table->setItem(i, 2, new QTableWidgetItem(lp.info.author));
+        table->setItem(i, 3, new QTableWidgetItem(lp.active ? "Active" : "Registered"));
+    }
+    layout->addWidget(table);
+
+    auto* btnBar = new QHBoxLayout;
+    auto* openFolderBtn = new QPushButton("Open Plugins Folder");
+    auto* reloadBtn = new QPushButton("Reload Plugins");
+    auto* closeBtn = new QPushButton("Close");
+    closeBtn->setProperty("primary", true);
+    btnBar->addWidget(openFolderBtn);
+    btnBar->addWidget(reloadBtn);
+    btnBar->addStretch();
+    btnBar->addWidget(closeBtn);
+    layout->addLayout(btnBar);
+
+    connect(openFolderBtn, &QPushButton::clicked, dlg, [this]() {
+        const QString dir = AppConfig::pluginsDir();
+        QDir().mkpath(dir);
+        QDesktopServices::openUrl(QUrl::fromLocalFile(dir));
+    });
+
+    connect(reloadBtn, &QPushButton::clicked, dlg, [this, dlg]() {
+        PluginManager::instance().unloadAll();
+        PluginManager::instance().loadAll(AppConfig::pluginsDir());
+        m_statusLabel->setText("Plugins reloaded.");
+        dlg->accept();
+        openPluginManager();
+    });
+
+    connect(closeBtn, &QPushButton::clicked, dlg, &QDialog::accept);
+    dlg->exec();
+    dlg->deleteLater();
+}
+
+// ── Saved searches ────────────────────────────────────────────
+void MainWindow::saveCurrentSearch()
+{
+    const QString query = m_searchBox ? m_searchBox->text().trimmed() : QString();
+    if (query.isEmpty()) {
+        m_statusLabel->setText("Enter a search query first.");
+        return;
+    }
+    bool ok = false;
+    const QString name = QInputDialog::getText(this, "Save Search", "Name for this search:", QLineEdit::Normal, query, &ok);
+    if (ok && !name.trimmed().isEmpty()) {
+        Database::instance().saveSearch(name.trimmed(), query);
+        m_statusLabel->setText("Search saved: " + name);
+    }
+}
+
+void MainWindow::loadSavedSearch(int /*id*/)
+{
+    // Placeholder — would apply saved BookFilter from DB
+}
+
+void MainWindow::openAdvancedSearchDialog()
+{
+    openAdvancedSearch(); // forward to existing implementation
 }

@@ -1,7 +1,7 @@
 #pragma once
 // ============================================================
 //  Eagle Library — BookDetailDialog.h
-//  Copyright (c) 2024 Eagle Software. All rights reserved.
+//  Copyright (c) 2026 Eagle Software. All rights reserved.
 // ============================================================
 #include "Book.h"
 #include <QDialog>
@@ -32,10 +32,15 @@ private:
     QDoubleSpinBox* m_ratingSpin;
     QLineEdit*   m_langEdit;
     QLineEdit*   m_tagsEdit;
+    QLineEdit*   m_seriesEdit;
+    QSpinBox*    m_seriesIndexSpin;
+    QLineEdit*   m_editionEdit;
     QTextEdit*   m_descEdit;
     QTextEdit*   m_notesEdit;
     QPushButton* m_openBtn;
     QPushButton* m_fetchBtn;
+    QPushButton* m_googleBtn;
+    QPushButton* m_goodreadsBtn;
 
     void setupUi();
     void applyStyles();

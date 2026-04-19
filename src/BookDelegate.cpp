@@ -1,6 +1,6 @@
 // ============================================================
 //  Eagle Library — BookDelegate.cpp
-//  Copyright (c) 2024 Eagle Software. All rights reserved.
+//  Copyright (c) 2026 Eagle Software. All rights reserved.
 // ============================================================
 
 #include "BookDelegate.h"
@@ -10,8 +10,10 @@
 #include <QStyleOptionViewItem>
 #include <QModelIndex>
 #include <QFileInfo>
+#include <QImageReader>
 #include <QLinearGradient>
 #include <QFontMetrics>
+#include <QApplication>
 
 static const QHash<QString, QColor> FORMAT_COLORS = {
     {"PDF",  QColor(220,  60,  60)},
@@ -26,13 +28,32 @@ static const QHash<QString, QColor> FORMAT_COLORS = {
     {"FB2",  QColor(200, 100, 100)},
 };
 
+QFont BookDelegate::uiFont(int pointSize, QFont::Weight weight) const
+{
+    QFont font = QApplication::font();
+    font.setPointSize(pointSize);
+    font.setWeight(weight);
+    font.setStyleStrategy(QFont::PreferAntialias);
+    return font;
+}
+
 BookDelegate::BookDelegate(QObject* parent)
     : QStyledItemDelegate(parent) {}
 
+void BookDelegate::setMetrics(int cardWidth, int cardHeight, int coverHeight, int listRowHeight, int padding)
+{
+    m_cardWidth = qMax(120, cardWidth);
+    m_cardHeight = qMax(m_cardWidth + 40, cardHeight);
+    m_coverHeight = qBound(100, coverHeight, m_cardHeight - 40);
+    m_listRowHeight = qMax(52, listRowHeight);
+    m_padding = qMax(6, padding);
+    m_coverCache.clear();
+}
+
 QSize BookDelegate::sizeHint(const QStyleOptionViewItem&, const QModelIndex&) const
 {
-    if (m_gridMode) return {CARD_W + 12, CARD_H + 12};
-    return {0, 62}; // list row height
+    if (m_gridMode) return {m_cardWidth + 12, m_cardHeight + 12};
+    return {0, m_listRowHeight};
 }
 
 void BookDelegate::paint(QPainter* painter, const QStyleOptionViewItem& option,
@@ -61,11 +82,15 @@ void BookDelegate::paintGrid(QPainter* p, const QStyleOptionViewItem& opt,
     // ── Card background ──────────────────────────────────────
     bool selected = opt.state & QStyle::State_Selected;
     bool hovered  = opt.state & QStyle::State_MouseOver;
+    const bool isDocument = idx.data(CategoryRole).toString().compare("Document", Qt::CaseInsensitive) == 0;
 
     QLinearGradient cardGrad(r.topLeft(), r.bottomLeft());
     if (selected) {
         cardGrad.setColorAt(0, QColor(30, 55, 120));
         cardGrad.setColorAt(1, QColor(20, 40,  90));
+    } else if (isDocument) {
+        cardGrad.setColorAt(0, QColor(82, 44, 36));
+        cardGrad.setColorAt(1, QColor(58, 30, 25));
     } else if (hovered) {
         cardGrad.setColorAt(0, QColor(40, 55,  90));
         cardGrad.setColorAt(1, QColor(25, 38,  70));
@@ -74,11 +99,11 @@ void BookDelegate::paintGrid(QPainter* p, const QStyleOptionViewItem& opt,
         cardGrad.setColorAt(1, QColor(18, 26,  50));
     }
     p->setBrush(cardGrad);
-    p->setPen(QPen(QColor(255, 255, 255, selected ? 60 : 20), 1));
+    p->setPen(QPen(isDocument ? QColor(255, 189, 146, 70) : QColor(255, 255, 255, selected ? 60 : 20), 1));
     p->drawRoundedRect(r, 10, 10);
 
     // ── Cover image ──────────────────────────────────────────
-    QRect coverRect(r.left() + 6, r.top() + 6, r.width() - 12, COVER_H);
+    QRect coverRect(r.left() + 6, r.top() + 6, r.width() - 12, m_coverHeight);
     QString coverPath = idx.data(CoverPathRole).toString();
     QPixmap cover = loadCover(coverPath, coverRect.size());
     if (!cover.isNull()) {
@@ -106,23 +131,32 @@ void BookDelegate::paintGrid(QPainter* p, const QStyleOptionViewItem& opt,
     // ── Format badge ─────────────────────────────────────────
     QString format = idx.data(FormatRole).toString();
     drawFormatBadge(p, coverRect, format);
+    if (isDocument) {
+        QRect badge(coverRect.left() + 6, coverRect.bottom() - 24, 70, 18);
+        p->setBrush(QColor(185, 95, 62, 220));
+        p->setPen(Qt::NoPen);
+        p->drawRoundedRect(badge, 5, 5);
+        p->setPen(QColor(255, 244, 232));
+        p->setFont(uiFont(6, QFont::Bold));
+        p->drawText(badge, Qt::AlignCenter, "DOCUMENT");
+    }
 
     // ── Favourite star ───────────────────────────────────────
     drawFavStar(p, coverRect, idx.data(IsFavouriteRole).toBool());
 
     // ── Title ────────────────────────────────────────────────
-    QRect textRect(r.left() + PADDING, r.top() + COVER_H + 10,
-                   r.width() - PADDING * 2, 30);
-    QFont titleFont("Segoe UI", 8, QFont::Bold);
+    QRect textRect(r.left() + m_padding, r.top() + m_coverHeight + 10,
+                   r.width() - m_padding * 2, 32);
+    QFont titleFont = uiFont(8, QFont::Bold);
     p->setFont(titleFont);
     p->setPen(QColor(240, 235, 220));
     p->drawText(textRect, Qt::AlignLeft | Qt::AlignTop | Qt::TextWordWrap,
                 idx.data(TitleRole).toString());
 
     // ── Author ───────────────────────────────────────────────
-    QRect authorRect(r.left() + PADDING, r.top() + COVER_H + 40,
-                     r.width() - PADDING * 2, 16);
-    QFont authorFont("Segoe UI", 7);
+    QRect authorRect(r.left() + m_padding, r.top() + m_coverHeight + 42,
+                     r.width() - m_padding * 2, 18);
+    QFont authorFont = uiFont(7);
     p->setFont(authorFont);
     p->setPen(QColor(180, 155, 90));
     QString author = idx.data(AuthorRole).toString();
@@ -131,8 +165,8 @@ void BookDelegate::paintGrid(QPainter* p, const QStyleOptionViewItem& opt,
                 fm.elidedText(author, Qt::ElideRight, authorRect.width()));
 
     // ── Stars ────────────────────────────────────────────────
-    QRectF starsRect(r.left() + PADDING, r.top() + COVER_H + 56,
-                     r.width() - PADDING * 2, 12);
+    QRectF starsRect(r.left() + m_padding, r.top() + m_coverHeight + 62,
+                     r.width() - m_padding * 2, 12);
     drawStars(p, starsRect, idx.data(RatingRole).toDouble());
 }
 
@@ -142,11 +176,14 @@ void BookDelegate::paintList(QPainter* p, const QStyleOptionViewItem& opt,
 {
     QRect r = opt.rect;
     bool selected = opt.state & QStyle::State_Selected;
+    const bool isDocument = idx.data(CategoryRole).toString().compare("Document", Qt::CaseInsensitive) == 0;
 
     // Row background
     p->setPen(Qt::NoPen);
     if (selected)
         p->setBrush(QColor(40, 70, 160, 200));
+    else if (isDocument)
+        p->setBrush(QColor(96, 45, 35, 85));
     else if (opt.state & QStyle::State_MouseOver)
         p->setBrush(QColor(255, 255, 255, 12));
     else
@@ -163,14 +200,14 @@ void BookDelegate::paintList(QPainter* p, const QStyleOptionViewItem& opt,
         p->setBrush(QColor(35, 50, 90));
         p->setPen(Qt::NoPen);
         p->drawRoundedRect(thumbRect, 3, 3);
-        QFont fmtFont("Segoe UI", 6, QFont::Bold);
+        QFont fmtFont = uiFont(6, QFont::Bold);
         p->setFont(fmtFont);
         p->setPen(QColor(180, 150, 60));
         p->drawText(thumbRect, Qt::AlignCenter, idx.data(FormatRole).toString());
     }
 
     // Title
-    QFont titleFont("Segoe UI", 9, QFont::Bold);
+    QFont titleFont = uiFont(9, QFont::Bold);
     p->setFont(titleFont);
     p->setPen(selected ? QColor(255,245,220) : QColor(220, 215, 200));
     QRect titleRect(r.left() + 52, r.top() + 6, r.width() - 200, 20);
@@ -178,7 +215,7 @@ void BookDelegate::paintList(QPainter* p, const QStyleOptionViewItem& opt,
                 idx.data(TitleRole).toString());
 
     // Author
-    QFont authorFont("Segoe UI", 8);
+    QFont authorFont = uiFont(8);
     p->setFont(authorFont);
     p->setPen(QColor(180, 155, 90));
     QRect authorRect(r.left() + 52, r.top() + 26, r.width() - 200, 16);
@@ -191,7 +228,7 @@ void BookDelegate::paintList(QPainter* p, const QStyleOptionViewItem& opt,
 
     // Year
     p->setPen(QColor(140, 160, 200));
-    QFont yearFont("Segoe UI", 8);
+    QFont yearFont = uiFont(8);
     p->setFont(yearFont);
     int year = idx.data(YearRole).toInt();
     QRect yearRect(r.right() - 55, r.top(), 50, r.height());
@@ -201,6 +238,15 @@ void BookDelegate::paintList(QPainter* p, const QStyleOptionViewItem& opt,
     // Separator line
     p->setPen(QColor(255, 255, 255, 15));
     p->drawLine(r.left(), r.bottom(), r.right(), r.bottom());
+
+    if (isDocument) {
+        p->setPen(Qt::NoPen);
+        p->setBrush(QColor(214, 124, 84));
+        p->drawRoundedRect(QRect(r.left() + 46, r.top() + 34, 82, 14), 4, 4);
+        p->setPen(QColor(255, 247, 238));
+        p->setFont(uiFont(7, QFont::Bold));
+        p->drawText(QRect(r.left() + 46, r.top() + 34, 82, 14), Qt::AlignCenter, "DOCUMENT");
+    }
 }
 
 QPixmap BookDelegate::loadCover(const QString& path, const QSize& size) const
@@ -210,10 +256,26 @@ QPixmap BookDelegate::loadCover(const QString& path, const QSize& size) const
     if (QPixmap* cached = m_coverCache.object(key))
         return *cached;
 
-    QPixmap pm(path);
+    QImageReader reader(path);
+    reader.setAutoTransform(true);
+    if (reader.canRead()) {
+        const QSize sourceSize = reader.size();
+        if (sourceSize.isValid()) {
+            QSize scaled = sourceSize;
+            scaled.scale(size, Qt::KeepAspectRatioByExpanding);
+            reader.setScaledSize(scaled);
+        }
+    }
+
+    QImage image = reader.read();
+    if (image.isNull()) return {};
+
+    QPixmap pm = QPixmap::fromImage(image);
     if (pm.isNull()) return {};
-    pm = pm.scaled(size, Qt::KeepAspectRatioByExpanding, Qt::SmoothTransformation)
-            .copy(0, 0, size.width(), size.height());
+    pm = pm.copy(0, 0, qMin(size.width(), pm.width()), qMin(size.height(), pm.height()));
+    if (pm.size() != size)
+        pm = pm.scaled(size, Qt::KeepAspectRatioByExpanding, Qt::SmoothTransformation)
+               .copy(0, 0, size.width(), size.height());
 
     m_coverCache.insert(key, new QPixmap(pm));
     return pm;
@@ -241,13 +303,13 @@ QPixmap BookDelegate::defaultCover(const QSize& size, const QString& format) con
     p.drawLine(8, 0, 8, size.height());
 
     // Format text
-    QFont f("Segoe UI", qMax(10, size.width() / 8), QFont::Bold);
+    QFont f = uiFont(qMax(10, size.width() / 8), QFont::Bold);
     p.setFont(f);
     p.setPen(QColor(255, 255, 255, 200));
     p.drawText(pm.rect(), Qt::AlignCenter, format);
 
     // Eagle watermark
-    QFont wf("Segoe UI", 7);
+    QFont wf = uiFont(7);
     p.setFont(wf);
     p.setPen(QColor(255, 255, 255, 60));
     p.drawText(pm.rect().adjusted(0, 0, 0, -5),
@@ -290,7 +352,7 @@ void BookDelegate::drawFormatBadge(QPainter* p, const QRect& rect, const QString
     p->setBrush(col);
     p->setPen(Qt::NoPen);
     p->drawRoundedRect(badge, 4, 4);
-    QFont f("Segoe UI", 6, QFont::Bold);
+    QFont f = uiFont(6, QFont::Bold);
     p->setFont(f);
     p->setPen(Qt::white);
     p->drawText(badge, Qt::AlignCenter, fmt.left(4));
@@ -313,5 +375,3 @@ void BookDelegate::drawFavStar(QPainter* p, const QRect& rect, bool isFav) const
     }
     p->drawPolygon(QPolygonF(QVector<QPointF>(pts, pts + 10)));
 }
-
-

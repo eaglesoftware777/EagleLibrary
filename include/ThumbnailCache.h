@@ -1,7 +1,7 @@
 #pragma once
 // ============================================================
 //  Eagle Library — ThumbnailCache.h
-//  Copyright (c) 2024 Eagle Software. All rights reserved.
+//  Copyright (c) 2026 Eagle Software. All rights reserved.
 // ============================================================
 #include <QObject>
 #include <QCache>

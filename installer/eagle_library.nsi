@@ -1,7 +1,13 @@
 ; ============================================================
 ;  Eagle Library — NSIS Installer Script
-;  Copyright (c) 2024 Eagle Software. All rights reserved.
+;  Copyright (c) 2026 Eagle Software. All rights reserved.
 ;  Requires: NSIS 3.x + Modern UI 2
+;
+;  Expected input:
+;  Copy the deployed release payload into this installer folder
+;  before compiling the script. This script intentionally packages
+;  the runtime DLLs directly, so no VC++ redistributable installer
+;  is required at install time.
 ; ============================================================
 
 !include "MUI2.nsh"
@@ -10,28 +16,26 @@
 
 ; ── General ──────────────────────────────────────────────────
 Name              "Eagle Library"
-OutFile           "EagleLibrary_Setup_1.0.0.exe"
+OutFile           "EagleLibrary_Setup_2.0.0.exe"
 InstallDir        "$PROGRAMFILES64\Eagle Library"
 InstallDirRegKey  HKLM "Software\Eagle Software\Eagle Library" "InstallDir"
 RequestExecutionLevel admin
 
 ; ── Version info ─────────────────────────────────────────────
-VIProductVersion  "1.0.0.0"
+VIProductVersion  "2.0.0.0"
 VIAddVersionKey   "ProductName"     "Eagle Library"
 VIAddVersionKey   "CompanyName"     "Eagle Software"
-VIAddVersionKey   "LegalCopyright"  "Copyright (C) 2024 Eagle Software"
-VIAddVersionKey   "FileDescription" "Eagle Library Installer"
-VIAddVersionKey   "FileVersion"     "1.0.0.0"
+VIAddVersionKey   "LegalCopyright"  "Copyright (C) 2026 Eagle Software"
+VIAddVersionKey   "FileDescription" "Eagle Library 2.0 Installer"
+VIAddVersionKey   "FileVersion"     "2.0.0.0"
 
 ; ── MUI Settings ─────────────────────────────────────────────
 !define MUI_ABORTWARNING
 !define MUI_ICON              "..\resources\eagle.ico"
 !define MUI_UNICON            "..\resources\eagle.ico"
 !define MUI_HEADERIMAGE
-!define MUI_HEADERIMAGE_BITMAP "banner.bmp"   ; 150x57 BMP
-!define MUI_WELCOMEFINISHPAGE_BITMAP "wizard.bmp" ; 164x314 BMP
 
-!define MUI_WELCOMEPAGE_TITLE   "Welcome to Eagle Library 1.0 Setup"
+!define MUI_WELCOMEPAGE_TITLE   "Welcome to Eagle Library 1.1 Setup"
 !define MUI_WELCOMEPAGE_TEXT    "Eagle Library is a professional eBook library manager by Eagle Software.$\r$\n$\r$\nManage thousands of books across any folder structure, fetch metadata from the internet, and build your personal reading collection.$\r$\n$\r$\nClick Next to continue."
 
 !define MUI_FINISHPAGE_RUN         "$INSTDIR\EagleLibrary.exe"
@@ -72,15 +76,28 @@ Section "Eagle Library (required)" SecMain
     File "Qt6Widgets.dll"
     File "Qt6Network.dll"
     File "Qt6Sql.dll"
-    File "Qt6Concurrent.dll"
-    File "Qt6Xml.dll"
+    ; Optional Qt runtime DLLs that may appear depending on build usage
+    File /nonfatal "Qt6Svg.dll"
+    File /nonfatal "Qt6Concurrent.dll"
+    File /nonfatal "Qt6Xml.dll"
 
-    ; MSVC runtime (bundled via windeployqt --compiler-runtime)
+    ; MSVC runtime
+    File /nonfatal "concrt140.dll"
+    File /nonfatal "vccorlib140.dll"
     File /nonfatal "vcruntime140.dll"
     File /nonfatal "vcruntime140_1.dll"
+    File /nonfatal "vcruntime140_threads.dll"
     File /nonfatal "msvcp140.dll"
     File /nonfatal "msvcp140_1.dll"
     File /nonfatal "msvcp140_2.dll"
+    File /nonfatal "msvcp140_atomic_wait.dll"
+    File /nonfatal "msvcp140_codecvt_ids.dll"
+
+    ; Software renderer / DirectX compiler support when deployed
+    File /nonfatal "d3dcompiler_47.dll"
+    File /nonfatal "dxcompiler.dll"
+    File /nonfatal "dxil.dll"
+    File /nonfatal "opengl32sw.dll"
 
     ; Qt platform plugin
     SetOutPath "$INSTDIR\platforms"
@@ -92,20 +109,32 @@ Section "Eagle Library (required)" SecMain
 
     ; Qt SQL driver
     SetOutPath "$INSTDIR\sqldrivers"
-    File /r "sqldrivers\*.*"
+    File /nonfatal "sqldrivers\qsqlite.dll"
 
     ; Qt style plugins
     SetOutPath "$INSTDIR\styles"
     File /nonfatal /r "styles\*.*"
 
+    ; SVG icon engine
+    SetOutPath "$INSTDIR\iconengines"
+    File /nonfatal /r "iconengines\*.*"
+
+    ; Windows TLS backend
+    SetOutPath "$INSTDIR\tls"
+    File /nonfatal "tls\qschannelbackend.dll"
+
     ; Docs
     SetOutPath "$INSTDIR"
     File "README.txt"
     File "LICENSE.txt"
+    SetOutPath "$INSTDIR\help"
+    File /nonfatal "help\EagleLibrary.chm"
+    SetOutPath "$INSTDIR\translations"
+    File /nonfatal "translations\README.txt"
 
     ; ── Registry ─────────────────────────────────────────────
     WriteRegStr HKLM "Software\Eagle Software\Eagle Library" "InstallDir" "$INSTDIR"
-    WriteRegStr HKLM "Software\Eagle Software\Eagle Library" "Version"    "1.0.0"
+    WriteRegStr HKLM "Software\Eagle Software\Eagle Library" "Version"    "1.1.0"
 
     ; ── Uninstall info (Add/Remove Programs) ─────────────────
     WriteRegStr HKLM \
@@ -122,7 +151,7 @@ Section "Eagle Library (required)" SecMain
         "Publisher"            "Eagle Software"
     WriteRegStr HKLM \
         "Software\Microsoft\Windows\CurrentVersion\Uninstall\EagleLibrary" \
-        "DisplayVersion"       "1.0.0"
+        "DisplayVersion"       "1.1.0"
     WriteRegStr HKLM \
         "Software\Microsoft\Windows\CurrentVersion\Uninstall\EagleLibrary" \
         "URLInfoAbout"         "https://eaglesoftware.biz/"
@@ -154,10 +183,16 @@ Section "Uninstall"
     Delete "$INSTDIR\README.txt"
     Delete "$INSTDIR\LICENSE.txt"
     Delete "$INSTDIR\Uninstall.exe"
+    Delete "$INSTDIR\help\EagleLibrary.chm"
+    Delete "$INSTDIR\translations\README.txt"
     RMDir /r "$INSTDIR\platforms"
     RMDir /r "$INSTDIR\imageformats"
     RMDir /r "$INSTDIR\sqldrivers"
     RMDir /r "$INSTDIR\styles"
+    RMDir /r "$INSTDIR\iconengines"
+    RMDir /r "$INSTDIR\tls"
+    RMDir /r "$INSTDIR\help"
+    RMDir /r "$INSTDIR\translations"
     RMDir  "$INSTDIR"
 
     ; Remove shortcuts

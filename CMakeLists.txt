@@ -1,8 +1,13 @@
+#[[
+  Eagle Library -- CMake Build Configuration
+  Copyright (c) 2026 Eagle Software. All rights reserved.
+]]
+
 cmake_minimum_required(VERSION 3.20)
 
 project(EagleLibrary
-    VERSION 1.0.0
-    DESCRIPTION "Eagle Software - Professional eBook Library Manager"
+    VERSION 2.0.0
+    DESCRIPTION "Eagle Software - Professional eBook & Document Library Manager"
     LANGUAGES CXX
 )
 
@@ -24,6 +29,7 @@ find_package(Qt6 REQUIRED COMPONENTS
     Sql
     Concurrent
     Xml
+    Svg
 )
 qt_standard_project_setup()
 
@@ -41,6 +47,10 @@ set(SOURCES
     src/SettingsDialog.cpp
     src/Database.cpp
     src/CoverDownloader.cpp
+    src/LanguageManager.cpp
+    src/ThemeManager.cpp
+    src/PluginManager.cpp
+    src/CommandPalette.cpp
 )
 
 set(HEADERS
@@ -57,6 +67,11 @@ set(HEADERS
     include/CoverDownloader.h
     include/Book.h
     include/AppConfig.h
+    include/LanguageManager.h
+    include/ThemeManager.h
+    include/PluginInterface.h
+    include/PluginManager.h
+    include/CommandPalette.h
 )
 
 # ── Resource file (icons, QSS, images) ───────────────────────────────────────
@@ -86,6 +101,7 @@ target_link_libraries(EagleLibrary PRIVATE
     Qt6::Sql
     Qt6::Concurrent
     Qt6::Xml
+    Qt6::Svg
 )
 
 # ── Link standard Windows libs ───────────────────────────────────────────────
@@ -101,7 +117,7 @@ endif()
 
 # ── Definitions ──────────────────────────────────────────────────────────────
 target_compile_definitions(EagleLibrary PRIVATE
-    APP_VERSION="1.0.0"
+    APP_VERSION="2.0.0"
     APP_COMPANY="Eagle Software"
     APP_NAME="Eagle Library"
     UNICODE
@@ -138,11 +154,11 @@ include(CPack)
 set(CPACK_GENERATOR "NSIS")
 set(CPACK_PACKAGE_NAME "EagleLibrary")
 set(CPACK_PACKAGE_VENDOR "Eagle Software")
-set(CPACK_PACKAGE_VERSION "1.0.0")
-set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "Eagle Library - Professional eBook Manager")
+set(CPACK_PACKAGE_VERSION "2.0.0")
+set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "Eagle Library - Professional eBook & Document Manager")
 set(CPACK_PACKAGE_INSTALL_DIRECTORY "Eagle Library")
 set(CPACK_NSIS_DISPLAY_NAME "Eagle Library")
-set(CPACK_NSIS_PACKAGE_NAME "Eagle Library 1.0.0")
+set(CPACK_NSIS_PACKAGE_NAME "Eagle Library 2.0.0")
 set(CPACK_NSIS_MUI_ICON "${CMAKE_SOURCE_DIR}/resources/eagle.ico")
 set(CPACK_NSIS_MUI_UNIICON "${CMAKE_SOURCE_DIR}/resources/eagle.ico")
 set(CPACK_NSIS_INSTALLED_ICON_NAME "EagleLibrary.exe")

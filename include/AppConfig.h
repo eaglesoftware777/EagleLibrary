@@ -1,20 +1,22 @@
 #pragma once
 // ============================================================
 //  Eagle Library -- AppConfig.h
-//  Copyright (c) 2024 Eagle Software. All rights reserved.
+//  Copyright (c) 2026 Eagle Software. All rights reserved.
 // ============================================================
 
 #include <QString>
 #include <QDir>
+#include <QCoreApplication>
+#include <QFileInfo>
 #include <QStandardPaths>
 
 namespace AppConfig
 {
     inline QString appName()   { return QString("Eagle Library"); }
     inline QString company()   { return QString("Eagle Software"); }
-    inline QString version()   { return QString("1.0.0"); }
+    inline QString version()   { return QString("2.0.0"); }
     inline QString website()   { return QString("https://eaglesoftware.biz/"); }
-    inline QString copyright() { return QString("Copyright (C) 2024 Eagle Software. All rights reserved."); }
+    inline QString copyright() { return QString("Copyright (C) 2026 Eagle Software. All rights reserved."); }
 
     inline QStringList supportedFormats() {
         return { "*.pdf", "*.epub", "*.mobi", "*.azw", "*.azw3",
@@ -22,12 +24,65 @@ namespace AppConfig
                  "*.rtf", "*.doc", "*.docx", "*.chm", "*.lit" };
     }
 
-    inline QString dataDir()    { return QStandardPaths::writableLocation(QStandardPaths::AppDataLocation); }
-    inline QString dbPath()     { return dataDir() + "/library.db"; }
-    inline QString coversDir()  { return dataDir() + "/covers"; }
-    inline QString thumbsDir()  { return dataDir() + "/thumbs"; }
+    inline QString appDir()
+    {
+        return QCoreApplication::applicationDirPath();
+    }
+
+    inline bool isPortableMode()
+    {
+        const QString baseDir = appDir();
+        return QFileInfo::exists(baseDir + "/portable.flag")
+            || QFileInfo::exists(baseDir + "/portable.ini");
+    }
+
+    inline QString dataDir()
+    {
+        if (isPortableMode())
+            return appDir() + "/data";
+        return QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
+    }
+
+    inline QString settingsDir()
+    {
+        if (isPortableMode())
+            return appDir() + "/settings";
+        return QStandardPaths::writableLocation(QStandardPaths::AppConfigLocation);
+    }
+
+    inline QString settingsPath()
+    {
+        return settingsDir() + "/EagleLibrary.ini";
+    }
+
+    inline QString dbPath()      { return dataDir() + "/library.db"; }
+    inline QString coversDir()   { return dataDir() + "/covers"; }
+    inline QString thumbsDir()   { return dataDir() + "/thumbs"; }
+    inline QString jsonDir()     { return dataDir() + "/json"; }
+    inline QString pluginsDir()  { return appDir()  + "/plugins"; }
+    inline QString sidecarsDir() { return dataDir() + "/sidecars"; }
+    inline QString normalizedPath(const QString& path) { return QDir::cleanPath(QDir::fromNativeSeparators(path)); }
+    inline bool isManagedDataPath(const QString& path) {
+        const QString normalized = normalizedPath(path);
+        const QString data = normalizedPath(dataDir());
+        return normalized == data || normalized.startsWith(data + "/");
+    }
+    inline bool isManagedCoverPath(const QString& path) {
+        const QString normalized = normalizedPath(path);
+        const QString covers = normalizedPath(coversDir());
+        return normalized == covers || normalized.startsWith(covers + "/");
+    }
 
     inline QString googleBooksUrl(const QString& query) {
-        return QString("https://www.googleapis.com/books/v1/volumes?q=%1&maxResults=1").arg(query);
+        return QString("https://www.googleapis.com/books/v1/volumes?q=%1&maxResults=3").arg(query);
+    }
+
+    inline QString openLibrarySearchUrl(const QString& query) {
+        return QString("https://openlibrary.org/search.json?q=%1&limit=3").arg(query);
+    }
+
+    inline QString openLibraryCoverUrl(const QString& key, const QString& value, const QString& size = "L") {
+        return QString("https://covers.openlibrary.org/b/%1/%2-%3.jpg?default=false")
+            .arg(key, value, size);
     }
 }

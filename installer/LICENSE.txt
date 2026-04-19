@@ -1,6 +1,6 @@
 EAGLE LIBRARY
 End-User License Agreement (EULA)
-Copyright (c) 2024 Eagle Software. All rights reserved.
+Copyright (c) 2026 Eagle Software. All rights reserved.
 
 IMPORTANT — PLEASE READ THIS AGREEMENT CAREFULLY BEFORE USING EAGLE LIBRARY.
 

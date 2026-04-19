@@ -1,6 +1,6 @@
 // ============================================================
 //  Eagle Library — BookDetailDialog.cpp
-//  Copyright (c) 2024 Eagle Software. All rights reserved.
+//  Copyright (c) 2026 Eagle Software. All rights reserved.
 // ============================================================
 #include "BookDetailDialog.h"
 #include "AppConfig.h"
@@ -16,17 +16,53 @@
 #include <QDoubleSpinBox>
 #include <QPushButton>
 #include <QPixmap>
+#include <QDir>
 #include <QFileInfo>
 #include <QDesktopServices>
 #include <QUrl>
 #include <QDialogButtonBox>
 #include <QScrollArea>
 #include <QSizePolicy>
+#include <QMessageBox>
+#include <QProcess>
+#include <QDebug>
+#include <QFile>
+
+#ifdef Q_OS_WIN
+#include <windows.h>
+#include <shellapi.h>
+#endif
+
+namespace {
+
+#ifdef Q_OS_WIN
+QString shellOpenErrorString(INT_PTR code)
+{
+    switch (code) {
+    case 0: return "The operating system ran out of memory or resources.";
+    case ERROR_FILE_NOT_FOUND: return "The file was not found.";
+    case ERROR_PATH_NOT_FOUND: return "The folder path was not found.";
+    case ERROR_BAD_FORMAT: return "The file format is invalid for opening.";
+    case SE_ERR_ACCESSDENIED: return "Access denied by Windows or the associated application.";
+    case SE_ERR_ASSOCINCOMPLETE: return "The file association is incomplete.";
+    case SE_ERR_DDEBUSY: return "The target application is busy.";
+    case SE_ERR_DDEFAIL: return "The DDE transaction failed.";
+    case SE_ERR_DDETIMEOUT: return "The target application timed out.";
+    case SE_ERR_DLLNOTFOUND: return "A required DLL was not found.";
+    case SE_ERR_NOASSOC: return "No application is associated with this file type.";
+    case SE_ERR_OOM: return "Not enough memory to open the file.";
+    case SE_ERR_SHARE: return "A sharing violation blocked the file.";
+    default: return QString("Windows shell error %1.").arg(code);
+    }
+}
+#endif
+
+} // namespace
 
 BookDetailDialog::BookDetailDialog(const Book& book, QWidget* parent)
     : QDialog(parent), m_book(book)
 {
-    setWindowTitle(QString("Book Details — %1").arg(book.displayTitle()));
+    setWindowTitle(QString("Book Details - %1").arg(book.displayTitle()));
     setMinimumSize(700, 520);
     setModal(true);
     setupUi();
@@ -35,8 +71,11 @@ BookDetailDialog::BookDetailDialog(const Book& book, QWidget* parent)
 
 void BookDetailDialog::setupUi()
 {
-    auto* mainLayout = new QHBoxLayout(this);
-    mainLayout->setContentsMargins(16, 16, 16, 16);
+    auto* outerLayout = new QVBoxLayout(this);
+    outerLayout->setContentsMargins(16, 16, 16, 16);
+    outerLayout->setSpacing(12);
+
+    auto* mainLayout = new QHBoxLayout;
     mainLayout->setSpacing(16);
 
     // ── LEFT: cover panel ─────────────────────────────────────
@@ -68,23 +107,96 @@ void BookDetailDialog::setupUi()
     addInfoRow("Folder", fi.absolutePath());
     addInfoRow("Added",  m_book.dateAdded.toString("dd MMM yyyy"));
     if (m_book.openCount > 0)
-        addInfoRow("Opened", QString("%1×").arg(m_book.openCount));
+        addInfoRow("Opened", QString("%1x").arg(m_book.openCount));
     leftLayout->addWidget(fileInfoGroup);
 
-    m_openBtn = new QPushButton("📖  Open Book");
+    m_openBtn = new QPushButton("Open Book");
     m_openBtn->setObjectName("primaryBtn");
     connect(m_openBtn, &QPushButton::clicked, this, [this]() {
-        QDesktopServices::openUrl(QUrl::fromLocalFile(m_book.filePath));
+        const QString filePath = QFileInfo(m_book.filePath).absoluteFilePath();
+        const QFileInfo fileInfo(filePath);
+        QFile probe(filePath);
+        const bool exists = fileInfo.exists();
+        const bool isFile = fileInfo.isFile();
+        const bool readable = fileInfo.isReadable();
+        const bool probeOpen = probe.open(QIODevice::ReadOnly);
+        const QString probeError = probe.errorString();
+        if (probeOpen)
+            probe.close();
+
+        qWarning().noquote()
+            << "[OpenBook] Requested path:" << m_book.filePath
+            << "\n[OpenBook] Absolute path:" << filePath
+            << "\n[OpenBook] Native path:" << QDir::toNativeSeparators(filePath)
+            << "\n[OpenBook] Exists:" << exists
+            << "IsFile:" << isFile
+            << "Readable:" << readable
+            << "Suffix:" << fileInfo.suffix()
+            << "\n[OpenBook] QFile open probe:" << probeOpen
+            << "Error:" << probeError;
+
+        if (!exists) {
+            QMessageBox::warning(this, "Open Book",
+                                 QString("File does not exist:\n%1").arg(QDir::toNativeSeparators(filePath)));
+            return;
+        }
+
+#ifdef Q_OS_WIN
+        const std::wstring nativePath = QDir::toNativeSeparators(filePath).toStdWString();
+        const HINSTANCE result = ShellExecuteW(nullptr, L"open", nativePath.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+        qWarning() << "[OpenBook] ShellExecuteW result:" << reinterpret_cast<INT_PTR>(result);
+        if (reinterpret_cast<INT_PTR>(result) > 32)
+            return;
+
+        const bool explorerStarted = QProcess::startDetached("explorer.exe", {QDir::toNativeSeparators(filePath)});
+        qWarning() << "[OpenBook] explorer.exe fallback started:" << explorerStarted;
+        if (explorerStarted)
+            return;
+#endif
+
+        const QUrl localUrl = QUrl::fromLocalFile(filePath);
+        const bool qtOpened = QDesktopServices::openUrl(localUrl);
+        qWarning().noquote()
+            << "[OpenBook] QDesktopServices URL:" << localUrl.toString()
+            << "\n[OpenBook] QDesktopServices opened:" << qtOpened;
+
+        if (!qtOpened) {
+#ifdef Q_OS_WIN
+            const QString details = shellOpenErrorString(reinterpret_cast<INT_PTR>(result));
+#else
+            const QString details = QString("No application could open this file.");
+#endif
+            QMessageBox::warning(this, "Open Book",
+                                 QString("Cannot open file:\n%1\n\n%2")
+                                     .arg(QDir::toNativeSeparators(filePath), details));
+        }
     });
     leftLayout->addWidget(m_openBtn);
 
-    m_fetchBtn = new QPushButton("🌐  Fetch Metadata");
+    m_fetchBtn = new QPushButton("Fetch Metadata");
     connect(m_fetchBtn, &QPushButton::clicked, this, [this]() {
-        // Emit accepted with special flag — handled by MainWindow
         setResult(2);
         accept();
     });
     leftLayout->addWidget(m_fetchBtn);
+
+    m_googleBtn = new QPushButton("Search on Google");
+    connect(m_googleBtn, &QPushButton::clicked, this, [this]() {
+        const QString query = QString("%1 %2").arg(m_book.title, m_book.author).trimmed();
+        const QUrl url = QUrl(QString("https://www.google.com/search?q=%1")
+                              .arg(QString::fromUtf8(QUrl::toPercentEncoding(query))));
+        QDesktopServices::openUrl(url);
+    });
+    leftLayout->addWidget(m_googleBtn);
+
+    m_goodreadsBtn = new QPushButton("Look up on Goodreads");
+    connect(m_goodreadsBtn, &QPushButton::clicked, this, [this]() {
+        const QString query = QString("%1 %2").arg(m_book.title, m_book.author).trimmed();
+        const QUrl url = QUrl(QString("https://www.goodreads.com/search?q=%1")
+                              .arg(QString::fromUtf8(QUrl::toPercentEncoding(query))));
+        QDesktopServices::openUrl(url);
+    });
+    leftLayout->addWidget(m_goodreadsBtn);
     leftLayout->addStretch();
 
     mainLayout->addWidget(leftPanel);
@@ -115,23 +227,36 @@ void BookDetailDialog::setupUi()
     m_ratingSpin->setSingleStep(0.5);
     m_ratingSpin->setValue(m_book.rating);
     m_tagsEdit      = new QLineEdit(m_book.tags.join(", "));
+    m_tagsEdit->setPlaceholderText("Comma-separated tags: Physics, Math, Reading...");
 
-    metaForm->addRow("Title:",     m_titleEdit);
-    metaForm->addRow("Author:",    m_authorEdit);
-    metaForm->addRow("Publisher:", m_publisherEdit);
-    metaForm->addRow("ISBN:",      m_isbnEdit);
-    metaForm->addRow("Language:",  m_langEdit);
-    metaForm->addRow("Year:",      m_yearSpin);
-    metaForm->addRow("Pages:",     m_pagesSpin);
-    metaForm->addRow("Rating:",    m_ratingSpin);
-    metaForm->addRow("Tags:",      m_tagsEdit);
+    m_seriesEdit        = new QLineEdit(m_book.series);
+    m_seriesEdit->setPlaceholderText("e.g. \"The Lord of the Rings\"");
+    m_seriesIndexSpin   = new QSpinBox;
+    m_seriesIndexSpin->setRange(0, 9999);
+    m_seriesIndexSpin->setValue(m_book.seriesIndex);
+    m_seriesIndexSpin->setSpecialValueText("—");
+    m_editionEdit       = new QLineEdit(m_book.edition);
+    m_editionEdit->setPlaceholderText("e.g. \"3rd Edition\"");
+
+    metaForm->addRow("Title:",        m_titleEdit);
+    metaForm->addRow("Author:",       m_authorEdit);
+    metaForm->addRow("Publisher:",    m_publisherEdit);
+    metaForm->addRow("ISBN:",         m_isbnEdit);
+    metaForm->addRow("Language:",     m_langEdit);
+    metaForm->addRow("Year:",         m_yearSpin);
+    metaForm->addRow("Pages:",        m_pagesSpin);
+    metaForm->addRow("Rating (0–5):", m_ratingSpin);
+    metaForm->addRow("Tags:",         m_tagsEdit);
+    metaForm->addRow("Series:",       m_seriesEdit);
+    metaForm->addRow("Volume #:",     m_seriesIndexSpin);
+    metaForm->addRow("Edition:",      m_editionEdit);
     tabs->addTab(metaWidget, "Metadata");
 
     // Tab 2: Description
     auto* descWidget = new QWidget;
     auto* descLayout = new QVBoxLayout(descWidget);
     m_descEdit = new QTextEdit(m_book.description);
-    m_descEdit->setPlaceholderText("Description / Synopsis…");
+    m_descEdit->setPlaceholderText("Description / Synopsis...");
     descLayout->addWidget(m_descEdit);
     tabs->addTab(descWidget, "Description");
 
@@ -139,97 +264,28 @@ void BookDetailDialog::setupUi()
     auto* notesWidget = new QWidget;
     auto* notesLayout = new QVBoxLayout(notesWidget);
     m_notesEdit = new QTextEdit(m_book.notes);
-    m_notesEdit->setPlaceholderText("Personal notes…");
+    m_notesEdit->setPlaceholderText("Personal notes...");
     notesLayout->addWidget(m_notesEdit);
     tabs->addTab(notesWidget, "Notes");
 
     mainLayout->addWidget(tabs, 1);
 
     // ── Buttons ───────────────────────────────────────────────
-    auto* outerLayout = new QVBoxLayout;
-    outerLayout->setContentsMargins(0,0,0,0);
     outerLayout->addLayout(mainLayout);
-
     auto* btnBox = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel);
     btnBox->button(QDialogButtonBox::Ok)->setText("Save");
     connect(btnBox, &QDialogButtonBox::accepted, this, &QDialog::accept);
     connect(btnBox, &QDialogButtonBox::rejected, this, &QDialog::reject);
     outerLayout->addWidget(btnBox);
-
-    setLayout(outerLayout);
 }
 
 void BookDetailDialog::applyStyles()
 {
-    setStyleSheet(R"(
-        QDialog {
-            background-color: #0f1a38;
-            color: #ddd8c8;
-        }
-        QGroupBox {
-            color: #b49a46;
-            font-weight: bold;
-            border: 1px solid #2a3a6a;
-            border-radius: 6px;
-            margin-top: 8px;
-            padding: 6px;
-        }
-        QGroupBox::title {
-            subcontrol-origin: margin;
-            left: 8px;
-        }
-        QLabel { color: #c8c0a8; font-size: 11px; }
-        #coverLabel {
-            background-color: #1a2548;
-            border: 1px solid #2e3f70;
-            border-radius: 8px;
-        }
-        QLineEdit, QTextEdit, QSpinBox, QDoubleSpinBox {
-            background-color: #1a2548;
-            border: 1px solid #2e3f70;
-            border-radius: 5px;
-            color: #ddd8c8;
-            padding: 4px 7px;
-            font-size: 12px;
-        }
-        QLineEdit:focus, QTextEdit:focus {
-            border-color: #b49a46;
-        }
-        QTabWidget::pane {
-            border: 1px solid #2e3f70;
-            border-radius: 6px;
-            background: #131e42;
-        }
-        QTabBar::tab {
-            background: #1a2548;
-            color: #8898c0;
-            padding: 6px 18px;
-            border-top-left-radius: 6px;
-            border-top-right-radius: 6px;
-        }
-        QTabBar::tab:selected {
-            background: #131e42;
-            color: #c8aa50;
-        }
-        QPushButton {
-            background-color: #1f3070;
-            color: #c8aa50;
-            border: 1px solid #2e4090;
-            border-radius: 6px;
-            padding: 7px 14px;
-            font-size: 12px;
-        }
-        QPushButton:hover { background-color: #283d8a; }
-        QPushButton:pressed { background-color: #162060; }
-        #primaryBtn {
-            background: qlineargradient(x1:0,y1:0,x2:0,y2:1,
-                stop:0 #2a4aaa, stop:1 #1a3080);
-            font-weight: bold;
-        }
-        QDialogButtonBox QPushButton {
-            min-width: 80px;
-        }
-    )");
+    // Minimal dialog-specific overrides; global theme handles everything else.
+    m_coverLabel->setStyleSheet(
+        "QLabel#coverLabel { border-radius: 8px; }");
+    m_openBtn->setStyleSheet(
+        "QPushButton#primaryBtn { font-weight: bold; }");
 }
 
 void BookDetailDialog::loadCover(const QString& path)
@@ -259,6 +315,9 @@ Book BookDetailDialog::editedBook() const
     b.rating      = m_ratingSpin->value();
     b.description = m_descEdit->toPlainText().trimmed();
     b.notes       = m_notesEdit->toPlainText().trimmed();
+    b.series      = m_seriesEdit->text().trimmed();
+    b.seriesIndex = m_seriesIndexSpin->value();
+    b.edition     = m_editionEdit->text().trimmed();
     QString rawTags = m_tagsEdit->text();
     b.tags.clear();
     for (const auto& t : rawTags.split(",", Qt::SkipEmptyParts))

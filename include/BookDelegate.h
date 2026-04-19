@@ -1,11 +1,12 @@
 #pragma once
 // ============================================================
 //  Eagle Library — BookDelegate.h
-//  Copyright (c) 2024 Eagle Software. All rights reserved.
+//  Copyright (c) 2026 Eagle Software. All rights reserved.
 // ============================================================
 
 #include <QStyledItemDelegate>
 #include <QCache>
+#include <QFont>
 #include <QPixmap>
 #include <QSize>
 
@@ -21,9 +22,15 @@ public:
                    const QModelIndex& index) const override;
 
     void setGridMode(bool grid) { m_gridMode = grid; }
+    void setMetrics(int cardWidth, int cardHeight, int coverHeight, int listRowHeight, int padding);
 
 private:
     bool m_gridMode = true;
+    int  m_cardWidth = 160;
+    int  m_cardHeight = 240;
+    int  m_coverHeight = 180;
+    int  m_listRowHeight = 62;
+    int  m_padding = 8;
 
     mutable QCache<QString, QPixmap> m_coverCache{200}; // 200 items
 
@@ -36,9 +43,5 @@ private:
     void    drawStars(QPainter* p, const QRectF& rect, double rating) const;
     void    drawFormatBadge(QPainter* p, const QRect& rect, const QString& fmt) const;
     void    drawFavStar(QPainter* p, const QRect& rect, bool isFav) const;
-
-    static constexpr int CARD_W   = 160;
-    static constexpr int CARD_H   = 240;
-    static constexpr int COVER_H  = 180;
-    static constexpr int PADDING  = 8;
+    QFont   uiFont(int pointSize, QFont::Weight weight = QFont::Normal) const;
 };

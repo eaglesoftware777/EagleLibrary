@@ -1,6 +1,6 @@
 // ============================================================
 //  Eagle Library — SplashScreen.cpp
-//  Copyright (c) 2024 Eagle Software. All rights reserved.
+//  Copyright (c) 2026 Eagle Software. All rights reserved.
 // ============================================================
 
 #include "SplashScreen.h"
@@ -10,10 +10,14 @@
 #include <QApplication>
 #include <QCoreApplication>
 #include <QScreen>
+#include <QDir>
+#include <QFileInfo>
 #include <QFont>
 #include <QFontMetrics>
 #include <QLinearGradient>
 #include <QRadialGradient>
+#include <QImage>
+#include <QColor>
 
 static const int W = 700;
 static const int H = 420;
@@ -37,6 +41,36 @@ SplashScreen::SplashScreen(QWidget* parent)
     p.setRenderHint(QPainter::Antialiasing, true);
     p.setRenderHint(QPainter::TextAntialiasing, true);
     setPixmap(pm);
+
+    QImage source(QStringLiteral(":/eagle_logo.png"));
+    if (source.isNull()) {
+        const QStringList fallbackPaths = {
+            QDir(QCoreApplication::applicationDirPath()).absoluteFilePath("resources/eagle_logo.png"),
+            QDir(QCoreApplication::applicationDirPath()).absoluteFilePath("../resources/eagle_logo.png"),
+            QDir(QCoreApplication::applicationDirPath()).absoluteFilePath("../../resources/eagle_logo.png"),
+            QStringLiteral("C:/eagle_software/EagleLibrary/resources/eagle_logo.png")
+        };
+        for (const QString& path : fallbackPaths) {
+            if (QFileInfo::exists(path)) {
+                source.load(path);
+                if (!source.isNull())
+                    break;
+            }
+        }
+    }
+
+    if (!source.isNull()) {
+        QImage cleaned = source.convertToFormat(QImage::Format_ARGB32);
+        for (int y = 0; y < cleaned.height(); ++y) {
+            QRgb* line = reinterpret_cast<QRgb*>(cleaned.scanLine(y));
+            for (int x = 0; x < cleaned.width(); ++x) {
+                const QColor color = QColor::fromRgba(line[x]);
+                if (color.red() > 242 && color.green() > 242 && color.blue() > 242)
+                    line[x] = qRgba(color.red(), color.green(), color.blue(), 0);
+            }
+        }
+        m_logo = QPixmap::fromImage(cleaned);
+    }
 }
 
 void SplashScreen::setProgress(int value, const QString& message)
@@ -93,52 +127,49 @@ void SplashScreen::drawBackground(QPainter* p)
 // ── Eagle Logo — real company logo from resources ─────────────────────────────
 void SplashScreen::drawLogo(QPainter* p)
 {
-    // Load company logo from Qt resources
-    QPixmap logo(":/eagle_256.png");
-    if (logo.isNull()) {
-        // Fallback: try loading from same directory as executable
-        logo.load(QCoreApplication::applicationDirPath() + "/eagle_256.png");
-    }
+    const QRect target((W - 310) / 2, 18, 310, 168);
+    const QPixmap companyLogo = m_logo;
+    QRadialGradient glow(target.center(), 150);
+    glow.setColorAt(0.0, QColor(180, 200, 255, 52));
+    glow.setColorAt(1.0, Qt::transparent);
+    p->fillRect(target.adjusted(-18, -10, 18, 10), glow);
 
-    if (!logo.isNull()) {
-        // Render the real logo — scale to fit nicely, keep aspect ratio
-        const int logoSize = 140;
-        QPixmap scaled = logo.scaled(logoSize, logoSize,
-                                     Qt::KeepAspectRatio,
-                                     Qt::SmoothTransformation);
+    p->save();
+    p->setPen(QPen(QColor(222, 194, 114, 180), 1.2));
+    p->setBrush(QColor(250, 251, 254, 232));
+    p->drawRoundedRect(target.adjusted(10, 8, -10, -12), 24, 24);
+    p->restore();
 
-        // Center horizontally, position in upper portion of splash
-        int x = (W - scaled.width())  / 2;
-        int y = 22;
-
-        // Soft glow behind logo
-        QRadialGradient glow(W / 2, y + scaled.height() / 2, logoSize);
-        glow.setColorAt(0.0, QColor(180, 200, 255, 55));
-        glow.setColorAt(1.0, Qt::transparent);
-        p->fillRect(QRect(x - 20, y - 10, scaled.width() + 40, scaled.height() + 20), glow);
-
-        p->drawPixmap(x, y, scaled);
+    if (!companyLogo.isNull()) {
+        const QSize paddedSize(target.width() - 36, target.height() - 34);
+        const QPixmap scaledLogo = companyLogo.scaled(paddedSize, Qt::KeepAspectRatio, Qt::SmoothTransformation);
+        const QPoint topLeft((W - scaledLogo.width()) / 2, target.y() + (target.height() - scaledLogo.height()) / 2 - 1);
+        p->drawPixmap(topLeft, scaledLogo);
     } else {
-        // Fallback vector eagle if image not found (keeps app working during dev)
         p->save();
-        QPainterPath eagle;
-        eagle.addEllipse(QRectF(310, 80, 80, 50));
-        eagle.addEllipse(QRectF(370, 68, 30, 28));
-        QLinearGradient goldGrad(0, 68, 0, 165);
-        goldGrad.setColorAt(0.0, QColor(200, 210, 255));
-        goldGrad.setColorAt(1.0, QColor(80, 100, 200));
-        p->fillPath(eagle, goldGrad);
+        p->setPen(QPen(QColor(190, 46, 46), 2));
+        p->setBrush(Qt::NoBrush);
+        p->drawRoundedRect(target.adjusted(24, 24, -24, -26), 18, 18);
+        QFont fallbackFont = QApplication::font();
+        fallbackFont.setPointSize(14);
+        fallbackFont.setBold(true);
+        p->setFont(fallbackFont);
+        p->setPen(QColor(80, 20, 20));
+        p->drawText(target.adjusted(28, 28, -28, -28), Qt::AlignCenter,
+                    "Logo not loaded\nC:/eagle_software/EagleLibrary/resources/eagle_logo.png");
         p->restore();
     }
 
     // ── App name ─────────────────────────────────────────────
     p->save();
-    QFont nameFont("Georgia", 34, QFont::Bold);
+    QFont nameFont = QApplication::font();
+    nameFont.setPointSize(34);
+    nameFont.setBold(true);
     p->setFont(nameFont);
 
     // Shadow
     p->setPen(QColor(0, 0, 0, 100));
-    p->drawText(QRect(0, 187, W, 52), Qt::AlignHCenter | Qt::AlignVCenter,
+    p->drawText(QRect(0, 196, W, 52), Qt::AlignHCenter | Qt::AlignVCenter,
                 "EAGLE LIBRARY");
 
     // Gold gradient text
@@ -147,46 +178,60 @@ void SplashScreen::drawLogo(QPainter* p)
     textGrad.setColorAt(0.5, QColor(220, 175, 50));
     textGrad.setColorAt(1.0, QColor(175, 125, 18));
     p->setPen(QPen(QBrush(textGrad), 1));
-    p->drawText(QRect(0, 185, W, 52), Qt::AlignHCenter | Qt::AlignVCenter,
+    p->drawText(QRect(0, 194, W, 52), Qt::AlignHCenter | Qt::AlignVCenter,
                 "EAGLE LIBRARY");
     p->restore();
 
     // ── Tagline ───────────────────────────────────────────────
     p->save();
-    QFont tagFont("Arial", 10, QFont::Normal);
-    tagFont.setLetterSpacing(QFont::AbsoluteSpacing, 3.5);
+    QFont tagFont = QApplication::font();
+    tagFont.setPointSize(10);
+    tagFont.setWeight(QFont::Normal);
+    tagFont.setLetterSpacing(QFont::AbsoluteSpacing, 2.4);
     p->setFont(tagFont);
-    p->setPen(QColor(180, 160, 100, 200));
-    p->drawText(QRect(0, 238, W, 24), Qt::AlignHCenter | Qt::AlignVCenter,
+    p->setPen(QColor(196, 178, 126, 218));
+    p->drawText(QRect(0, 244, W, 24), Qt::AlignHCenter | Qt::AlignVCenter,
                 "PROFESSIONAL eBOOK LIBRARY MANAGER");
+    p->restore();
+
+    p->save();
+    QFont companyFont = QApplication::font();
+    companyFont.setPointSize(11);
+    companyFont.setWeight(QFont::DemiBold);
+    p->setFont(companyFont);
+    p->setPen(QColor(154, 192, 236, 228));
+    p->drawText(QRect(0, 264, W, 20), Qt::AlignHCenter | Qt::AlignVCenter,
+                "Eagle Software");
     p->restore();
 }
 
 // ── Progress Bar ─────────────────────────────────────────────────────────────
 void SplashScreen::drawProgressBar(QPainter* p)
 {
-    const int barX = 60, barY = 355, barW = W - 120, barH = 6;
-    const int radius = 3;
+    const int barX = 68, barY = 350, barW = W - 136, barH = 10;
+    const int radius = 5;
 
     // Track
-    p->setBrush(QColor(30, 45, 90));
-    p->setPen(Qt::NoPen);
+    p->setBrush(QColor(21, 34, 66));
+    p->setPen(QPen(QColor(72, 96, 142, 120), 1));
     p->drawRoundedRect(barX, barY, barW, barH, radius, radius);
 
     // Fill
     int fillW = qMax(radius * 2, int(barW * m_progress / 100.0));
     QLinearGradient fillGrad(barX, barY, barX + fillW, barY);
-    fillGrad.setColorAt(0.0, QColor(180, 130, 30));
-    fillGrad.setColorAt(1.0, QColor(255, 215, 80));
+    fillGrad.setColorAt(0.0, QColor(205, 78, 54));
+    fillGrad.setColorAt(0.55, QColor(231, 174, 75));
+    fillGrad.setColorAt(1.0, QColor(248, 227, 126));
     p->setBrush(fillGrad);
+    p->setPen(Qt::NoPen);
     p->drawRoundedRect(barX, barY, fillW, barH, radius, radius);
 
     // Glow on tip
-    QRadialGradient glowTip(barX + fillW, barY + barH / 2, 10);
-    glowTip.setColorAt(0.0, QColor(255, 215, 80, 180));
+    QRadialGradient glowTip(barX + fillW, barY + barH / 2, 13);
+    glowTip.setColorAt(0.0, QColor(255, 228, 120, 170));
     glowTip.setColorAt(1.0, Qt::transparent);
     p->setBrush(glowTip);
-    p->drawEllipse(barX + fillW - 10, barY - 8, 20, 22);
+    p->drawEllipse(barX + fillW - 12, barY - 8, 24, 26);
 }
 
 // ── Text (status + copyright) ────────────────────────────────────────────────
@@ -194,33 +239,36 @@ void SplashScreen::drawText(QPainter* p)
 {
     // Status message
     p->save();
-    QFont statusFont("Arial", 9);
+    QFont statusFont = QApplication::font();
+    statusFont.setPointSize(10);
     p->setFont(statusFont);
-    p->setPen(QColor(160, 185, 220, 220));
-    p->drawText(QRect(60, 368, W - 120, 22), Qt::AlignLeft | Qt::AlignVCenter,
-                m_message.isEmpty() ? "Initializing…" : m_message);
+    p->setPen(QColor(198, 214, 238, 228));
+    p->drawText(QRect(68, 368, W - 136, 24), Qt::AlignLeft | Qt::AlignVCenter,
+                m_message.isEmpty() ? "Initializing..." : m_message);
 
     // Progress %
-    p->setPen(QColor(200, 175, 80, 220));
-    p->drawText(QRect(60, 368, W - 120, 22), Qt::AlignRight | Qt::AlignVCenter,
+    p->setPen(QColor(244, 214, 122, 232));
+    p->drawText(QRect(68, 368, W - 136, 24), Qt::AlignRight | Qt::AlignVCenter,
                 QString("%1%").arg(m_progress));
     p->restore();
 
     // Copyright
     p->save();
-    QFont copyrightFont("Arial", 8);
+    QFont copyrightFont = QApplication::font();
+    copyrightFont.setPointSize(8);
     p->setFont(copyrightFont);
-    p->setPen(QColor(120, 140, 180, 160));
+    p->setPen(QColor(122, 145, 184, 168));
     p->drawText(QRect(0, 395, W, 20), Qt::AlignHCenter | Qt::AlignVCenter,
                 AppConfig::copyright());
     p->restore();
 
     // Version
     p->save();
-    QFont verFont("Arial", 8);
+    QFont verFont = QApplication::font();
+    verFont.setPointSize(8);
     p->setFont(verFont);
-    p->setPen(QColor(100, 120, 160, 130));
-    p->drawText(QRect(60, 295, W - 120, 20), Qt::AlignRight | Qt::AlignVCenter,
+    p->setPen(QColor(120, 138, 176, 150));
+    p->drawText(QRect(68, 300, W - 136, 20), Qt::AlignRight | Qt::AlignVCenter,
                 QString("v%1").arg(AppConfig::version()));
     p->restore();
 }

@@ -1,7 +1,7 @@
 #pragma once
 // ============================================================
 //  Eagle Library -- BookModel.h
-//  Copyright (c) 2024 Eagle Software. All rights reserved.
+//  Copyright (c) 2026 Eagle Software. All rights reserved.
 // ============================================================
 
 #include "Book.h"
@@ -31,6 +31,7 @@ enum BookRole {
     LanguageRole,
     OpenCountRole,
     DateAddedRole,
+    CategoryRole,
 };
 
 class BookModel : public QAbstractListModel
@@ -95,6 +96,8 @@ public:
     void setFilterNoMeta(bool v);
     void setFilterYear(int from, int to);
     void setFilterAuthor(const QString& author);
+    void setFilterTag(const QString& tag);
+    void setFilterCategory(const QString& category);
     void clearFilters();
 
     // Column sort (click column header)
@@ -108,6 +111,8 @@ private:
     QString   m_filterText;
     QString   m_filterFormat;
     QString   m_filterAuthor;
+    QString   m_filterTag;
+    QString   m_filterCategory;
     bool      m_filterFav    = false;
     bool      m_filterNoCover= false;
     bool      m_filterNoMeta = false;
