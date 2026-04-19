@@ -1,0 +1,2 @@
+# EagleLibrary
+Eagle Library Manager
