@@ -142,6 +142,59 @@ Book sanitizedBook(Book book)
     return book;
 }
 
+QString toFtsMatchExpression(const QString& raw)
+{
+    QStringList positiveTerms;
+    QRegularExpression tokenRe(R"re((\w+):"([^"]+)"|"([^"]+)"|(\S+))re");
+    QRegularExpressionMatchIterator it = tokenRe.globalMatch(raw);
+    while (it.hasNext()) {
+        const QRegularExpressionMatch match = it.next();
+        QString token;
+        if (!match.captured(1).isEmpty())
+            token = match.captured(2);
+        else if (!match.captured(3).isEmpty())
+            token = match.captured(3);
+        else
+            token = match.captured(4);
+
+        token = token.trimmed();
+        if (token.isEmpty() || token.compare(QStringLiteral("and"), Qt::CaseInsensitive) == 0)
+            continue;
+        if (token.startsWith('-'))
+            continue;
+
+        token.replace('"', ' ');
+        token = token.simplified();
+        if (token.isEmpty())
+            continue;
+
+        if (token.contains(' '))
+            positiveTerms << QString("\"%1\"").arg(token);
+        else
+            positiveTerms << token;
+    }
+    return positiveTerms.join(" AND ");
+}
+
+QString buildPathPrefixClause(const QStringList& prefixes, QSqlQuery& q, const QString& tableAlias = QString())
+{
+    QStringList pathClauses;
+    const QString pathColumn = tableAlias.isEmpty() ? QStringLiteral("file_path") : tableAlias + QStringLiteral(".file_path");
+    for (int i = 0; i < prefixes.size(); ++i) {
+        QString prefix = QDir::fromNativeSeparators(prefixes.at(i)).trimmed();
+        while (prefix.endsWith('/'))
+            prefix.chop(1);
+        if (prefix.isEmpty())
+            continue;
+        const QString exactKey = QString(":pathExact%1").arg(i);
+        const QString likeKey = QString(":pathLike%1").arg(i);
+        pathClauses << QString("(%1 = %2 OR %1 LIKE %3)").arg(pathColumn, exactKey, likeKey);
+        q.bindValue(exactKey, prefix);
+        q.bindValue(likeKey, prefix + "/%");
+    }
+    return pathClauses.isEmpty() ? QString() : "(" + pathClauses.join(" OR ") + ")";
+}
+
 QJsonObject bookToJson(const Book& b)
 {
     QJsonObject obj;
@@ -328,6 +381,51 @@ void syncBookArtifacts(const QSqlDatabase& db, qint64 bookId, const Book& book)
 }
 
 } // namespace
+
+QJsonObject BookFilter::toJson() const
+{
+    QJsonObject obj;
+    obj["text"] = text;
+    obj["format"] = format;
+    obj["author"] = author;
+    obj["tag"] = tag;
+    obj["language"] = language;
+    obj["collection"] = collection;
+    obj["series"] = series;
+    obj["restrictToPathPrefixes"] = restrictToPathPrefixes;
+    obj["yearFrom"] = yearFrom;
+    obj["yearTo"] = yearTo;
+    obj["favOnly"] = favOnly;
+    obj["noCover"] = noCover;
+    obj["noMeta"] = noMeta;
+    obj["pathPrefixes"] = QJsonArray::fromStringList(pathPrefixes);
+    return obj;
+}
+
+BookFilter BookFilter::fromJson(const QString& jsonText)
+{
+    BookFilter filter;
+    const QJsonDocument doc = QJsonDocument::fromJson(jsonText.toUtf8());
+    if (!doc.isObject())
+        return filter;
+    const QJsonObject obj = doc.object();
+    filter.text = obj.value("text").toString();
+    filter.format = obj.value("format").toString();
+    filter.author = obj.value("author").toString();
+    filter.tag = obj.value("tag").toString();
+    filter.language = obj.value("language").toString();
+    filter.collection = obj.value("collection").toString();
+    filter.series = obj.value("series").toString();
+    filter.restrictToPathPrefixes = obj.value("restrictToPathPrefixes").toBool(false);
+    filter.yearFrom = obj.value("yearFrom").toInt();
+    filter.yearTo = obj.value("yearTo").toInt();
+    filter.favOnly = obj.value("favOnly").toBool(false);
+    filter.noCover = obj.value("noCover").toBool(false);
+    filter.noMeta = obj.value("noMeta").toBool(false);
+    for (const QJsonValue& value : obj.value("pathPrefixes").toArray())
+        filter.pathPrefixes << value.toString();
+    return filter;
+}
 
 Database& Database::instance()
 {
@@ -606,21 +704,9 @@ QString Database::buildWhereClause(const BookFilter& f, QSqlQuery& q) const
     if (f.restrictToPathPrefixes && f.pathPrefixes.isEmpty()) {
         clauses << "0 = 1";
     } else if (!f.pathPrefixes.isEmpty()) {
-        QStringList pathClauses;
-        for (int i = 0; i < f.pathPrefixes.size(); ++i) {
-            QString prefix = QDir::fromNativeSeparators(f.pathPrefixes.at(i)).trimmed();
-            while (prefix.endsWith('/'))
-                prefix.chop(1);
-            if (prefix.isEmpty())
-                continue;
-            const QString exactKey = QString(":pathExact%1").arg(i);
-            const QString likeKey = QString(":pathLike%1").arg(i);
-            pathClauses << QString("(file_path = %1 OR file_path LIKE %2)").arg(exactKey, likeKey);
-            q.bindValue(exactKey, prefix);
-            q.bindValue(likeKey, prefix + "/%");
-        }
-        if (!pathClauses.isEmpty())
-            clauses << "(" + pathClauses.join(" OR ") + ")";
+        const QString pathClause = buildPathPrefixClause(f.pathPrefixes, q);
+        if (!pathClause.isEmpty())
+            clauses << pathClause;
     }
     if (f.yearFrom > 0) {
         clauses << "year >= :yf";
@@ -651,16 +737,37 @@ QVector<Book> Database::query(const BookFilter& filter,
                                SortField sort, SortOrder order,
                                int limit, int offset) const
 {
-    QSqlQuery q(QSqlDatabase::database("eagle_lib"));
+    QSqlDatabase db = QSqlDatabase::database("eagle_lib");
+    QSqlQuery q(db);
     q.setForwardOnly(true);
-    QString sql = QString("SELECT %1 FROM books").arg(kBookSelectColumns);
-    sql += buildWhereClause(filter, q);
+    const QString ftsQuery = toFtsMatchExpression(filter.text);
+    QString sql;
+    if (!ftsQuery.isEmpty() && hasFtsTable(db)) {
+        sql = QString("SELECT %1 FROM books "
+                      "JOIN books_fts ON books_fts.rowid = books.id").arg(kBookSelectColumns);
+        QStringList clauses;
+        clauses << "books_fts MATCH :ftsQuery";
+        q.bindValue(":ftsQuery", ftsQuery);
+
+        BookFilter residual = filter;
+        residual.text.clear();
+        const QString residualClause = buildWhereClause(residual, q);
+        if (!residualClause.isEmpty())
+            clauses << residualClause.mid(QStringLiteral(" WHERE ").size());
+        sql += " WHERE " + clauses.join(" AND ");
+    } else {
+        sql = QString("SELECT %1 FROM books").arg(kBookSelectColumns);
+        sql += buildWhereClause(filter, q);
+    }
     sql += sortClause(sort, order);
     if (limit > 0)  sql += QString(" LIMIT %1").arg(limit);
     if (offset > 0) sql += QString(" OFFSET %1").arg(offset);
     q.prepare(sql);
     // rebind (Qt needs prepare before bind for named params)
-    if (!filter.text.isEmpty())     q.bindValue(":txt",  "%" + filter.text + "%");
+    if (!ftsQuery.isEmpty() && hasFtsTable(db))
+        q.bindValue(":ftsQuery", ftsQuery);
+    else if (!filter.text.isEmpty())
+        q.bindValue(":txt",  "%" + filter.text + "%");
     if (!filter.format.isEmpty())   q.bindValue(":fmt",  filter.format);
     if (!filter.author.isEmpty())   q.bindValue(":aut",  "%" + filter.author + "%");
     if (!filter.tag.isEmpty())      q.bindValue(":tag",  "%" + filter.tag + "%");

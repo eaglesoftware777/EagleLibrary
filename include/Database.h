@@ -13,6 +13,7 @@
 #include <QStringList>
 #include <QMap>
 #include <QVariant>
+#include <QJsonObject>
 
 // ── Sort options ──────────────────────────────────────────────
 enum class SortField  { Title, Author, Year, DateAdded, Rating, FileSize, Format, OpenCount, Series };
@@ -34,6 +35,8 @@ struct BookFilter {
     bool     favOnly   = false;
     bool     noCover   = false;
     bool     noMeta    = false;
+    QJsonObject toJson() const;
+    static BookFilter fromJson(const QString& jsonText);
 };
 
 // ── Custom field definition ───────────────────────────────────

@@ -82,6 +82,7 @@
 #include <QTextStream>
 #include <QUrlQuery>
 #include <QFileSystemWatcher>
+#include <QJsonDocument>
 #include <algorithm>
 
 namespace {
@@ -1400,6 +1401,30 @@ void MainWindow::setupMenuBar()
     saveSearchAct->setStatusTip("Save the current search query for quick access");
     connect(saveSearchAct, &QAction::triggered, this, &MainWindow::saveCurrentSearch);
     searchMenu->addAction(saveSearchAct);
+
+    QAction* openSavedSearchAct = new QAction("Open Saved Search...", this);
+    openSavedSearchAct->setStatusTip("Open and apply a previously saved search");
+    connect(openSavedSearchAct, &QAction::triggered, this, [this]() {
+        const QVector<SavedSearch> searches = Database::instance().savedSearches();
+        if (searches.isEmpty()) {
+            QMessageBox::information(this, "Saved Searches", "No saved searches are available yet.");
+            return;
+        }
+
+        QStringList items;
+        for (const SavedSearch& search : searches)
+            items << QString("%1  [%2]").arg(search.name, search.query);
+
+        bool ok = false;
+        const QString selected = QInputDialog::getItem(this, "Saved Searches", "Choose a saved search:", items, 0, false, &ok);
+        if (!ok || selected.isEmpty())
+            return;
+
+        const int index = items.indexOf(selected);
+        if (index >= 0)
+            loadSavedSearch(searches.at(index).id);
+    });
+    searchMenu->addAction(openSavedSearchAct);
 
     libMenu->addSeparator();
 
@@ -4601,14 +4626,59 @@ void MainWindow::saveCurrentSearch()
     bool ok = false;
     const QString name = QInputDialog::getText(this, "Save Search", "Name for this search:", QLineEdit::Normal, query, &ok);
     if (ok && !name.trimmed().isEmpty()) {
-        Database::instance().saveSearch(name.trimmed(), query);
+        BookFilter filter;
+        filter.text = query;
+        filter.format = m_formatCombo ? m_formatCombo->currentText() : QString();
+        if (filter.format.compare("All", Qt::CaseInsensitive) == 0)
+            filter.format.clear();
+        filter.author = QString();
+        filter.tag = QString();
+        filter.language = QString();
+        filter.series = QString();
+        filter.favOnly = m_favAction && m_favAction->isChecked();
+        filter.noCover = false;
+        filter.noMeta = false;
+        filter.restrictToPathPrefixes = true;
+        filter.pathPrefixes = m_watchFolders;
+        if (m_categoryCombo)
+            filter.tag = m_categoryCombo->currentData().toString();
+
+        Database::instance().saveSearch(name.trimmed(), query, QString::fromUtf8(QJsonDocument(filter.toJson()).toJson(QJsonDocument::Compact)));
         m_statusLabel->setText("Search saved: " + name);
     }
 }
 
-void MainWindow::loadSavedSearch(int /*id*/)
+void MainWindow::loadSavedSearch(int id)
 {
-    // Placeholder — would apply saved BookFilter from DB
+    const QVector<SavedSearch> searches = Database::instance().savedSearches();
+    const auto it = std::find_if(searches.begin(), searches.end(), [id](const SavedSearch& saved) {
+        return saved.id == id;
+    });
+    if (it == searches.end()) {
+        m_statusLabel->setText("Saved search not found.");
+        return;
+    }
+
+    const BookFilter filter = BookFilter::fromJson(it->filterJson);
+    if (m_searchBox)
+        m_searchBox->setText(it->query);
+    m_filterModel->setFilterText(it->query);
+    m_filterModel->setFilterAuthor(filter.author);
+    m_filterModel->setFilterYear(filter.yearFrom, filter.yearTo);
+    m_filterModel->setFilterFavourites(filter.favOnly);
+    m_filterModel->setFilterNoCover(filter.noCover);
+    m_filterModel->setFilterNoMeta(filter.noMeta);
+    m_filterModel->setFilterTag(filter.tag);
+    if (m_formatCombo)
+        m_formatCombo->setCurrentText(filter.format.isEmpty() ? "All" : filter.format);
+    m_filterModel->setFilterFormat(filter.format);
+    if (m_categoryCombo) {
+        const int index = m_categoryCombo->findData(filter.tag);
+        m_categoryCombo->setCurrentIndex(index >= 0 ? index : 0);
+    }
+    m_filterModel->setFilterCategory(filter.tag);
+    updateStatusCount();
+    m_statusLabel->setText("Saved search loaded: " + it->name);
 }
 
 void MainWindow::openAdvancedSearchDialog()
