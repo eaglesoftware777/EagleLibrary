@@ -49,6 +49,57 @@ QString normaliseToken(QString value)
     return value;
 }
 
+bool hasReplacementLikeGlyphs(const QString& value)
+{
+    return value.contains(QChar::ReplacementCharacter)
+        || value.contains(QChar(0x25A1))
+        || value.contains(QChar(0x25A0))
+        || value.contains(QStringLiteral("\uFFFD"));
+}
+
+bool looksLikeMojibakeText(const QString& value)
+{
+    static const QStringList markers = {
+        QStringLiteral("Ã"), QStringLiteral("Â"), QStringLiteral("Ð"),
+        QStringLiteral("Ñ"), QStringLiteral("â€"), QStringLiteral("ï»¿")
+    };
+    for (const QString& marker : markers) {
+        if (value.contains(marker))
+            return true;
+    }
+    return false;
+}
+
+QString fallbackTitleFromPath(const QString& filePath)
+{
+    return normaliseToken(QFileInfo(filePath).completeBaseName());
+}
+
+bool looksSuspiciousTitleValue(const QString& value, const QString& filePath)
+{
+    const QString trimmed = normaliseToken(value);
+    if (trimmed.isEmpty())
+        return true;
+    if (trimmed.size() <= 2)
+        return true;
+    if (hasReplacementLikeGlyphs(trimmed) || looksLikeMojibakeText(trimmed))
+        return true;
+
+    int punctuationCount = 0;
+    for (const QChar ch : trimmed) {
+        if (!ch.isLetterOrNumber() && !ch.isSpace())
+            ++punctuationCount;
+    }
+    if (trimmed.size() >= 6 && punctuationCount > trimmed.size() / 2)
+        return true;
+
+    const QString fileBase = fallbackTitleFromPath(filePath);
+    if (!fileBase.isEmpty() && trimmed.compare(fileBase, Qt::CaseInsensitive) == 0)
+        return false;
+
+    return false;
+}
+
 QString decodePdfHexLiteral(const QString& value)
 {
     QByteArray bytes = QByteArray::fromHex(value.simplified().remove(' ').toLatin1());
@@ -147,7 +198,9 @@ QString cleanPdfMetadataValue(const QString& raw)
     QString value = normaliseToken(raw);
     value.remove(QRegularExpression("[\\x00-\\x08\\x0B\\x0C\\x0E-\\x1F]"));
     value = normaliseToken(value);
-    return looksLikeGarbageMetadata(value) ? QString() : value;
+    if (looksLikeGarbageMetadata(value) || hasReplacementLikeGlyphs(value) || looksLikeMojibakeText(value))
+        return {};
+    return value;
 }
 
 QString extractPdfField(const QString& content, const QString& field)
@@ -231,7 +284,23 @@ QString readBookProbeText(const QString& filePath)
     if (file.size() > 1024 * 1024 && file.seek(qMax<qint64>(0, file.size() - 256 * 1024)))
         bytes += '\n' + file.read(256 * 1024);
 
-    QString text = QString::fromUtf8(bytes);
+    QString text;
+    if (bytes.size() >= 2) {
+        const uchar b0 = static_cast<uchar>(bytes.at(0));
+        const uchar b1 = static_cast<uchar>(bytes.at(1));
+        if (b0 == 0xFF && b1 == 0xFE) {
+            text = QString::fromUtf16(reinterpret_cast<const char16_t*>(bytes.constData() + 2), (bytes.size() - 2) / 2);
+        } else if (b0 == 0xFE && b1 == 0xFF) {
+            QString decoded;
+            for (int i = 2; i + 1 < bytes.size(); i += 2)
+                decoded.append(QChar((static_cast<uchar>(bytes.at(i)) << 8) | static_cast<uchar>(bytes.at(i + 1))));
+            text = decoded;
+        }
+    }
+    if (text.isEmpty())
+        text = QString::fromUtf8(bytes);
+    if (text.contains(QChar::ReplacementCharacter))
+        text = QString::fromLocal8Bit(bytes);
     if (text.contains(QChar::ReplacementCharacter))
         text = QString::fromLatin1(bytes);
     return text;
@@ -548,7 +617,7 @@ Book ScanWorker::buildBook(const QString& filePath) const
     b.fileHash     = computeHash(filePath);
     b.format       = detectFormat(fi.suffix().toLower());
     b.fileSize     = fi.size();
-    b.title        = fi.completeBaseName();
+    b.title        = fallbackTitleFromPath(filePath);
     b.dateAdded    = QDateTime::currentDateTime();
     b.dateModified = fi.lastModified();
 
@@ -556,8 +625,10 @@ Book ScanWorker::buildBook(const QString& filePath) const
         return b;
 
     const FileHintMetadata hints = extractFileHints(b);
-    if (!hints.title.isEmpty())
+    if (!hints.title.isEmpty() && !looksSuspiciousTitleValue(hints.title, filePath))
         b.title = hints.title;
+    else
+        b.title = fallbackTitleFromPath(filePath);
     if (!hints.author.isEmpty())
         b.author = hints.author;
     if (!hints.publisher.isEmpty())

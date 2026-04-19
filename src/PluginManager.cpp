@@ -14,6 +14,7 @@
 #include <QDockWidget>
 #include <QMainWindow>
 #include <QDebug>
+#include <QAction>
 
 PluginManager& PluginManager::instance()
 {
@@ -31,13 +32,13 @@ void PluginManager::loadAll(const QString& pluginsDir)
         return;
     }
 
-    const QFileInfoList entries = dir.entryInfoList(QStringList() << "plugin.json", QDir::Files, QDir::Name);
-    QList<QDir> subdirs;
     for (const QFileInfo& fi : dir.entryInfoList(QDir::Dirs | QDir::NoDotAndDotDot)) {
         const QString manifestPath = fi.absoluteFilePath() + "/plugin.json";
         if (QFile::exists(manifestPath))
             loadPlugin(manifestPath);
     }
+
+    syncPluginMenu();
 }
 
 bool PluginManager::loadPlugin(const QString& jsonManifestPath)
@@ -74,6 +75,7 @@ bool PluginManager::loadPlugin(const QString& jsonManifestPath)
     lp.active   = false;
 
     m_plugins.insert(id, lp);
+    syncPluginMenu();
     qDebug() << "PluginManager: registered plugin" << lp.info.name << lp.info.version;
     emit pluginLoaded(id);
     return true;
@@ -84,11 +86,16 @@ void PluginManager::unloadPlugin(const QString& pluginId)
     if (!m_plugins.contains(pluginId))
         return;
     LoadedPlugin& lp = m_plugins[pluginId];
+    if (lp.menuAction) {
+        delete lp.menuAction;
+        lp.menuAction = nullptr;
+    }
     if (lp.instance && lp.active) {
         lp.instance->deactivate();
         lp.active = false;
     }
     m_plugins.remove(pluginId);
+    syncPluginMenu();
     emit pluginUnloaded(pluginId);
 }
 
@@ -101,6 +108,37 @@ void PluginManager::unloadAll()
 bool PluginManager::isLoaded(const QString& pluginId) const
 {
     return m_plugins.contains(pluginId);
+}
+
+void PluginManager::syncPluginMenu()
+{
+    if (!m_pluginMenu)
+        return;
+
+    QList<QAction*> existingActions = m_pluginMenu->actions();
+    for (QAction* action : existingActions) {
+        const QVariant pluginId = action->property("plugin_id");
+        if (pluginId.isValid())
+            delete action;
+    }
+
+    for (auto it = m_plugins.begin(); it != m_plugins.end(); ++it) {
+        LoadedPlugin& lp = it.value();
+        const QString title = lp.info.version.isEmpty()
+            ? lp.info.name
+            : QString("%1 (%2)").arg(lp.info.name, lp.info.version);
+        QAction* action = new QAction(title, m_pluginMenu);
+        action->setProperty("plugin_id", lp.info.id);
+        action->setToolTip(lp.info.description);
+        action->setStatusTip(lp.info.description);
+        QObject::connect(action, &QAction::triggered, this, [this, title, lp]() {
+            emit statusMessage(QString("Plugin available: %1").arg(title));
+            if (!lp.sourcePath.isEmpty())
+                emit statusMessage(QString("Plugin manifest: %1").arg(QDir::toNativeSeparators(lp.sourcePath)));
+        });
+        m_pluginMenu->addAction(action);
+        lp.menuAction = action;
+    }
 }
 
 void PluginManager::notifyBookAdded(qint64 id)

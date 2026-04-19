@@ -56,6 +56,55 @@ QString sanitizeTextValue(QString value)
     return cleaned.simplified();
 }
 
+bool hasReplacementLikeGlyphs(const QString& value)
+{
+    return value.contains(QChar::ReplacementCharacter)
+        || value.contains(QChar(0x25A1))
+        || value.contains(QChar(0x25A0))
+        || value.contains(QStringLiteral("\uFFFD"));
+}
+
+bool looksLikeMojibakeText(const QString& value)
+{
+    static const QStringList markers = {
+        QStringLiteral("Ã"), QStringLiteral("Â"), QStringLiteral("Ð"),
+        QStringLiteral("Ñ"), QStringLiteral("â€"), QStringLiteral("ï»¿")
+    };
+    for (const QString& marker : markers) {
+        if (value.contains(marker))
+            return true;
+    }
+    return false;
+}
+
+bool looksSuspiciousTitleValue(const QString& value, const QString& filePath)
+{
+    const QString trimmed = value.trimmed();
+    if (trimmed.isEmpty())
+        return true;
+    if (hasReplacementLikeGlyphs(trimmed) || looksLikeMojibakeText(trimmed))
+        return true;
+    if (trimmed.size() <= 2)
+        return true;
+    const QString fileBase = QFileInfo(filePath).completeBaseName().trimmed();
+    if (!fileBase.isEmpty() && trimmed.compare(fileBase, Qt::CaseInsensitive) == 0)
+        return false;
+
+    int punctuationCount = 0;
+    for (const QChar ch : trimmed) {
+        if (!ch.isLetterOrNumber() && !ch.isSpace())
+            ++punctuationCount;
+    }
+    return trimmed.size() >= 6 && punctuationCount > trimmed.size() / 2;
+}
+
+QString safeTitleForBook(const Book& book)
+{
+    const QString fileBase = sanitizeTextValue(QFileInfo(book.filePath).completeBaseName());
+    const QString title = sanitizeTextValue(book.title);
+    return looksSuspiciousTitleValue(title, book.filePath) ? fileBase : title;
+}
+
 QStringList sanitizeTextList(const QStringList& values)
 {
     QStringList cleaned;
@@ -74,9 +123,13 @@ Book sanitizedBook(Book book)
     book.filePath = sanitizeTextValue(book.filePath);
     book.fileHash = sanitizeTextValue(book.fileHash);
     book.format = sanitizeTextValue(book.format);
-    book.title = sanitizeTextValue(book.title);
+    book.title = safeTitleForBook(book);
     book.author = sanitizeTextValue(book.author);
+    if (looksLikeMojibakeText(book.author) || hasReplacementLikeGlyphs(book.author))
+        book.author.clear();
     book.publisher = sanitizeTextValue(book.publisher);
+    if (looksLikeMojibakeText(book.publisher) || hasReplacementLikeGlyphs(book.publisher))
+        book.publisher.clear();
     book.isbn = sanitizeTextValue(book.isbn);
     book.language = sanitizeTextValue(book.language);
     book.description = sanitizeTextValue(book.description);

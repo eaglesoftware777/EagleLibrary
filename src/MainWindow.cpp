@@ -1348,7 +1348,7 @@ void MainWindow::setupMenuBar()
 
     QAction* quitAct = new QAction("Quit Eagle Library", this);
     quitAct->setShortcut(QKeySequence::Quit);
-    connect(quitAct, &QAction::triggered, qApp, &QApplication::quit);
+    connect(quitAct, &QAction::triggered, this, &QWidget::close);
     fileMenu->addAction(quitAct);
 
     // ── Library ───────────────────────────────────────────────
@@ -2144,6 +2144,8 @@ void MainWindow::retranslateUi()
     setWindowTitle(trl("app.windowTitle", "Eagle Library | Professional Workspace"));
     menuBar()->clear();
     setupMenuBar();
+    PluginManager::instance().setPluginMenu(m_pluginMenu);
+    PluginManager::instance().syncPluginMenu();
 
     if (m_mainToolBar) {
         removeToolBar(m_mainToolBar);
@@ -3544,8 +3546,15 @@ void MainWindow::updateStatusCount()
 void MainWindow::closeEvent(QCloseEvent* event)
 {
     stopAllTasks();
+    PluginManager::instance().unloadAll();
+    if (m_taskProgressDialog) {
+        m_taskProgressDialog->hide();
+        m_taskProgressDialog->deleteLater();
+        m_taskProgressDialog = nullptr;
+    }
     saveSettings();
     event->accept();
+    QTimer::singleShot(0, qApp, &QCoreApplication::quit);
 }
 
 void MainWindow::resizeEvent(QResizeEvent* event)

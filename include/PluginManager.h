@@ -17,6 +17,7 @@ struct LoadedPlugin {
     IPlugin*      instance = nullptr;
     bool          active   = false;
     QString       sourcePath;
+    QAction*      menuAction = nullptr;
 };
 
 class PluginManager : public QObject, public IPluginContext
@@ -32,6 +33,7 @@ public:
     // Scan plugins directory and load all valid plugins
     void    loadAll(const QString& pluginsDir);
     void    unloadAll();
+    void    syncPluginMenu();
 
     // Individual management
     bool    loadPlugin(const QString& jsonManifestPath);
