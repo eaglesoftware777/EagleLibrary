@@ -12,6 +12,7 @@
 #include <QDoubleSpinBox>
 #include <QPushButton>
 #include <QTabWidget>
+#include <QListWidget>
 
 class BookDetailDialog : public QDialog
 {
@@ -41,6 +42,7 @@ private:
     QPushButton* m_fetchBtn;
     QPushButton* m_googleBtn;
     QPushButton* m_goodreadsBtn;
+    QListWidget* m_locationsList = nullptr;
 
     void setupUi();
     void applyStyles();

@@ -1867,6 +1867,7 @@ void MainWindow::setupSidebar()
 
     m_sidebarContent = new QWidget;
     auto* sideWidget = m_sidebarContent;
+    sideWidget->setObjectName("sidebarContainer");
     m_sidebarLayout = new QVBoxLayout(sideWidget);
     auto* sideLayout = m_sidebarLayout;
     sideLayout->setContentsMargins(4, 8, 4, 8);
@@ -1874,14 +1875,16 @@ void MainWindow::setupSidebar()
 
     auto makeHeader = [&](const QString& title) {
         auto* lbl = new QLabel(title);
-        lbl->setObjectName("sideHeader");
+        lbl->setObjectName("sectionLabel");
         sideLayout->addWidget(lbl);
     };
 
-    auto makeBtn = [&](const QString& text, std::function<void()> fn) {
+    auto makeBtn = [&](const QString& text, std::function<void()> fn, const QString& shelfId = QString()) {
         auto* btn = new QPushButton(text);
-        btn->setObjectName("navBtn");
+        btn->setObjectName("sidebarButton");
         btn->setFlat(true);
+        btn->setCheckable(!shelfId.isEmpty());
+        btn->setProperty("shelfId", shelfId);
         connect(btn, &QPushButton::clicked, fn);
         sideLayout->addWidget(btn);
     };
@@ -1890,38 +1893,38 @@ void MainWindow::setupSidebar()
     makeBtn(trl("sidebar.allBooks", "All Books"), [this]() {
         if (m_shelfCombo) m_shelfCombo->setCurrentIndex(m_shelfCombo->findData(QStringLiteral("all")));
         else applyShelf(QStringLiteral("all"));
-    });
+    }, QStringLiteral("all"));
     makeBtn(trl("sidebar.favourites", "Favourites"), [this]() {
         if (m_shelfCombo) m_shelfCombo->setCurrentIndex(m_shelfCombo->findData(QStringLiteral("favourites")));
         else applyShelf(QStringLiteral("favourites"));
-    });
+    }, QStringLiteral("favourites"));
     makeBtn(trl("sidebar.recentlyAdded", "Recently Added"), [this]() {
         if (m_shelfCombo) m_shelfCombo->setCurrentIndex(m_shelfCombo->findData(QStringLiteral("recent")));
         else applyShelf(QStringLiteral("recent"));
-    });
+    }, QStringLiteral("recent"));
     makeBtn(trl("sidebar.mostOpened", "Most Opened"), [this]() {
         if (m_shelfCombo) m_shelfCombo->setCurrentIndex(m_shelfCombo->findData(QStringLiteral("opened")));
         else applyShelf(QStringLiteral("opened"));
-    });
+    }, QStringLiteral("opened"));
 
     sideLayout->addSpacing(8);
     makeHeader(trl("sidebar.smartViews", "SMART VIEWS"));
     makeBtn(trl("sidebar.noCoverArt", "No Cover Art"), [this]() {
         if (m_shelfCombo) m_shelfCombo->setCurrentIndex(m_shelfCombo->findData(QStringLiteral("no_cover")));
         else applyShelf(QStringLiteral("no_cover"));
-    });
+    }, QStringLiteral("no_cover"));
     makeBtn(trl("sidebar.missingMetadata", "Missing Metadata"), [this]() {
         if (m_shelfCombo) m_shelfCombo->setCurrentIndex(m_shelfCombo->findData(QStringLiteral("missing_metadata")));
         else applyShelf(QStringLiteral("missing_metadata"));
-    });
+    }, QStringLiteral("missing_metadata"));
     makeBtn(trl("sidebar.booksOnly", "Books Only"), [this]() {
         if (m_shelfCombo) m_shelfCombo->setCurrentIndex(m_shelfCombo->findData(QStringLiteral("books")));
         else applyShelf(QStringLiteral("books"));
-    });
+    }, QStringLiteral("books"));
     makeBtn(trl("sidebar.documentsOnly", "Documents Only"), [this]() {
         if (m_shelfCombo) m_shelfCombo->setCurrentIndex(m_shelfCombo->findData(QStringLiteral("documents")));
         else applyShelf(QStringLiteral("documents"));
-    });
+    }, QStringLiteral("documents"));
 
     sideLayout->addSpacing(8);
     m_smartCategorySection = new QWidget(sideWidget);
@@ -1929,7 +1932,7 @@ void MainWindow::setupSidebar()
     smartSectionLayout->setContentsMargins(0, 0, 0, 0);
     smartSectionLayout->setSpacing(4);
     auto* smartHeader = new QLabel(trl("sidebar.smartCategories", "SMART CATEGORIES"));
-    smartHeader->setObjectName("sideHeader");
+    smartHeader->setObjectName("sectionLabel");
     smartSectionLayout->addWidget(smartHeader);
     m_smartCategoryButtonsLayout = new QVBoxLayout;
     m_smartCategoryButtonsLayout->setContentsMargins(0, 0, 0, 0);
@@ -3877,6 +3880,12 @@ void MainWindow::applyShelf(const QString& shelfName)
         m_filterModel->setFilterNoCover(true);
     }
 
+    if (m_sidebarContent) {
+        const auto buttons = m_sidebarContent->findChildren<QPushButton*>("sidebarButton");
+        for (QPushButton* button : buttons)
+            button->setChecked(button->property("shelfId").toString() == m_activeShelfName);
+    }
+
     updateStatusCount();
 }
 
@@ -4536,6 +4545,20 @@ void MainWindow::openPluginManager()
         table->setItem(i, 3, new QTableWidgetItem(lp.active ? "Active" : "Registered"));
     }
     layout->addWidget(table);
+
+    auto* runtimePathLabel = new QLabel(
+        QString("Runtime plugins folder: <code>%1</code>")
+            .arg(QDir::toNativeSeparators(AppConfig::pluginsDir())));
+    runtimePathLabel->setTextFormat(Qt::RichText);
+    runtimePathLabel->setWordWrap(true);
+    layout->addWidget(runtimePathLabel);
+
+    if (plugins.isEmpty()) {
+        auto* emptyState = new QLabel(
+            "No plugins are installed yet. The app now ships with starter plugin manifests when the runtime plugins folder is packaged correctly.");
+        emptyState->setWordWrap(true);
+        layout->addWidget(emptyState);
+    }
 
     auto* btnBar = new QHBoxLayout;
     auto* openFolderBtn = new QPushButton("Open Plugins Folder");

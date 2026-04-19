@@ -131,6 +131,8 @@ Section "Eagle Library (required)" SecMain
     File /nonfatal "help\EagleLibrary.chm"
     SetOutPath "$INSTDIR\translations"
     File /nonfatal "translations\README.txt"
+    SetOutPath "$INSTDIR\plugins"
+    File /nonfatal /r "plugins\*.*"
 
     ; ── Registry ─────────────────────────────────────────────
     WriteRegStr HKLM "Software\Eagle Software\Eagle Library" "InstallDir" "$INSTDIR"
@@ -193,6 +195,7 @@ Section "Uninstall"
     RMDir /r "$INSTDIR\tls"
     RMDir /r "$INSTDIR\help"
     RMDir /r "$INSTDIR\translations"
+    RMDir /r "$INSTDIR\plugins"
     RMDir  "$INSTDIR"
 
     ; Remove shortcuts

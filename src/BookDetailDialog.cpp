@@ -4,6 +4,7 @@
 // ============================================================
 #include "BookDetailDialog.h"
 #include "AppConfig.h"
+#include "Database.h"
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QFormLayout>
@@ -27,6 +28,7 @@
 #include <QProcess>
 #include <QDebug>
 #include <QFile>
+#include <QListWidget>
 
 #ifdef Q_OS_WIN
 #include <windows.h>
@@ -109,6 +111,29 @@ void BookDetailDialog::setupUi()
     if (m_book.openCount > 0)
         addInfoRow("Opened", QString("%1x").arg(m_book.openCount));
     leftLayout->addWidget(fileInfoGroup);
+
+    auto* locationsGroup = new QGroupBox("File Locations");
+    auto* locationsLayout = new QVBoxLayout(locationsGroup);
+    m_locationsList = new QListWidget(locationsGroup);
+    m_locationsList->setSelectionMode(QAbstractItemView::SingleSelection);
+    const QStringList locations = Database::instance().fileLocationsForBook(m_book.id);
+    if (locations.isEmpty()) {
+        m_locationsList->addItem(QDir::toNativeSeparators(m_book.filePath));
+    } else {
+        for (const QString& location : locations)
+            m_locationsList->addItem(QDir::toNativeSeparators(location));
+    }
+    locationsLayout->addWidget(m_locationsList);
+
+    auto* openLocationBtn = new QPushButton("Open Selected Location");
+    connect(openLocationBtn, &QPushButton::clicked, this, [this]() {
+        if (!m_locationsList || !m_locationsList->currentItem())
+            return;
+        const QString path = QDir::fromNativeSeparators(m_locationsList->currentItem()->text());
+        QDesktopServices::openUrl(QUrl::fromLocalFile(path));
+    });
+    locationsLayout->addWidget(openLocationBtn);
+    leftLayout->addWidget(locationsGroup);
 
     m_openBtn = new QPushButton("Open Book");
     m_openBtn->setObjectName("primaryBtn");

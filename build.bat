@@ -112,6 +112,15 @@ if %ERRORLEVEL% neq 0 (
     echo [WARNING] windeployqt encountered issues.
 )
 
+if exist "%SCRIPT_DIR%plugins" (
+    echo.
+    echo [post] Copying starter plugins...
+    if exist "Release\plugins" rmdir /s /q "Release\plugins"
+    xcopy "%SCRIPT_DIR%plugins" "Release\plugins" /E /I /Y >nul
+    if exist "%SCRIPT_DIR%installer\plugins" rmdir /s /q "%SCRIPT_DIR%installer\plugins"
+    xcopy "%SCRIPT_DIR%plugins" "%SCRIPT_DIR%installer\plugins" /E /I /Y >nul
+)
+
 echo.
 echo  ╔══════════════════════════════════════════════╗
 echo  ║   BUILD COMPLETE                             ║

@@ -55,8 +55,9 @@ private:
 
     // thread-safe DB helpers (each call gets its own connection)
     bool    dbBookExists(const QString& path,  const QString& conn) const;
-    bool    dbHashExists(const QString& hash,  const QString& conn) const;
+    qint64   dbBookIdByHash(const QString& hash,  const QString& conn) const;
     qint64  dbInsertBook(const Book& b,        const QString& conn) const;
+    bool    dbRegisterFileLocation(qint64 bookId, const Book& b, const QString& conn) const;
     bool    openThreadDb(const QString& conn)  const;
 };
 

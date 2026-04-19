@@ -76,6 +76,11 @@ public:
     bool     removeBook(qint64 id);
     bool     bookExists(const QString& filePath) const;
     bool     bookExistsByHash(const QString& hash) const;
+    qint64   bookIdByHash(const QString& hash) const;
+    bool     registerFileLocation(qint64 bookId, const QString& filePath,
+                                  const QString& fileHash = {},
+                                  qint64 fileSize = 0,
+                                  bool isPrimary = false);
 
     // ── Rich queries ──────────────────────────────────────────
     QVector<Book> query(const BookFilter& filter = {},

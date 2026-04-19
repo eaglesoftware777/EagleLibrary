@@ -1,0 +1,7 @@
+{
+  "id": "com.eaglesoftware.research_toolbox",
+  "name": "Research Toolbox",
+  "version": "1.0.0",
+  "author": "Eagle Software",
+  "description": "Starter research plugin manifest for reference lookups and document enrichment workflows."
+}

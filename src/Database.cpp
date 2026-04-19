@@ -204,7 +204,7 @@ Book bookFromJsonObject(const QJsonObject& obj)
     return sanitizedBook(b);
 }
 
-bool hasFtsTable(QSqlDatabase& db)
+bool hasFtsTable(const QSqlDatabase& db)
 {
     QSqlQuery q(db);
     q.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='books_fts' LIMIT 1");
@@ -212,7 +212,7 @@ bool hasFtsTable(QSqlDatabase& db)
     return q.next();
 }
 
-qint64 bookIdForPath(QSqlDatabase& db, const QString& filePath)
+qint64 bookIdForPath(const QSqlDatabase& db, const QString& filePath)
 {
     QSqlQuery q(db);
     q.prepare("SELECT id FROM books WHERE file_path=:fp LIMIT 1");
@@ -221,7 +221,7 @@ qint64 bookIdForPath(QSqlDatabase& db, const QString& filePath)
     return q.next() ? q.value(0).toLongLong() : 0;
 }
 
-void syncBookFileRecord(QSqlDatabase& db, qint64 bookId, const Book& book)
+void syncBookFileRecord(const QSqlDatabase& db, qint64 bookId, const Book& book)
 {
     if (bookId <= 0 || book.filePath.isEmpty())
         return;
@@ -249,7 +249,40 @@ void syncBookFileRecord(QSqlDatabase& db, qint64 bookId, const Book& book)
         qWarning() << "syncBookFileRecord:" << q.lastError().text();
 }
 
-void removeBookSearchRow(QSqlDatabase& db, qint64 bookId)
+bool registerFileLocationRecord(const QSqlDatabase& db, qint64 bookId, const QString& filePath,
+                                const QString& fileHash, qint64 fileSize, bool isPrimary)
+{
+    if (bookId <= 0 || filePath.isEmpty())
+        return false;
+
+    QSqlQuery q(db);
+    q.prepare(R"(
+        INSERT INTO book_files
+            (book_id, file_path, file_hash, file_size, is_primary, last_seen, exists_flag)
+        VALUES
+            (:book_id, :file_path, :file_hash, :file_size, :is_primary, :last_seen, 1)
+        ON CONFLICT(file_path) DO UPDATE SET
+            book_id = excluded.book_id,
+            file_hash = excluded.file_hash,
+            file_size = excluded.file_size,
+            is_primary = excluded.is_primary,
+            last_seen = excluded.last_seen,
+            exists_flag = 1
+    )");
+    q.bindValue(":book_id", bookId);
+    q.bindValue(":file_path", filePath);
+    q.bindValue(":file_hash", fileHash);
+    q.bindValue(":file_size", fileSize);
+    q.bindValue(":is_primary", isPrimary ? 1 : 0);
+    q.bindValue(":last_seen", QDateTime::currentDateTime().toString(Qt::ISODate));
+    if (!q.exec()) {
+        qWarning() << "registerFileLocationRecord:" << q.lastError().text();
+        return false;
+    }
+    return true;
+}
+
+void removeBookSearchRow(const QSqlDatabase& db, qint64 bookId)
 {
     if (!hasFtsTable(db) || bookId <= 0)
         return;
@@ -259,7 +292,7 @@ void removeBookSearchRow(QSqlDatabase& db, qint64 bookId)
     q.exec();
 }
 
-void syncBookSearchRow(QSqlDatabase& db, qint64 bookId, const Book& book)
+void syncBookSearchRow(const QSqlDatabase& db, qint64 bookId, const Book& book)
 {
     if (!hasFtsTable(db) || bookId <= 0)
         return;
@@ -288,7 +321,7 @@ void syncBookSearchRow(QSqlDatabase& db, qint64 bookId, const Book& book)
         qWarning() << "syncBookSearchRow:" << q.lastError().text();
 }
 
-void syncBookArtifacts(QSqlDatabase& db, qint64 bookId, const Book& book)
+void syncBookArtifacts(const QSqlDatabase& db, qint64 bookId, const Book& book)
 {
     syncBookFileRecord(db, bookId, book);
     syncBookSearchRow(db, bookId, book);
@@ -906,6 +939,23 @@ bool Database::bookExistsByHash(const QString& hash) const
     return q.next();
 }
 
+qint64 Database::bookIdByHash(const QString& hash) const
+{
+    if (hash.isEmpty())
+        return 0;
+    QSqlQuery q(QSqlDatabase::database("eagle_lib"));
+    q.prepare("SELECT id FROM books WHERE file_hash=:h LIMIT 1");
+    q.bindValue(":h", hash);
+    q.exec();
+    return q.next() ? q.value(0).toLongLong() : 0;
+}
+
+bool Database::registerFileLocation(qint64 bookId, const QString& filePath,
+                                    const QString& fileHash, qint64 fileSize, bool isPrimary)
+{
+    return registerFileLocationRecord(QSqlDatabase::database("eagle_lib"), bookId, filePath, fileHash, fileSize, isPrimary);
+}
+
 // ── Stats ─────────────────────────────────────────────────────
 int Database::totalBooks() const
 {
@@ -1284,16 +1334,60 @@ void Database::rebuildSearchIndex()
 
 int Database::removeMissingFiles()
 {
-    // Load all paths, check existence, delete missing
-    QSqlQuery q(QSqlDatabase::database("eagle_lib"));
+    QSqlDatabase db = QSqlDatabase::database("eagle_lib");
+    QSqlQuery q(db);
     q.exec("SELECT id, file_path FROM books");
-    QVector<qint64> toRemove;
+    int removed = 0;
     while (q.next()) {
-        if (!QFileInfo::exists(q.value("file_path").toString()))
-            toRemove << q.value("id").toLongLong();
+        const qint64 bookId = q.value("id").toLongLong();
+        const QString primaryPath = q.value("file_path").toString();
+        const QStringList locations = fileLocationsForBook(bookId);
+        QStringList existingLocations;
+
+        for (const QString& location : locations) {
+            const bool exists = QFileInfo::exists(location);
+            QSqlQuery mark(db);
+            mark.prepare("UPDATE book_files SET exists_flag=:exists, last_seen=:seen WHERE book_id=:id AND file_path=:path");
+            mark.bindValue(":exists", exists ? 1 : 0);
+            mark.bindValue(":seen", QDateTime::currentDateTime().toString(Qt::ISODate));
+            mark.bindValue(":id", bookId);
+            mark.bindValue(":path", location);
+            mark.exec();
+            if (exists)
+                existingLocations << location;
+        }
+
+        if (QFileInfo::exists(primaryPath)) {
+            if (existingLocations.isEmpty()) {
+                const QFileInfo info(primaryPath);
+                registerFileLocation(bookId, primaryPath, {}, info.size(), true);
+            }
+            continue;
+        }
+
+        if (!existingLocations.isEmpty()) {
+            const QString promotedPath = existingLocations.first();
+            const QFileInfo info(promotedPath);
+            QSqlQuery update(db);
+            update.prepare("UPDATE books SET file_path=:path, file_size=:size, date_modified=:dm WHERE id=:id");
+            update.bindValue(":path", promotedPath);
+            update.bindValue(":size", info.size());
+            update.bindValue(":dm", info.lastModified().toString(Qt::ISODate));
+            update.bindValue(":id", bookId);
+            update.exec();
+
+            QSqlQuery demote(db);
+            demote.prepare("UPDATE book_files SET is_primary=0 WHERE book_id=:id");
+            demote.bindValue(":id", bookId);
+            demote.exec();
+            registerFileLocation(bookId, promotedPath, {}, info.size(), true);
+            continue;
+        }
+
+        removeBook(bookId);
+        ++removed;
     }
-    for (qint64 id : toRemove) removeBook(id);
-    return toRemove.size();
+    return removed;
 }
 
 int Database::removeBooksInFolders(const QStringList& folders)
@@ -1409,8 +1503,11 @@ bool Database::exportLibrary(const QString& filePath, const QStringList& watched
     filter.restrictToPathPrefixes = true;
     filter.pathPrefixes = watchedFolders;
     const QVector<Book> books = query(filter, SortField::Title, SortOrder::Asc);
-    for (const Book& book : books)
-        booksArray.append(bookToJson(book));
+    for (const Book& book : books) {
+        QJsonObject obj = bookToJson(book);
+        obj["file_locations"] = QJsonArray::fromStringList(fileLocationsForBook(book.id));
+        booksArray.append(obj);
+    }
     root["books"] = booksArray;
 
     QSaveFile file(filePath);
@@ -1453,9 +1550,17 @@ int Database::importLibrary(const QString& filePath, QStringList* watchedFolders
     for (const QJsonValue& value : books) {
         if (!value.isObject())
             continue;
-        Book b = bookFromJsonObject(value.toObject());
-        if (upsertBook(b))
+        const QJsonObject obj = value.toObject();
+        Book b = bookFromJsonObject(obj);
+        if (upsertBook(b)) {
             ++imported;
+            const qint64 bookId = bookIdForPath(QSqlDatabase::database("eagle_lib"), b.filePath);
+            for (const QJsonValue& locationValue : obj.value("file_locations").toArray()) {
+                const QString location = locationValue.toString();
+                if (!location.isEmpty())
+                    registerFileLocation(bookId, location, b.fileHash, b.fileSize, location == b.filePath);
+            }
+        }
     }
     return imported;
 }

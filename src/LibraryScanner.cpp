@@ -570,19 +570,20 @@ bool ScanWorker::dbBookExists(const QString& path, const QString& conn) const
     return q.next();
 }
 
-bool ScanWorker::dbHashExists(const QString& hash, const QString& conn) const
+qint64 ScanWorker::dbBookIdByHash(const QString& hash, const QString& conn) const
 {
-    if (hash.isEmpty()) return false;
+    if (hash.isEmpty()) return 0;
     QSqlQuery q(QSqlDatabase::database(conn));
-    q.prepare("SELECT 1 FROM books WHERE file_hash=:h LIMIT 1");
+    q.prepare("SELECT id FROM books WHERE file_hash=:h LIMIT 1");
     q.bindValue(":h", hash);
     q.exec();
-    return q.next();
+    return q.next() ? q.value(0).toLongLong() : 0;
 }
 
 qint64 ScanWorker::dbInsertBook(const Book& b, const QString& conn) const
 {
-    QSqlQuery q(QSqlDatabase::database(conn));
+    QSqlDatabase db = QSqlDatabase::database(conn);
+    QSqlQuery q(db);
     q.prepare(R"(
         INSERT OR IGNORE INTO books
             (file_path,file_hash,format,file_size,title,author,publisher,
@@ -618,7 +619,50 @@ qint64 ScanWorker::dbInsertBook(const Book& b, const QString& conn) const
     q.bindValue(":fav",  0);
     q.bindValue(":notes",QString());
     if (!q.exec()) return -1;
-    return q.lastInsertId().toLongLong();
+    const qint64 id = q.lastInsertId().toLongLong();
+
+    QSqlQuery fileQ(db);
+    fileQ.prepare(R"(
+        INSERT INTO book_files
+            (book_id, file_path, file_hash, file_size, is_primary, last_seen, exists_flag)
+        VALUES
+            (:book_id, :file_path, :file_hash, :file_size, 1, :last_seen, 1)
+    )");
+    fileQ.bindValue(":book_id", id);
+    fileQ.bindValue(":file_path", b.filePath);
+    fileQ.bindValue(":file_hash", b.fileHash);
+    fileQ.bindValue(":file_size", b.fileSize);
+    fileQ.bindValue(":last_seen", QDateTime::currentDateTime().toString(Qt::ISODate));
+    fileQ.exec();
+    return id;
+}
+
+bool ScanWorker::dbRegisterFileLocation(qint64 bookId, const Book& b, const QString& conn) const
+{
+    if (bookId <= 0 || b.filePath.isEmpty())
+        return false;
+
+    QSqlDatabase db = QSqlDatabase::database(conn);
+    QSqlQuery q(db);
+    q.prepare(R"(
+        INSERT INTO book_files
+            (book_id, file_path, file_hash, file_size, is_primary, last_seen, exists_flag)
+        VALUES
+            (:book_id, :file_path, :file_hash, :file_size, 0, :last_seen, 1)
+        ON CONFLICT(file_path) DO UPDATE SET
+            book_id = excluded.book_id,
+            file_hash = excluded.file_hash,
+            file_size = excluded.file_size,
+            is_primary = 0,
+            last_seen = excluded.last_seen,
+            exists_flag = 1
+    )");
+    q.bindValue(":book_id", bookId);
+    q.bindValue(":file_path", b.filePath);
+    q.bindValue(":file_hash", b.fileHash);
+    q.bindValue(":file_size", b.fileSize);
+    q.bindValue(":last_seen", QDateTime::currentDateTime().toString(Qt::ISODate));
+    return q.exec();
 }
 
 // ── Build book from filesystem ────────────────────────────────
@@ -762,7 +806,12 @@ void ScanWorker::run()
                 if (dbBookExists(path, conn)) { m_skipped.fetchAndAddRelaxed(1); continue; }
 
                 Book b = buildBook(path);
-                if (dbHashExists(b.fileHash, conn)) { m_skipped.fetchAndAddRelaxed(1); continue; }
+                const qint64 existingId = dbBookIdByHash(b.fileHash, conn);
+                if (existingId > 0) {
+                    dbRegisterFileLocation(existingId, b, conn);
+                    m_skipped.fetchAndAddRelaxed(1);
+                    continue;
+                }
 
                 qint64 id = dbInsertBook(b, conn);
                 if (id > 0) {

@@ -506,7 +506,16 @@ QLabel#toolbarBrandText {
 }
 
 /* ── Sidebar buttons ──────────────────────────────────────────── */
-QPushButton#sidebarButton {
+QLabel#sectionLabel, QLabel#sideHeader {
+    color: #8e8e93;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 1.1px;
+    text-transform: uppercase;
+    padding: 10px 12px 4px 12px;
+}
+
+QPushButton#sidebarButton, QPushButton#navBtn {
     background-color: transparent;
     color: #1c1c1e;
     border: none;
@@ -517,19 +526,19 @@ QPushButton#sidebarButton {
     min-width: 0;
 }
 
-QPushButton#sidebarButton:hover {
+QPushButton#sidebarButton:hover, QPushButton#navBtn:hover {
     background-color: rgba(0,122,255,0.1);
     color: #007aff;
 }
 
-QPushButton#sidebarButton:checked {
+QPushButton#sidebarButton:checked, QPushButton#navBtn:checked {
     background-color: rgba(0,122,255,0.15);
     color: #007aff;
     font-weight: 600;
 }
 
 /* ── Info chips ───────────────────────────────────────────────── */
-QLabel#infoChip {
+QLabel#infoChip, QLabel#workspaceChip {
     background-color: #e5e5ea;
     color: #8e8e93;
     border: none;
@@ -542,6 +551,31 @@ QLabel#infoChip {
 QWidget#workspaceHeader {
     background-color: rgba(255,255,255,0.8);
     border-bottom: 0.5px solid #d2d2d7;
+}
+
+QLabel#workspaceHint {
+    color: #8e8e93;
+    font-size: 12px;
+}
+
+QLabel#statusPrimary {
+    color: #1c1c1e;
+    font-weight: 600;
+}
+
+QLabel#statusSecondary {
+    color: #8e8e93;
+}
+
+QProgressBar#statusProgress {
+    background: #e5e5ea;
+    border: none;
+    border-radius: 6px;
+}
+
+QProgressBar#statusProgress::chunk {
+    background: #007aff;
+    border-radius: 5px;
 }
 
 QWidget#sidebarContainer {

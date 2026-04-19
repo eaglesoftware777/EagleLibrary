@@ -115,11 +115,22 @@ void PluginManager::syncPluginMenu()
     if (!m_pluginMenu)
         return;
 
+    m_pluginMenu->setTitle(QString("&Plugins (%1)").arg(m_plugins.size()));
+
     QList<QAction*> existingActions = m_pluginMenu->actions();
     for (QAction* action : existingActions) {
         const QVariant pluginId = action->property("plugin_id");
-        if (pluginId.isValid())
+        const bool isPlaceholder = action->property("plugin_placeholder").toBool();
+        if (pluginId.isValid() || isPlaceholder)
             delete action;
+    }
+
+    if (m_plugins.isEmpty()) {
+        QAction* emptyAction = new QAction("No plugins installed in the runtime plugins folder", m_pluginMenu);
+        emptyAction->setEnabled(false);
+        emptyAction->setProperty("plugin_placeholder", true);
+        m_pluginMenu->addAction(emptyAction);
+        return;
     }
 
     for (auto it = m_plugins.begin(); it != m_plugins.end(); ++it) {

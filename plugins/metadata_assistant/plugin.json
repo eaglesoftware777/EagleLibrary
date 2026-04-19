@@ -1,0 +1,7 @@
+{
+  "id": "com.eaglesoftware.metadata_assistant",
+  "name": "Metadata Assistant",
+  "version": "1.0.0",
+  "author": "Eagle Software",
+  "description": "Adds quick metadata-oriented actions and serves as a starter plugin manifest."
+}
