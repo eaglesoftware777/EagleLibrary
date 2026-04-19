@@ -107,6 +107,12 @@ QString decodePdfLiteral(QString value)
         }
     }
 
+    // Try to re-interpret the Latin-1 bytes as UTF-8 (common for modern PDFs without BOM)
+    const QByteArray asUtf8Attempt = value.toLatin1();
+    const QString utf8Try = QString::fromUtf8(asUtf8Attempt);
+    if (!utf8Try.contains(QChar::ReplacementCharacter) && utf8Try != value)
+        return normaliseToken(utf8Try);
+
     return normaliseToken(value);
 }
 

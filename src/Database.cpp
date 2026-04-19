@@ -1139,6 +1139,26 @@ int Database::removeBooksInFolders(const QStringList& folders)
     return removed;
 }
 
+int Database::removeBooksForFolders(const QStringList& folderPaths)
+{
+    if (folderPaths.isEmpty())
+        return 0;
+
+    int total = 0;
+    for (const QString& folder : folderPaths) {
+        const QString norm = QDir::fromNativeSeparators(folder.trimmed());
+        if (norm.isEmpty()) continue;
+        const QString prefix = norm.endsWith('/') ? norm : norm + '/';
+        QSqlQuery q(QSqlDatabase::database("eagle_lib"));
+        q.prepare("DELETE FROM books WHERE file_path = :exact OR file_path LIKE :like");
+        q.bindValue(":exact", norm);
+        q.bindValue(":like", prefix + '%');
+        q.exec();
+        total += q.numRowsAffected();
+    }
+    return total;
+}
+
 bool Database::exportLibrary(const QString& filePath, const QStringList& watchedFolders) const
 {
     QJsonObject root;

@@ -2239,13 +2239,15 @@ void MainWindow::showTaskProgress(const QString& title, const QString& status, i
         m_progressBar->setVisible(true);
         m_progressBar->setRange(0, 0);
     }
-    QApplication::processEvents(QEventLoop::ExcludeUserInputEvents);
+    m_progressBar->repaint();
 }
 
 void MainWindow::hideTaskProgress(const QString& finalStatus)
 {
     if (m_taskProgressDialog) {
         m_taskProgressDialog->hide();
+        m_taskProgressDialog->deleteLater();
+        m_taskProgressDialog = nullptr;
     }
     if (m_progressBar->maximum() > 0)
         m_progressBar->setValue(100);
@@ -2368,6 +2370,24 @@ void MainWindow::openSettings()
         loadSettings();
         applyResponsiveLayout();
         reloadCurrentLibrary();
+
+        // Remove books from folders that were dropped from the watch list
+        QStringList removedFolders;
+        for (const QString& f : previousFolders)
+            if (!m_watchFolders.contains(f, Qt::CaseInsensitive))
+                removedFolders << f;
+        if (!removedFolders.isEmpty()) {
+            const int removed = Database::instance().removeBooksForFolders(removedFolders);
+            if (removed > 0) {
+                reloadCurrentLibrary();
+                m_statusLabel->setText(QString("Removed %1 books from dropped folders.").arg(removed));
+            }
+        }
+        // Delete the whole library DB if no folders remain at all
+        if (m_watchFolders.isEmpty()) {
+            Database::instance().removeBooksForFolders(previousFolders);
+            reloadCurrentLibrary();
+        }
 
         if (!m_watchFolders.isEmpty())
             QTimer::singleShot(200, this, &MainWindow::onScanStart);

@@ -147,6 +147,7 @@ public:
     void reindex();
     int  removeMissingFiles();
     int  removeBooksInFolders(const QStringList& folders);
+    int  removeBooksForFolders(const QStringList& folderPaths);
     bool exportLibrary(const QString& filePath, const QStringList& watchedFolders) const;
     int  importLibrary(const QString& filePath, QStringList* watchedFolders = nullptr);
 
