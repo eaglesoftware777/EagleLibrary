@@ -8,6 +8,35 @@
 #include <QFileInfo>
 #include <QRegularExpression>
 
+namespace {
+
+QStringList parseSearchTokens(const QString& input)
+{
+    QStringList tokens;
+    QRegularExpression re(R"re((\w+):"([^"]+)"|"([^"]+)"|(\S+))re");
+    QRegularExpressionMatchIterator it = re.globalMatch(input);
+    while (it.hasNext()) {
+        const QRegularExpressionMatch match = it.next();
+        QString token;
+        if (!match.captured(1).isEmpty())
+            token = match.captured(1) + ":" + match.captured(2);
+        else if (!match.captured(3).isEmpty())
+            token = match.captured(3);
+        else
+            token = match.captured(4);
+        if (!token.trimmed().isEmpty())
+            tokens << token.trimmed();
+    }
+    return tokens;
+}
+
+bool tokenMatchesField(const QString& field, const QString& value)
+{
+    return field.toLower().contains(value.toLower());
+}
+
+}
+
 // ── BookModel ─────────────────────────────────────────────────
 BookModel::BookModel(QObject* parent) : QAbstractListModel(parent) {}
 
@@ -301,25 +330,45 @@ bool BookFilterModel::filterAcceptsRow(int srcRow, const QModelIndex& srcParent)
         const QString language = src->data(idx, LanguageRole).toString();
         const QString path = src->data(idx, FilePathRole).toString();
         const QString category = src->data(idx, CategoryRole).toString();
+        const QString format = src->data(idx, FormatRole).toString();
+        const QString year = src->data(idx, YearRole).toString();
         const QString haystack = (title + "\n" + author + "\n" + publisher + "\n" + description + "\n"
-                                  + tags + "\n" + isbn + "\n" + language + "\n" + path + "\n" + category).toLower();
-        const QStringList tokens = m_filterText.toLower().split(QRegularExpression("\\s+"), Qt::SkipEmptyParts);
-        for (const QString& token : tokens) {
-            if (token.startsWith("author:")) {
-                if (!author.toLower().contains(token.mid(7))) return false;
-            } else if (token.startsWith("title:")) {
-                if (!title.toLower().contains(token.mid(6))) return false;
-            } else if (token.startsWith("tag:")) {
-                if (!tags.toLower().contains(token.mid(4))) return false;
-            } else if (token.startsWith("isbn:")) {
-                if (!isbn.toLower().contains(token.mid(5))) return false;
-            } else if (token.startsWith("path:")) {
-                if (!path.toLower().contains(token.mid(5))) return false;
-            } else if (token.startsWith("category:")) {
-                if (!category.toLower().contains(token.mid(9))) return false;
-            } else if (!haystack.contains(token)) {
-                return false;
+                                  + tags + "\n" + isbn + "\n" + language + "\n" + path + "\n"
+                                  + category + "\n" + format + "\n" + year).toLower();
+        const QStringList tokens = parseSearchTokens(m_filterText);
+        for (QString token : tokens) {
+            if (token.compare("and", Qt::CaseInsensitive) == 0)
+                continue;
+
+            bool negated = false;
+            if (token.startsWith('-')) {
+                negated = true;
+                token.remove(0, 1);
             }
+
+            bool matched = false;
+            const int colonIndex = token.indexOf(':');
+            if (colonIndex > 0) {
+                const QString key = token.left(colonIndex).toLower();
+                const QString value = token.mid(colonIndex + 1);
+                if (key == "author") matched = tokenMatchesField(author, value);
+                else if (key == "title") matched = tokenMatchesField(title, value);
+                else if (key == "tag" || key == "tags") matched = tokenMatchesField(tags, value);
+                else if (key == "isbn") matched = tokenMatchesField(isbn, value);
+                else if (key == "path" || key == "file") matched = tokenMatchesField(path, value);
+                else if (key == "category" || key == "type") matched = tokenMatchesField(category, value);
+                else if (key == "publisher" || key == "pub") matched = tokenMatchesField(publisher, value);
+                else if (key == "lang" || key == "language") matched = tokenMatchesField(language, value);
+                else if (key == "format" || key == "ext") matched = tokenMatchesField(format, value);
+                else if (key == "year") matched = tokenMatchesField(year, value);
+                else if (key == "desc" || key == "description" || key == "content") matched = tokenMatchesField(description, value);
+                else matched = haystack.contains(token.toLower());
+            } else {
+                matched = haystack.contains(token.toLower());
+            }
+
+            if ((!negated && !matched) || (negated && matched))
+                return false;
         }
     }
     return true;

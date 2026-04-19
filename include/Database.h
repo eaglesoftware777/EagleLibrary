@@ -145,11 +145,13 @@ public:
     void optimize();
     void vacuum();
     void reindex();
+    void rebuildSearchIndex();
     int  removeMissingFiles();
     int  removeBooksInFolders(const QStringList& folders);
     int  removeBooksForFolders(const QStringList& folderPaths);
     bool exportLibrary(const QString& filePath, const QStringList& watchedFolders) const;
     int  importLibrary(const QString& filePath, QStringList* watchedFolders = nullptr);
+    QStringList fileLocationsForBook(qint64 bookId) const;
 
 private:
     Database() = default;

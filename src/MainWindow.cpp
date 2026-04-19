@@ -81,6 +81,7 @@
 #include <QStyle>
 #include <QTextStream>
 #include <QUrlQuery>
+#include <QFileSystemWatcher>
 #include <algorithm>
 
 namespace {
@@ -1245,6 +1246,10 @@ MainWindow::MainWindow(QWidget* parent)
     m_scanner         = new LibraryScanner(this);
     m_metaFetcher     = new MetadataFetcher(this);
     m_coverDownloader = new CoverDownloader(AppConfig::coversDir(), this);
+    m_libraryWatcher  = new QFileSystemWatcher(this);
+    m_libraryChangeTimer = new QTimer(this);
+    m_libraryChangeTimer->setSingleShot(true);
+    m_libraryChangeTimer->setInterval(1400);
 
     // UI
     setupMenuBar();
@@ -1287,6 +1292,20 @@ MainWindow::MainWindow(QWidget* parent)
     connect(m_coverDownloader, &CoverDownloader::coverReady,    this, &MainWindow::onCoverReady);
     connect(m_coverDownloader, &CoverDownloader::downloadProgress, this, &MainWindow::onCoverDownloadProgress);
     connect(m_coverDownloader, &CoverDownloader::coverFailed, this, &MainWindow::onCoverDownloadFailed);
+    connect(m_libraryWatcher, &QFileSystemWatcher::directoryChanged, this, [this](const QString& path) {
+        scheduleIncrementalScan(path);
+    });
+    connect(m_libraryChangeTimer, &QTimer::timeout, this, [this]() {
+        if (m_watchFolders.isEmpty())
+            return;
+        if (m_scanner && m_scanner->isRunning()) {
+            m_incrementalScanPending = true;
+            return;
+        }
+        m_incrementalScanPending = false;
+        m_statusLabel->setText("Folder changes detected. Running incremental scan...");
+        m_scanner->startScan(m_watchFolders, m_scanThreads, true);
+    });
 
     // Ctrl+F -> search
     auto* sch = new QShortcut(QKeySequence("Ctrl+F"), this);
@@ -1299,6 +1318,7 @@ MainWindow::MainWindow(QWidget* parent)
     refreshLibrarySelector();
     refreshShelfOptions();
     reloadCurrentLibrary();
+    refreshLibraryWatcher();
     updateStatusCount();
     refreshCategoryOptions();
     updateWorkspaceHeader();
@@ -1584,6 +1604,14 @@ void MainWindow::setupMenuBar()
     QAction* dbRepairAct = new QAction("Repair Text Issues...", this);
     connect(dbRepairAct, &QAction::triggered, this, &MainWindow::repairDatabaseText);
     dbMenu->addAction(dbRepairAct);
+
+    QAction* rebuildSearchAct = new QAction("Rebuild Search Index", this);
+    connect(rebuildSearchAct, &QAction::triggered, this, [this]() {
+        showTaskProgress("Search Index", "Rebuilding the metadata search index...", 0, 0);
+        Database::instance().rebuildSearchIndex();
+        hideTaskProgress("Search index rebuilt.");
+    });
+    dbMenu->addAction(rebuildSearchAct);
 
     dbMenu->addSeparator();
 
@@ -2291,9 +2319,12 @@ void MainWindow::onBookFound(Book book)
 void MainWindow::onScanFinished(int added, int skipped)
 {
     hideTaskProgress(QString("Scan complete -- %1 new, %2 already indexed").arg(added).arg(skipped));
+    refreshLibraryWatcher();
     updateStatusCount();
     if (m_autoEnrichAfterScan && !m_recentlyAddedBooks.isEmpty())
         enrichIncompleteBooks(m_recentlyAddedBooks, "Post-Scan Enrichment");
+    if (m_incrementalScanPending)
+        m_libraryChangeTimer->start();
 }
 
 void MainWindow::onMetadataReady(qint64 id, Book updated)
@@ -2810,11 +2841,16 @@ void MainWindow::findDuplicates()
                          index,
                          books.size(),
                          book.displayTitle());
+        const QStringList locations = Database::instance().fileLocationsForBook(book.id);
+        const QString detail = QString("%1\n    %2")
+            .arg(book.displayTitle(),
+                 (locations.isEmpty() ? QDir::toNativeSeparators(book.filePath)
+                                      : QDir::toNativeSeparators(locations.first())));
         if (!book.fileHash.isEmpty())
-            groups["hash:" + book.fileHash] << book.displayTitle();
+            groups["sha256:" + book.fileHash] << detail;
         if (!book.isbn.trimmed().isEmpty())
-            groups["isbn:" + sanitizeIsbn(book.isbn)] << book.displayTitle();
-        groups["meta:" + normalizedText(book.displayTitle()) + "|" + normalizedText(book.displayAuthor())] << book.displayTitle();
+            groups["isbn:" + sanitizeIsbn(book.isbn)] << detail;
+        groups["meta:" + normalizedText(book.displayTitle()) + "|" + normalizedText(book.displayAuthor())] << detail;
     }
 
     QStringList hits;
@@ -3753,6 +3789,35 @@ void MainWindow::reloadCurrentLibrary()
     refreshCategoryOptions();
     rebuildSmartCategorySidebar();
     applyShelf(normalizeShelfId(m_activeShelfName.isEmpty() ? QStringLiteral("all") : m_activeShelfName));
+    refreshLibraryWatcher();
+}
+
+void MainWindow::refreshLibraryWatcher()
+{
+    if (!m_libraryWatcher)
+        return;
+
+    const QStringList current = m_libraryWatcher->directories();
+    if (!current.isEmpty())
+        m_libraryWatcher->removePaths(current);
+
+    QStringList watchable;
+    for (const QString& folder : m_watchFolders) {
+        const QString normalized = QDir::fromNativeSeparators(folder).trimmed();
+        if (!normalized.isEmpty() && QFileInfo::exists(normalized))
+            watchable << normalized;
+    }
+    if (!watchable.isEmpty())
+        m_libraryWatcher->addPaths(watchable);
+}
+
+void MainWindow::scheduleIncrementalScan(const QString& changedPath)
+{
+    if (!changedPath.trimmed().isEmpty())
+        m_statusLabel->setText(QString("Detected library change: %1").arg(QDir::toNativeSeparators(changedPath)));
+    m_incrementalScanPending = true;
+    if (m_libraryChangeTimer)
+        m_libraryChangeTimer->start();
 }
 
 QVector<Book> MainWindow::currentLibraryBooks(SortField sort, SortOrder order) const

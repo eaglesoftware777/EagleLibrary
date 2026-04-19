@@ -32,6 +32,8 @@ class QCloseEvent;
 class QResizeEvent;
 class QPushButton;
 class QVBoxLayout;
+class QFileSystemWatcher;
+class QTimer;
 
 class MainWindow : public QMainWindow
 {
@@ -197,6 +199,9 @@ private:
     QString     m_startViewMode = "remember";
     QSet<qint64> m_forceCoverFetchIds;
     QVector<Book> m_recentlyAddedBooks;
+    QFileSystemWatcher* m_libraryWatcher = nullptr;
+    QTimer*      m_libraryChangeTimer = nullptr;
+    bool         m_incrementalScanPending = false;
 
     void setupMenuBar();
     void setupToolBar();
@@ -216,6 +221,8 @@ private:
     void refreshLibrarySelector();
     void refreshShelfOptions();
     void reloadCurrentLibrary();
+    void refreshLibraryWatcher();
+    void scheduleIncrementalScan(const QString& changedPath = QString());
     bool bookNeedsEnrichment(const Book& book) const;
     void enrichIncompleteBooks(const QVector<Book>& books, const QString& title);
     void showTaskProgress(const QString& title, const QString& status, int current, int total, const QString& detail = QString());

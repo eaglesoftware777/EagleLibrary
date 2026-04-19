@@ -26,6 +26,8 @@
 #include <QTemporaryDir>
 #include <QtConcurrent/QtConcurrent>
 #include <QFutureSynchronizer>
+#include <QJsonDocument>
+#include <QJsonObject>
 
 namespace {
 
@@ -449,13 +451,34 @@ QString bestContentTitleCandidate(const QString& text)
     return bestScore >= 10 ? best : QString();
 }
 
+FileHintMetadata readJsonSidecarHints(const QString& filePath)
+{
+    FileHintMetadata hint;
+    QFile sidecar(filePath + ".meta.json");
+    if (!sidecar.exists() || !sidecar.open(QIODevice::ReadOnly))
+        return hint;
+
+    const QJsonDocument doc = QJsonDocument::fromJson(sidecar.readAll());
+    if (!doc.isObject())
+        return hint;
+
+    const QJsonObject obj = doc.object();
+    hint.title = normaliseToken(obj.value("title").toString());
+    hint.author = normaliseToken(obj.value("author").toString());
+    hint.publisher = normaliseToken(obj.value("publisher").toString());
+    hint.isbn = sanitizeIsbn(obj.value("isbn").toString());
+    hint.year = obj.value("year").toInt();
+    return hint;
+}
+
 FileHintMetadata extractFileHints(const Book& book)
 {
     FileHintMetadata hint;
+    const FileHintMetadata sidecar = readJsonSidecarHints(book.filePath);
     if (book.format.compare("PDF", Qt::CaseInsensitive) == 0) {
         QFile file(book.filePath);
         if (!file.open(QIODevice::ReadOnly))
-            return hint;
+            return sidecar;
 
         QByteArray raw = file.read(512 * 1024);
         if (file.size() > 512 * 1024 && file.seek(qMax<qint64>(0, file.size() - 256 * 1024)))
@@ -493,6 +516,17 @@ FileHintMetadata extractFileHints(const Book& book)
         const QString probeText = readBookProbeText(book.filePath);
         hint.isbn = extractIsbnFromText(probeText);
     }
+
+    if (!sidecar.title.isEmpty())
+        hint.title = sidecar.title;
+    if (!sidecar.author.isEmpty())
+        hint.author = sidecar.author;
+    if (!sidecar.publisher.isEmpty())
+        hint.publisher = sidecar.publisher;
+    if (!sidecar.isbn.isEmpty())
+        hint.isbn = sidecar.isbn;
+    if (sidecar.year > 0)
+        hint.year = sidecar.year;
     return hint;
 }
 

@@ -204,6 +204,96 @@ Book bookFromJsonObject(const QJsonObject& obj)
     return sanitizedBook(b);
 }
 
+bool hasFtsTable(QSqlDatabase& db)
+{
+    QSqlQuery q(db);
+    q.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='books_fts' LIMIT 1");
+    q.exec();
+    return q.next();
+}
+
+qint64 bookIdForPath(QSqlDatabase& db, const QString& filePath)
+{
+    QSqlQuery q(db);
+    q.prepare("SELECT id FROM books WHERE file_path=:fp LIMIT 1");
+    q.bindValue(":fp", filePath);
+    q.exec();
+    return q.next() ? q.value(0).toLongLong() : 0;
+}
+
+void syncBookFileRecord(QSqlDatabase& db, qint64 bookId, const Book& book)
+{
+    if (bookId <= 0 || book.filePath.isEmpty())
+        return;
+
+    QSqlQuery q(db);
+    q.prepare(R"(
+        INSERT INTO book_files
+            (book_id, file_path, file_hash, file_size, is_primary, last_seen, exists_flag)
+        VALUES
+            (:book_id, :file_path, :file_hash, :file_size, 1, :last_seen, 1)
+        ON CONFLICT(file_path) DO UPDATE SET
+            book_id = excluded.book_id,
+            file_hash = excluded.file_hash,
+            file_size = excluded.file_size,
+            is_primary = 1,
+            last_seen = excluded.last_seen,
+            exists_flag = 1
+    )");
+    q.bindValue(":book_id", bookId);
+    q.bindValue(":file_path", book.filePath);
+    q.bindValue(":file_hash", book.fileHash);
+    q.bindValue(":file_size", book.fileSize);
+    q.bindValue(":last_seen", QDateTime::currentDateTime().toString(Qt::ISODate));
+    if (!q.exec())
+        qWarning() << "syncBookFileRecord:" << q.lastError().text();
+}
+
+void removeBookSearchRow(QSqlDatabase& db, qint64 bookId)
+{
+    if (!hasFtsTable(db) || bookId <= 0)
+        return;
+    QSqlQuery q(db);
+    q.prepare("DELETE FROM books_fts WHERE rowid=:id");
+    q.bindValue(":id", bookId);
+    q.exec();
+}
+
+void syncBookSearchRow(QSqlDatabase& db, qint64 bookId, const Book& book)
+{
+    if (!hasFtsTable(db) || bookId <= 0)
+        return;
+
+    removeBookSearchRow(db, bookId);
+
+    QSqlQuery q(db);
+    q.prepare(R"(
+        INSERT INTO books_fts
+            (rowid, title, author, publisher, isbn, description, tags, subjects, notes, series, file_path)
+        VALUES
+            (:rowid, :title, :author, :publisher, :isbn, :description, :tags, :subjects, :notes, :series, :file_path)
+    )");
+    q.bindValue(":rowid", bookId);
+    q.bindValue(":title", book.title);
+    q.bindValue(":author", book.author);
+    q.bindValue(":publisher", book.publisher);
+    q.bindValue(":isbn", book.isbn);
+    q.bindValue(":description", book.description);
+    q.bindValue(":tags", book.tags.join(" "));
+    q.bindValue(":subjects", book.subjects.join(" "));
+    q.bindValue(":notes", book.notes);
+    q.bindValue(":series", book.series);
+    q.bindValue(":file_path", book.filePath);
+    if (!q.exec())
+        qWarning() << "syncBookSearchRow:" << q.lastError().text();
+}
+
+void syncBookArtifacts(QSqlDatabase& db, qint64 bookId, const Book& book)
+{
+    syncBookFileRecord(db, bookId, book);
+    syncBookSearchRow(db, bookId, book);
+}
+
 } // namespace
 
 Database& Database::instance()
@@ -230,7 +320,10 @@ bool Database::open(const QString& path)
     q.exec("PRAGMA cache_size=20000");
     q.exec("PRAGMA temp_store=MEMORY");
     q.exec("PRAGMA mmap_size=268435456"); // 256 MB mmap
-    return createTables() && createIndexes();
+    const bool ok = createTables() && createIndexes();
+    if (ok)
+        rebuildSearchIndex();
+    return ok;
 }
 
 void Database::close()
@@ -330,6 +423,36 @@ bool Database::createTables()
         )
     )");
 
+    q.exec(R"(
+        CREATE TABLE IF NOT EXISTS book_files (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            book_id    INTEGER NOT NULL REFERENCES books(id) ON DELETE CASCADE,
+            file_path  TEXT NOT NULL UNIQUE,
+            file_hash  TEXT,
+            file_size  INTEGER DEFAULT 0,
+            is_primary INTEGER DEFAULT 1,
+            last_seen  TEXT,
+            exists_flag INTEGER DEFAULT 1
+        )
+    )");
+
+    if (!q.exec(R"(
+        CREATE VIRTUAL TABLE IF NOT EXISTS books_fts USING fts5(
+            title,
+            author,
+            publisher,
+            isbn,
+            description,
+            tags,
+            subjects,
+            notes,
+            series,
+            file_path
+        )
+    )")) {
+        qWarning() << "books_fts unavailable:" << q.lastError().text();
+    }
+
     return ok;
 }
 
@@ -353,6 +476,9 @@ bool Database::createIndexes()
     q.exec("CREATE INDEX IF NOT EXISTS idx_format_year ON books(format, year)");
     q.exec("CREATE INDEX IF NOT EXISTS idx_fav_opened ON books(is_favourite, last_opened)");
     q.exec("CREATE INDEX IF NOT EXISTS idx_series     ON books(series COLLATE NOCASE)");
+    q.exec("CREATE INDEX IF NOT EXISTS idx_book_files_book  ON book_files(book_id)");
+    q.exec("CREATE INDEX IF NOT EXISTS idx_book_files_hash  ON book_files(file_hash)");
+    q.exec("CREATE INDEX IF NOT EXISTS idx_book_files_seen  ON book_files(last_seen)");
     q.exec("CREATE INDEX IF NOT EXISTS idx_bc_book    ON book_collections(book_id)");
     q.exec("CREATE INDEX IF NOT EXISTS idx_bc_coll    ON book_collections(collection_id)");
     optimize();
@@ -585,7 +711,8 @@ Book Database::bookById(qint64 id) const
 qint64 Database::insertBook(const Book& b)
 {
     const Book clean = sanitizedBook(b);
-    QSqlQuery q(QSqlDatabase::database("eagle_lib"));
+    QSqlDatabase db = QSqlDatabase::database("eagle_lib");
+    QSqlQuery q(db);
     q.prepare(R"(
         INSERT OR IGNORE INTO books
             (file_path,file_hash,format,file_size,title,author,publisher,
@@ -624,13 +751,16 @@ qint64 Database::insertBook(const Book& b)
     q.bindValue(":seridx", clean.seriesIndex);
     q.bindValue(":ed",     clean.edition);
     if (!q.exec()) { qWarning() << "insertBook:" << q.lastError().text(); return -1; }
-    return q.lastInsertId().toLongLong();
+    const qint64 id = q.lastInsertId().toLongLong();
+    syncBookArtifacts(db, id, clean);
+    return id;
 }
 
 bool Database::updateBook(const Book& b)
 {
     const Book clean = sanitizedBook(b);
-    QSqlQuery q(QSqlDatabase::database("eagle_lib"));
+    QSqlDatabase db = QSqlDatabase::database("eagle_lib");
+    QSqlQuery q(db);
     q.prepare(R"(
         UPDATE books SET
             title=:ti, author=:au, publisher=:pub, isbn=:isbn,
@@ -661,7 +791,10 @@ bool Database::updateBook(const Book& b)
     q.bindValue(":seridx", clean.seriesIndex);
     q.bindValue(":ed",     clean.edition);
     q.bindValue(":id",     clean.id);
-    return q.exec();
+    const bool ok = q.exec();
+    if (ok)
+        syncBookArtifacts(db, clean.id, clean);
+    return ok;
 }
 
 bool Database::upsertBook(const Book& b)
@@ -670,7 +803,8 @@ bool Database::upsertBook(const Book& b)
     if (clean.filePath.isEmpty())
         return false;
 
-    QSqlQuery q(QSqlDatabase::database("eagle_lib"));
+    QSqlDatabase db = QSqlDatabase::database("eagle_lib");
+    QSqlQuery q(db);
     q.prepare(R"(
         INSERT INTO books
             (file_path,file_hash,format,file_size,title,author,publisher,
@@ -738,12 +872,16 @@ bool Database::upsertBook(const Book& b)
         qWarning() << "upsertBook:" << q.lastError().text();
         return false;
     }
+    const qint64 id = bookIdForPath(db, clean.filePath);
+    syncBookArtifacts(db, id, clean);
     return true;
 }
 
 bool Database::removeBook(qint64 id)
 {
-    QSqlQuery q(QSqlDatabase::database("eagle_lib"));
+    QSqlDatabase db = QSqlDatabase::database("eagle_lib");
+    removeBookSearchRow(db, id);
+    QSqlQuery q(db);
     q.prepare("DELETE FROM books WHERE id=:id");
     q.bindValue(":id", id);
     return q.exec();
@@ -1126,6 +1264,24 @@ void Database::reindex()
     optimize();
 }
 
+void Database::rebuildSearchIndex()
+{
+    QSqlDatabase db = QSqlDatabase::database("eagle_lib");
+    if (!hasFtsTable(db))
+        return;
+
+    QSqlQuery wipe(db);
+    wipe.exec("DELETE FROM books_fts");
+
+    QSqlQuery q(db);
+    q.exec(QString("SELECT %1 FROM books").arg(kBookSelectColumns));
+    while (q.next()) {
+        const Book book = bookFromQuery(q);
+        syncBookSearchRow(db, book.id, book);
+        syncBookFileRecord(db, book.id, book);
+    }
+}
+
 int Database::removeMissingFiles()
 {
     // Load all paths, check existence, delete missing
@@ -1170,6 +1326,18 @@ int Database::removeBooksInFolders(const QStringList& folders)
         countQuery.bindValue(QString(":prefix%1").arg(i), normalizedFolders.at(i) + "/%");
     }
 
+    QVector<qint64> idsToRemove;
+    QSqlQuery idQuery(db);
+    idQuery.prepare("SELECT id FROM books WHERE " + whereClause);
+    for (int i = 0; i < normalizedFolders.size(); ++i) {
+        idQuery.bindValue(QString(":exact%1").arg(i), normalizedFolders.at(i));
+        idQuery.bindValue(QString(":prefix%1").arg(i), normalizedFolders.at(i) + "/%");
+    }
+    if (idQuery.exec()) {
+        while (idQuery.next())
+            idsToRemove << idQuery.value(0).toLongLong();
+    }
+
     int removed = 0;
     if (countQuery.exec() && countQuery.next())
         removed = countQuery.value(0).toInt();
@@ -1189,6 +1357,9 @@ int Database::removeBooksInFolders(const QStringList& folders)
         return 0;
     }
 
+    for (qint64 id : idsToRemove)
+        removeBookSearchRow(db, id);
+
     return removed;
 }
 
@@ -1202,12 +1373,25 @@ int Database::removeBooksForFolders(const QStringList& folderPaths)
         const QString norm = QDir::fromNativeSeparators(folder.trimmed());
         if (norm.isEmpty()) continue;
         const QString prefix = norm.endsWith('/') ? norm : norm + '/';
-        QSqlQuery q(QSqlDatabase::database("eagle_lib"));
+        QSqlDatabase db = QSqlDatabase::database("eagle_lib");
+        QVector<qint64> idsToRemove;
+        QSqlQuery ids(db);
+        ids.prepare("SELECT id FROM books WHERE file_path = :exact OR file_path LIKE :like");
+        ids.bindValue(":exact", norm);
+        ids.bindValue(":like", prefix + '%');
+        if (ids.exec()) {
+            while (ids.next())
+                idsToRemove << ids.value(0).toLongLong();
+        }
+
+        QSqlQuery q(db);
         q.prepare("DELETE FROM books WHERE file_path = :exact OR file_path LIKE :like");
         q.bindValue(":exact", norm);
         q.bindValue(":like", prefix + '%');
         q.exec();
         total += q.numRowsAffected();
+        for (qint64 id : idsToRemove)
+            removeBookSearchRow(db, id);
     }
     return total;
 }
@@ -1274,4 +1458,16 @@ int Database::importLibrary(const QString& filePath, QStringList* watchedFolders
             ++imported;
     }
     return imported;
+}
+
+QStringList Database::fileLocationsForBook(qint64 bookId) const
+{
+    QSqlQuery q(QSqlDatabase::database("eagle_lib"));
+    q.prepare("SELECT file_path FROM book_files WHERE book_id=:id ORDER BY is_primary DESC, file_path COLLATE NOCASE");
+    q.bindValue(":id", bookId);
+    q.exec();
+    QStringList locations;
+    while (q.next())
+        locations << q.value(0).toString();
+    return locations;
 }
