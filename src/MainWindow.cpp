@@ -18,6 +18,7 @@
 #include <QMenuBar>
 #include <QMenu>
 #include <QAction>
+#include <QActionGroup>
 #include <QToolBar>
 #include <QDockWidget>
 #include <QListWidget>
@@ -1734,7 +1735,7 @@ void MainWindow::setupToolBar()
 
     // Search box (prominent)
     m_searchBox = new QLineEdit;
-    m_searchBox->setPlaceholderText("\uD83D\uDD0D  Search title, author, ISBN, tags...");
+    m_searchBox->setPlaceholderText("Search title, author, ISBN, tags...");
     m_searchBox->setMinimumWidth(240);
     m_searchBox->setMaximumWidth(360);
     m_searchBox->setClearButtonEnabled(true);
