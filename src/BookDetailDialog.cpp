@@ -5,6 +5,7 @@
 #include "BookDetailDialog.h"
 #include "AppConfig.h"
 #include "Database.h"
+#include "PluginManager.h"
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QFormLayout>
@@ -222,6 +223,21 @@ void BookDetailDialog::setupUi()
         QDesktopServices::openUrl(url);
     });
     leftLayout->addWidget(m_goodreadsBtn);
+
+    const QList<QAction*> pluginActions = PluginManager::instance().contextActionsForBook(m_book.id);
+    if (!pluginActions.isEmpty()) {
+        auto* pluginGroup = new QGroupBox("Plugin Actions");
+        auto* pluginLayout = new QVBoxLayout(pluginGroup);
+        for (QAction* action : pluginActions) {
+            auto* button = new QPushButton(action->text());
+            button->setToolTip(action->toolTip());
+            connect(button, &QPushButton::clicked, this, [action]() {
+                action->trigger();
+            });
+            pluginLayout->addWidget(button);
+        }
+        leftLayout->addWidget(pluginGroup);
+    }
     leftLayout->addStretch();
 
     mainLayout->addWidget(leftPanel);

@@ -4,6 +4,7 @@
 // ============================================================
 #include "PluginManager.h"
 #include "AppConfig.h"
+#include "Database.h"
 
 #include <QDir>
 #include <QFileInfoList>
@@ -15,6 +16,8 @@
 #include <QMainWindow>
 #include <QDebug>
 #include <QAction>
+#include <QDesktopServices>
+#include <QUrl>
 
 PluginManager& PluginManager::instance()
 {
@@ -23,6 +26,28 @@ PluginManager& PluginManager::instance()
 }
 
 PluginManager::PluginManager(QObject* parent) : QObject(parent) {}
+
+namespace {
+
+QString encoded(QString value)
+{
+    return QString::fromUtf8(QUrl::toPercentEncoding(value));
+}
+
+QString fillBookTemplate(QString templ, const Book& book)
+{
+    const QString query = QString("%1 %2").arg(book.displayTitle(), book.displayAuthor()).trimmed();
+    templ.replace("{title}", encoded(book.displayTitle()));
+    templ.replace("{author}", encoded(book.displayAuthor()));
+    templ.replace("{publisher}", encoded(book.publisher));
+    templ.replace("{isbn}", encoded(book.isbn));
+    templ.replace("{language}", encoded(book.language));
+    templ.replace("{filePath}", encoded(book.filePath));
+    templ.replace("{query}", encoded(query));
+    return templ;
+}
+
+}
 
 void PluginManager::loadAll(const QString& pluginsDir)
 {
@@ -66,6 +91,7 @@ bool PluginManager::loadPlugin(const QString& jsonManifestPath)
     lp.info.description = obj["description"].toString();
     lp.info.iconPath    = obj["icon"].toString();
     lp.sourcePath       = jsonManifestPath;
+    lp.bookActions      = obj["bookActions"].toArray();
 
     for (const QJsonValue& v : obj["requires"].toArray())
         lp.info.requires << v.toString();
@@ -176,6 +202,29 @@ void PluginManager::notifyBookRemoved(qint64 id)
 QList<QAction*> PluginManager::contextActionsForBook(qint64 id)
 {
     QList<QAction*> actions;
+    const Book book = Database::instance().bookById(id);
+
+    for (auto it = m_plugins.begin(); it != m_plugins.end(); ++it) {
+        const LoadedPlugin& lp = it.value();
+        for (const QJsonValue& value : lp.bookActions) {
+            if (!value.isObject())
+                continue;
+            const QJsonObject actionObj = value.toObject();
+            const QString title = actionObj.value("title").toString();
+            const QString urlTemplate = actionObj.value("urlTemplate").toString();
+            if (title.isEmpty() || urlTemplate.isEmpty())
+                continue;
+            QAction* action = new QAction(QString("%1: %2").arg(lp.info.name, title), nullptr);
+            action->setToolTip(actionObj.value("description").toString(lp.info.description));
+            QObject::connect(action, &QAction::triggered, this, [this, urlTemplate, book, lp, title]() {
+                const QUrl url(fillBookTemplate(urlTemplate, book));
+                QDesktopServices::openUrl(url);
+                emit statusMessage(QString("%1 -> %2").arg(lp.info.name, title));
+            });
+            actions << action;
+        }
+    }
+
     for (auto& lp : m_plugins)
         if (lp.instance && lp.active)
             actions << lp.instance->bookContextActions(id);

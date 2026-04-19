@@ -10,6 +10,7 @@
 #include <QString>
 #include <QStringList>
 #include <QJsonObject>
+#include <QJsonArray>
 #include <QList>
 
 struct LoadedPlugin {
@@ -18,6 +19,7 @@ struct LoadedPlugin {
     bool          active   = false;
     QString       sourcePath;
     QAction*      menuAction = nullptr;
+    QJsonArray    bookActions;
 };
 
 class PluginManager : public QObject, public IPluginContext
