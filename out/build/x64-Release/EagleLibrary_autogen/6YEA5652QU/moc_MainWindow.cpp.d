@@ -6,13 +6,19 @@ C:/eagle_software/EagleLibrary/out/build/x64-Release/EagleLibrary_autogen/6YEA56
   C:/Qt/6.7.3/msvc2022_64/include/QtCore/QDir \
   C:/Qt/6.7.3/msvc2022_64/include/QtCore/QFileInfo \
   C:/Qt/6.7.3/msvc2022_64/include/QtCore/QFlags \
+  C:/Qt/6.7.3/msvc2022_64/include/QtCore/QHash \
   C:/Qt/6.7.3/msvc2022_64/include/QtCore/QIODevice \
+  C:/Qt/6.7.3/msvc2022_64/include/QtCore/QJsonArray \
+  C:/Qt/6.7.3/msvc2022_64/include/QtCore/QJsonObject \
   C:/Qt/6.7.3/msvc2022_64/include/QtCore/QList \
+  C:/Qt/6.7.3/msvc2022_64/include/QtCore/QMap \
   C:/Qt/6.7.3/msvc2022_64/include/QtCore/QMetaType \
   C:/Qt/6.7.3/msvc2022_64/include/QtCore/QMutex \
   C:/Qt/6.7.3/msvc2022_64/include/QtCore/QObject \
   C:/Qt/6.7.3/msvc2022_64/include/QtCore/QQueue \
+  C:/Qt/6.7.3/msvc2022_64/include/QtCore/QRegularExpression \
   C:/Qt/6.7.3/msvc2022_64/include/QtCore/QRunnable \
+  C:/Qt/6.7.3/msvc2022_64/include/QtCore/QSet \
   C:/Qt/6.7.3/msvc2022_64/include/QtCore/QSharedDataPointer \
   C:/Qt/6.7.3/msvc2022_64/include/QtCore/QSortFilterProxyModel \
   C:/Qt/6.7.3/msvc2022_64/include/QtCore/QString \
@@ -24,6 +30,8 @@ C:/eagle_software/EagleLibrary/out/build/x64-Release/EagleLibrary_autogen/6YEA56
   C:/Qt/6.7.3/msvc2022_64/include/QtCore/QVariant \
   C:/Qt/6.7.3/msvc2022_64/include/QtCore/QVector \
   C:/Qt/6.7.3/msvc2022_64/include/QtCore/QWaitCondition \
+  C:/Qt/6.7.3/msvc2022_64/include/QtCore/QtPlugin \
+  C:/Qt/6.7.3/msvc2022_64/include/QtCore/q20algorithm.h \
   C:/Qt/6.7.3/msvc2022_64/include/QtCore/q20functional.h \
   C:/Qt/6.7.3/msvc2022_64/include/QtCore/q20memory.h \
   C:/Qt/6.7.3/msvc2022_64/include/QtCore/q20type_traits.h \
@@ -46,6 +54,8 @@ C:/eagle_software/EagleLibrary/out/build/x64-Release/EagleLibrary_autogen/6YEA56
   C:/Qt/6.7.3/msvc2022_64/include/QtCore/qbytearraylist.h \
   C:/Qt/6.7.3/msvc2022_64/include/QtCore/qbytearrayview.h \
   C:/Qt/6.7.3/msvc2022_64/include/QtCore/qcalendar.h \
+  C:/Qt/6.7.3/msvc2022_64/include/QtCore/qcborcommon.h \
+  C:/Qt/6.7.3/msvc2022_64/include/QtCore/qcborvalue.h \
   C:/Qt/6.7.3/msvc2022_64/include/QtCore/qchar.h \
   C:/Qt/6.7.3/msvc2022_64/include/QtCore/qcompare.h \
   C:/Qt/6.7.3/msvc2022_64/include/QtCore/qcompare_impl.h \
@@ -85,6 +95,9 @@ C:/eagle_software/EagleLibrary/out/build/x64-Release/EagleLibrary_autogen/6YEA56
   C:/Qt/6.7.3/msvc2022_64/include/QtCore/qitemselectionmodel.h \
   C:/Qt/6.7.3/msvc2022_64/include/QtCore/qiterable.h \
   C:/Qt/6.7.3/msvc2022_64/include/QtCore/qiterator.h \
+  C:/Qt/6.7.3/msvc2022_64/include/QtCore/qjsonarray.h \
+  C:/Qt/6.7.3/msvc2022_64/include/QtCore/qjsonobject.h \
+  C:/Qt/6.7.3/msvc2022_64/include/QtCore/qjsonvalue.h \
   C:/Qt/6.7.3/msvc2022_64/include/QtCore/qlatin1stringview.h \
   C:/Qt/6.7.3/msvc2022_64/include/QtCore/qline.h \
   C:/Qt/6.7.3/msvc2022_64/include/QtCore/qlist.h \
@@ -106,7 +119,9 @@ C:/eagle_software/EagleLibrary/out/build/x64-Release/EagleLibrary_autogen/6YEA56
   C:/Qt/6.7.3/msvc2022_64/include/QtCore/qobjectdefs_impl.h \
   C:/Qt/6.7.3/msvc2022_64/include/QtCore/qoverload.h \
   C:/Qt/6.7.3/msvc2022_64/include/QtCore/qpair.h \
+  C:/Qt/6.7.3/msvc2022_64/include/QtCore/qplugin.h \
   C:/Qt/6.7.3/msvc2022_64/include/QtCore/qpoint.h \
+  C:/Qt/6.7.3/msvc2022_64/include/QtCore/qpointer.h \
   C:/Qt/6.7.3/msvc2022_64/include/QtCore/qprocessordetection.h \
   C:/Qt/6.7.3/msvc2022_64/include/QtCore/qqueue.h \
   C:/Qt/6.7.3/msvc2022_64/include/QtCore/qrect.h \
@@ -162,6 +177,7 @@ C:/eagle_software/EagleLibrary/out/build/x64-Release/EagleLibrary_autogen/6YEA56
   C:/Qt/6.7.3/msvc2022_64/include/QtCore/qtypes.h \
   C:/Qt/6.7.3/msvc2022_64/include/QtCore/qurl.h \
   C:/Qt/6.7.3/msvc2022_64/include/QtCore/qutf8stringview.h \
+  C:/Qt/6.7.3/msvc2022_64/include/QtCore/quuid.h \
   C:/Qt/6.7.3/msvc2022_64/include/QtCore/qvariant.h \
   C:/Qt/6.7.3/msvc2022_64/include/QtCore/qvarlengtharray.h \
   C:/Qt/6.7.3/msvc2022_64/include/QtCore/qvector.h \
@@ -233,27 +249,41 @@ C:/eagle_software/EagleLibrary/out/build/x64-Release/EagleLibrary_autogen/6YEA56
   C:/Qt/6.7.3/msvc2022_64/include/QtSql/qtsqlexports.h \
   C:/Qt/6.7.3/msvc2022_64/include/QtSql/qtsqlglobal.h \
   C:/Qt/6.7.3/msvc2022_64/include/QtWidgets/QComboBox \
+  C:/Qt/6.7.3/msvc2022_64/include/QtWidgets/QDialog \
   C:/Qt/6.7.3/msvc2022_64/include/QtWidgets/QDockWidget \
   C:/Qt/6.7.3/msvc2022_64/include/QtWidgets/QLabel \
   C:/Qt/6.7.3/msvc2022_64/include/QtWidgets/QLineEdit \
   C:/Qt/6.7.3/msvc2022_64/include/QtWidgets/QListView \
+  C:/Qt/6.7.3/msvc2022_64/include/QtWidgets/QListWidget \
   C:/Qt/6.7.3/msvc2022_64/include/QtWidgets/QMainWindow \
+  C:/Qt/6.7.3/msvc2022_64/include/QtWidgets/QMenu \
   C:/Qt/6.7.3/msvc2022_64/include/QtWidgets/QProgressBar \
+  C:/Qt/6.7.3/msvc2022_64/include/QtWidgets/QProgressDialog \
   C:/Qt/6.7.3/msvc2022_64/include/QtWidgets/QStackedWidget \
   C:/Qt/6.7.3/msvc2022_64/include/QtWidgets/QToolBar \
+  C:/Qt/6.7.3/msvc2022_64/include/QtWidgets/QVBoxLayout \
+  C:/Qt/6.7.3/msvc2022_64/include/QtWidgets/QWidget \
   C:/Qt/6.7.3/msvc2022_64/include/QtWidgets/qabstractitemdelegate.h \
   C:/Qt/6.7.3/msvc2022_64/include/QtWidgets/qabstractitemview.h \
   C:/Qt/6.7.3/msvc2022_64/include/QtWidgets/qabstractscrollarea.h \
   C:/Qt/6.7.3/msvc2022_64/include/QtWidgets/qabstractslider.h \
   C:/Qt/6.7.3/msvc2022_64/include/QtWidgets/qabstractspinbox.h \
+  C:/Qt/6.7.3/msvc2022_64/include/QtWidgets/qboxlayout.h \
   C:/Qt/6.7.3/msvc2022_64/include/QtWidgets/qcombobox.h \
+  C:/Qt/6.7.3/msvc2022_64/include/QtWidgets/qdialog.h \
   C:/Qt/6.7.3/msvc2022_64/include/QtWidgets/qdockwidget.h \
   C:/Qt/6.7.3/msvc2022_64/include/QtWidgets/qframe.h \
+  C:/Qt/6.7.3/msvc2022_64/include/QtWidgets/qgridlayout.h \
   C:/Qt/6.7.3/msvc2022_64/include/QtWidgets/qlabel.h \
+  C:/Qt/6.7.3/msvc2022_64/include/QtWidgets/qlayout.h \
+  C:/Qt/6.7.3/msvc2022_64/include/QtWidgets/qlayoutitem.h \
   C:/Qt/6.7.3/msvc2022_64/include/QtWidgets/qlineedit.h \
   C:/Qt/6.7.3/msvc2022_64/include/QtWidgets/qlistview.h \
+  C:/Qt/6.7.3/msvc2022_64/include/QtWidgets/qlistwidget.h \
   C:/Qt/6.7.3/msvc2022_64/include/QtWidgets/qmainwindow.h \
+  C:/Qt/6.7.3/msvc2022_64/include/QtWidgets/qmenu.h \
   C:/Qt/6.7.3/msvc2022_64/include/QtWidgets/qprogressbar.h \
+  C:/Qt/6.7.3/msvc2022_64/include/QtWidgets/qprogressdialog.h \
   C:/Qt/6.7.3/msvc2022_64/include/QtWidgets/qrubberband.h \
   C:/Qt/6.7.3/msvc2022_64/include/QtWidgets/qsizepolicy.h \
   C:/Qt/6.7.3/msvc2022_64/include/QtWidgets/qslider.h \
@@ -269,7 +299,11 @@ C:/eagle_software/EagleLibrary/out/build/x64-Release/EagleLibrary_autogen/6YEA56
   C:/Qt/6.7.3/msvc2022_64/include/QtWidgets/qwidget.h \
   C:/eagle_software/EagleLibrary/include/Book.h \
   C:/eagle_software/EagleLibrary/include/BookModel.h \
+  C:/eagle_software/EagleLibrary/include/CommandPalette.h \
   C:/eagle_software/EagleLibrary/include/CoverDownloader.h \
   C:/eagle_software/EagleLibrary/include/Database.h \
   C:/eagle_software/EagleLibrary/include/LibraryScanner.h \
-  C:/eagle_software/EagleLibrary/include/MetadataFetcher.h
+  C:/eagle_software/EagleLibrary/include/MetadataFetcher.h \
+  C:/eagle_software/EagleLibrary/include/PluginInterface.h \
+  C:/eagle_software/EagleLibrary/include/PluginManager.h \
+  C:/eagle_software/EagleLibrary/include/ThemeManager.h

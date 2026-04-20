@@ -24,6 +24,7 @@ void ThemeManager::applyTheme(Theme t)
     };
     QFile f(paths[static_cast<int>(t)]);
     if (f.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        qApp->setStyleSheet(QString());
         qApp->setStyleSheet(QString::fromUtf8(f.readAll()));
         f.close();
     } else {

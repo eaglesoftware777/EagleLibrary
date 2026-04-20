@@ -114,10 +114,29 @@ void SettingsDialog::setupUi()
     m_autoCoverCheck = new QCheckBox;
     m_autoEnrichAfterScanCheck = new QCheckBox;
     m_fastScanModeCheck = new QCheckBox;
+    m_iconSizePresetCombo = new QComboBox;
     m_iconSizeSpin   = new QSpinBox;
     m_iconSizeSpin->setRange(100, 280);
-    m_iconSizeSpin->setSingleStep(20);
+    m_iconSizeSpin->setSingleStep(10);
     m_iconSizeSpin->setSuffix(" px");
+    auto* iconSizeWidget = new QWidget;
+    auto* iconSizeLayout = new QHBoxLayout(iconSizeWidget);
+    iconSizeLayout->setContentsMargins(0, 0, 0, 0);
+    iconSizeLayout->setSpacing(8);
+    m_iconSizePresetCombo->addItem("Compact (120 px)", 120);
+    m_iconSizePresetCombo->addItem("Balanced (160 px)", 160);
+    m_iconSizePresetCombo->addItem("Comfort (200 px)", 200);
+    m_iconSizePresetCombo->addItem("Large (240 px)", 240);
+    m_iconSizePresetCombo->addItem("Custom", -1);
+    iconSizeLayout->addWidget(m_iconSizePresetCombo, 1);
+    iconSizeLayout->addWidget(m_iconSizeSpin);
+    connect(m_iconSizePresetCombo, &QComboBox::currentIndexChanged, this, [this]() {
+        const int preset = m_iconSizePresetCombo->currentData().toInt();
+        const bool custom = preset < 0;
+        m_iconSizeSpin->setEnabled(custom);
+        if (!custom)
+            m_iconSizeSpin->setValue(preset);
+    });
     auto* threadsWidget = new QWidget;
     auto* threadsLayout = new QHBoxLayout(threadsWidget);
     threadsLayout->setContentsMargins(0, 0, 0, 0);
@@ -138,7 +157,7 @@ void SettingsDialog::setupUi()
     behaviorForm->addRow(QString(), m_autoCoverCheck);
     behaviorForm->addRow(QString(), m_autoEnrichAfterScanCheck);
     behaviorForm->addRow(QString(), m_fastScanModeCheck);
-    behaviorForm->addRow(QStringLiteral("__grid_card_width__"), m_iconSizeSpin);
+    behaviorForm->addRow(QStringLiteral("__grid_card_width__"), iconSizeWidget);
     behaviorForm->addRow(QStringLiteral("__scan_threads__"), threadsWidget);
     optLay->addWidget(m_behaviorBox);
 
@@ -349,7 +368,16 @@ void SettingsDialog::loadSettings()
     m_autoCoverCheck->setChecked(s.value("options/autoCover", true).toBool());
     m_autoEnrichAfterScanCheck->setChecked(s.value("options/autoEnrichAfterScan", true).toBool());
     m_fastScanModeCheck->setChecked(s.value("options/fastScanMode", true).toBool());
-    m_iconSizeSpin->setValue(s.value("options/iconSize", 160).toInt());
+    const int iconSize = s.value("options/iconSize", 160).toInt();
+    m_iconSizeSpin->setValue(iconSize);
+    int iconPresetIndex = m_iconSizePresetCombo->findData(iconSize);
+    if (iconPresetIndex < 0)
+        iconPresetIndex = m_iconSizePresetCombo->findData(-1);
+    {
+        QSignalBlocker blocker(m_iconSizePresetCombo);
+        m_iconSizePresetCombo->setCurrentIndex(qMax(0, iconPresetIndex));
+    }
+    m_iconSizeSpin->setEnabled(m_iconSizePresetCombo->currentData().toInt() < 0);
     const int scanThreads = s.value("options/scanThreads", 0).toInt();
     int presetIndex = m_scanThreadsPresetCombo->findData(scanThreads);
     if (presetIndex < 0) {
@@ -458,6 +486,13 @@ void SettingsDialog::retranslateUi()
     if (m_removeFolderBtn) m_removeFolderBtn->setText(trl("settings.remove", "Remove"));
 
     if (m_behaviorBox) m_behaviorBox->setTitle(trl("settings.group.behavior", "Library Behavior"));
+    if (m_iconSizePresetCombo) {
+        m_iconSizePresetCombo->setItemText(0, trl("settings.gridCard.compact", "Compact (120 px)"));
+        m_iconSizePresetCombo->setItemText(1, trl("settings.gridCard.balanced", "Balanced (160 px)"));
+        m_iconSizePresetCombo->setItemText(2, trl("settings.gridCard.comfort", "Comfort (200 px)"));
+        m_iconSizePresetCombo->setItemText(3, trl("settings.gridCard.large", "Large (240 px)"));
+        m_iconSizePresetCombo->setItemText(4, trl("settings.custom", "Custom"));
+    }
     if (m_autoMetaCheck) m_autoMetaCheck->setText(trl("settings.autoMeta", "Automatically fetch metadata from internet"));
     if (m_autoCoverCheck) m_autoCoverCheck->setText(trl("settings.autoCover", "Automatically download book covers"));
     if (m_autoEnrichAfterScanCheck) m_autoEnrichAfterScanCheck->setText(trl("settings.autoEnrich", "After scan, enrich only newly added books that still miss DB info"));

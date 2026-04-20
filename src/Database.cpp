@@ -64,6 +64,68 @@ bool hasReplacementLikeGlyphs(const QString& value)
         || value.contains(QStringLiteral("\uFFFD"));
 }
 
+bool looksLikePdfStructureText(const QString& value)
+{
+    const QString lowered = value.toLower();
+    static const QStringList blockedTokens = {
+        QStringLiteral("/filter"),
+        QStringLiteral("/flatedecode"),
+        QStringLiteral("/ascii85decode"),
+        QStringLiteral("/lzwdecode"),
+        QStringLiteral("/length"),
+        QStringLiteral("/type"),
+        QStringLiteral("/catalog"),
+        QStringLiteral("/pages"),
+        QStringLiteral("/metadata"),
+        QStringLiteral("endstream"),
+        QStringLiteral("endobj"),
+        QStringLiteral("xref"),
+        QStringLiteral("linearized"),
+        QStringLiteral(" obj<<"),
+        QStringLiteral(" obj <")
+    };
+    for (const QString& token : blockedTokens) {
+        if (lowered.contains(token))
+            return true;
+    }
+
+    static const QRegularExpression objRefRe(QStringLiteral(R"(\b\d+\s+\d+\s+obj\b)"),
+                                             QRegularExpression::CaseInsensitiveOption);
+    return objRefRe.match(lowered).hasMatch();
+}
+
+bool looksLikeBinaryishTitle(const QString& value)
+{
+    if (value.size() < 8)
+        return false;
+
+    int letters = 0;
+    int digits = 0;
+    int spaces = 0;
+    int symbols = 0;
+    int controls = 0;
+    for (const QChar ch : value) {
+        if (ch.isLetter())
+            ++letters;
+        else if (ch.isDigit())
+            ++digits;
+        else if (ch.isSpace())
+            ++spaces;
+        else if (ch.category() == QChar::Other_Control)
+            ++controls;
+        else
+            ++symbols;
+    }
+
+    if (controls > 0)
+        return true;
+    if (letters < 3 && symbols >= value.size() / 3)
+        return true;
+    if ((letters + digits + spaces) * 2 < value.size())
+        return true;
+    return false;
+}
+
 bool looksLikeMojibakeText(const QString& value)
 {
     static const QStringList markers = {
@@ -83,6 +145,8 @@ bool looksSuspiciousTitleValue(const QString& value, const QString& filePath)
     if (trimmed.isEmpty())
         return true;
     if (hasReplacementLikeGlyphs(trimmed) || looksLikeMojibakeText(trimmed))
+        return true;
+    if (looksLikePdfStructureText(trimmed) || looksLikeBinaryishTitle(trimmed))
         return true;
     if (trimmed.size() <= 2)
         return true;
@@ -1595,6 +1659,71 @@ int Database::removeBooksForFolders(const QStringList& folderPaths)
             removeBookSearchRow(db, id);
     }
     return total;
+}
+
+int Database::remapPathPrefix(const QString& fromPrefix, const QString& toPrefix)
+{
+    QString from = QDir::fromNativeSeparators(fromPrefix.trimmed());
+    QString to = QDir::fromNativeSeparators(toPrefix.trimmed());
+    while (from.endsWith('/'))
+        from.chop(1);
+    while (to.endsWith('/'))
+        to.chop(1);
+    if (from.isEmpty() || to.isEmpty() || from == to)
+        return 0;
+
+    QSqlDatabase db = QSqlDatabase::database("eagle_lib");
+    if (!db.isOpen())
+        return 0;
+
+    QSqlQuery select(db);
+    select.prepare("SELECT id, file_path FROM books WHERE file_path = :exact OR file_path LIKE :like");
+    select.bindValue(":exact", from);
+    select.bindValue(":like", from + "/%");
+    if (!select.exec()) {
+        qWarning() << "remapPathPrefix select failed:" << select.lastError().text();
+        return 0;
+    }
+
+    struct PathRow { qint64 id; QString oldPath; QString newPath; };
+    QVector<PathRow> rows;
+    while (select.next()) {
+        const qint64 id = select.value(0).toLongLong();
+        const QString oldPath = select.value(1).toString();
+        QString newPath = oldPath;
+        if (oldPath == from)
+            newPath = to;
+        else if (oldPath.startsWith(from + "/"))
+            newPath = to + oldPath.mid(from.size());
+        if (newPath != oldPath)
+            rows.push_back({id, oldPath, newPath});
+    }
+    if (rows.isEmpty())
+        return 0;
+
+    db.transaction();
+    int changed = 0;
+    for (const PathRow& row : rows) {
+        QSqlQuery updateBook(db);
+        updateBook.prepare("UPDATE books SET file_path=:newPath WHERE id=:id");
+        updateBook.bindValue(":newPath", row.newPath);
+        updateBook.bindValue(":id", row.id);
+        if (!updateBook.exec()) {
+            qWarning() << "remapPathPrefix update books failed:" << updateBook.lastError().text();
+            continue;
+        }
+
+        QSqlQuery updateFiles(db);
+        updateFiles.prepare("UPDATE book_files SET file_path=:newPath WHERE file_path=:oldPath");
+        updateFiles.bindValue(":newPath", row.newPath);
+        updateFiles.bindValue(":oldPath", row.oldPath);
+        if (!updateFiles.exec())
+            qWarning() << "remapPathPrefix update book_files failed:" << updateFiles.lastError().text();
+        ++changed;
+    }
+    db.commit();
+    rebuildSearchIndex();
+    return changed;
 }
 
 bool Database::exportLibrary(const QString& filePath, const QStringList& watchedFolders) const

@@ -301,6 +301,7 @@ void MetadataFetcher::enqueue(const FetchRequest& req)
 void MetadataFetcher::cancelAll()
 {
     m_cancelling = true;
+    ++m_generation;
     m_processTimer->stop();
     m_queue.clear();
 
@@ -362,30 +363,34 @@ void MetadataFetcher::fetchFromSources(const FetchRequest& req)
     m_coverCandidates.insert(req.bookId, {});
     m_pendingReplies.insert(req.bookId, 0);
 
-    const EmbeddedMetadata embedded = extractEmbeddedMetadata(req);
-    if (embedded.hasAny()) {
-        Candidate local;
-        local.book = embedded.book;
-        local.score = candidateScore(local.book, req) + 15;
-        QVector<Book> books = m_candidates.value(req.bookId);
-        books << local.book;
-        m_candidates.insert(req.bookId, books);
-        qWarning().noquote()
-            << "[Metadata] Embedded metadata bookId=" << req.bookId
-            << "title=" << embedded.book.title
-            << "author=" << embedded.book.author
-            << "publisher=" << embedded.book.publisher
-            << "year=" << embedded.book.year;
-        emit fetchProgress(m_totalDone, m_totalQueued, QFileInfo(req.filePath).fileName(),
-                           "Found embedded file metadata");
-    } else {
-        qWarning() << "[Metadata] No embedded metadata for bookId=" << req.bookId;
-        emit fetchProgress(m_totalDone, m_totalQueued, QFileInfo(req.filePath).fileName(),
-                           "No embedded file metadata, checking internet sources");
+    if (req.useEmbedded) {
+        const EmbeddedMetadata embedded = extractEmbeddedMetadata(req);
+        if (embedded.hasAny()) {
+            Candidate local;
+            local.book = embedded.book;
+            local.score = candidateScore(local.book, req) + 15;
+            QVector<Book> books = m_candidates.value(req.bookId);
+            books << local.book;
+            m_candidates.insert(req.bookId, books);
+            qWarning().noquote()
+                << "[Metadata] Embedded metadata bookId=" << req.bookId
+                << "title=" << embedded.book.title
+                << "author=" << embedded.book.author
+                << "publisher=" << embedded.book.publisher
+                << "year=" << embedded.book.year;
+            emit fetchProgress(m_totalDone, m_totalQueued, QFileInfo(req.filePath).fileName(),
+                               "Found embedded file metadata");
+        } else {
+            qWarning() << "[Metadata] No embedded metadata for bookId=" << req.bookId;
+            emit fetchProgress(m_totalDone, m_totalQueued, QFileInfo(req.filePath).fileName(),
+                               "No embedded file metadata");
+        }
     }
 
-    fetchFromOpenLibrary(req);
-    fetchFromGoogle(req);
+    if (req.useOpenLibrary)
+        fetchFromOpenLibrary(req);
+    if (req.useGoogle)
+        fetchFromGoogle(req);
 
     if (m_pendingReplies.value(req.bookId) == 0) {
         QVector<Candidate> ranked;
@@ -434,8 +439,13 @@ void MetadataFetcher::fetchFromGoogle(const FetchRequest& req)
 
     QNetworkReply* reply = m_nam->get(netReq);
     m_activeReplies.insert(reply);
-    connect(reply, &QNetworkReply::finished, this, [this, reply, bookId = req.bookId]() {
+    const quint64 generation = m_generation;
+    connect(reply, &QNetworkReply::finished, this, [this, reply, bookId = req.bookId, generation]() {
         m_activeReplies.remove(reply);
+        if (generation != m_generation) {
+            reply->deleteLater();
+            return;
+        }
         onGoogleReply(reply, bookId);
         reply->deleteLater();
     });
@@ -464,8 +474,13 @@ void MetadataFetcher::fetchFromOpenLibrary(const FetchRequest& req)
 
     QNetworkReply* reply = m_nam->get(netReq);
     m_activeReplies.insert(reply);
-    connect(reply, &QNetworkReply::finished, this, [this, reply, bookId = req.bookId]() {
+    const quint64 generation = m_generation;
+    connect(reply, &QNetworkReply::finished, this, [this, reply, bookId = req.bookId, generation]() {
         m_activeReplies.remove(reply);
+        if (generation != m_generation) {
+            reply->deleteLater();
+            return;
+        }
         onOpenLibraryReply(reply, bookId);
         reply->deleteLater();
     });

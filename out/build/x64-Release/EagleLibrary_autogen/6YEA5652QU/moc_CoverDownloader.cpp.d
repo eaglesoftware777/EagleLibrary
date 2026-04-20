@@ -5,8 +5,10 @@ C:/eagle_software/EagleLibrary/out/build/x64-Release/EagleLibrary_autogen/6YEA56
   C:/Qt/6.7.3/msvc2022_64/include/QtCore/QMetaType \
   C:/Qt/6.7.3/msvc2022_64/include/QtCore/QObject \
   C:/Qt/6.7.3/msvc2022_64/include/QtCore/QQueue \
+  C:/Qt/6.7.3/msvc2022_64/include/QtCore/QSet \
   C:/Qt/6.7.3/msvc2022_64/include/QtCore/QSharedDataPointer \
   C:/Qt/6.7.3/msvc2022_64/include/QtCore/QString \
+  C:/Qt/6.7.3/msvc2022_64/include/QtCore/QStringList \
   C:/Qt/6.7.3/msvc2022_64/include/QtCore/QUrl \
   C:/Qt/6.7.3/msvc2022_64/include/QtCore/QVariant \
   C:/Qt/6.7.3/msvc2022_64/include/QtCore/q20functional.h \

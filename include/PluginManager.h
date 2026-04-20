@@ -69,6 +69,7 @@ signals:
 
 private:
     explicit PluginManager(QObject* parent = nullptr);
+    void ensureStarterPlugins(const QString& pluginsDir);
 
     QMap<QString, LoadedPlugin> m_plugins;
     QWidget*   m_mainWindow = nullptr;

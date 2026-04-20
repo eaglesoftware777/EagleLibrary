@@ -3,14 +3,17 @@ C:/eagle_software/EagleLibrary/out/build/x64-Release/EagleLibrary_autogen/6YEA56
   C:/Qt/6.7.3/msvc2022_64/include/QtCore/QDateTime \
   C:/Qt/6.7.3/msvc2022_64/include/QtCore/QDeadlineTimer \
   C:/Qt/6.7.3/msvc2022_64/include/QtCore/QFileInfo \
+  C:/Qt/6.7.3/msvc2022_64/include/QtCore/QMap \
   C:/Qt/6.7.3/msvc2022_64/include/QtCore/QMutex \
   C:/Qt/6.7.3/msvc2022_64/include/QtCore/QObject \
   C:/Qt/6.7.3/msvc2022_64/include/QtCore/QQueue \
+  C:/Qt/6.7.3/msvc2022_64/include/QtCore/QRegularExpression \
   C:/Qt/6.7.3/msvc2022_64/include/QtCore/QRunnable \
   C:/Qt/6.7.3/msvc2022_64/include/QtCore/QString \
   C:/Qt/6.7.3/msvc2022_64/include/QtCore/QStringList \
   C:/Qt/6.7.3/msvc2022_64/include/QtCore/QThread \
   C:/Qt/6.7.3/msvc2022_64/include/QtCore/QThreadPool \
+  C:/Qt/6.7.3/msvc2022_64/include/QtCore/QVariant \
   C:/Qt/6.7.3/msvc2022_64/include/QtCore/QWaitCondition \
   C:/Qt/6.7.3/msvc2022_64/include/QtCore/q20functional.h \
   C:/Qt/6.7.3/msvc2022_64/include/QtCore/q20memory.h \
@@ -92,6 +95,7 @@ C:/eagle_software/EagleLibrary/out/build/x64-Release/EagleLibrary_autogen/6YEA56
   C:/Qt/6.7.3/msvc2022_64/include/QtCore/qqueue.h \
   C:/Qt/6.7.3/msvc2022_64/include/QtCore/qrect.h \
   C:/Qt/6.7.3/msvc2022_64/include/QtCore/qrefcount.h \
+  C:/Qt/6.7.3/msvc2022_64/include/QtCore/qregularexpression.h \
   C:/Qt/6.7.3/msvc2022_64/include/QtCore/qrunnable.h \
   C:/Qt/6.7.3/msvc2022_64/include/QtCore/qscopedpointer.h \
   C:/Qt/6.7.3/msvc2022_64/include/QtCore/qscopeguard.h \

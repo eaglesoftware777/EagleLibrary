@@ -1,0 +1,28 @@
+{
+  "code": "hi",
+  "name": "Hindi",
+  "nativeName": "हिन्दी",
+  "rtl": false,
+  "translations": {
+    "menu.file": "&फ़ाइल",
+    "menu.library": "&लाइब्रेरी",
+    "menu.view": "&दृश्य",
+    "menu.database": "&डेटाबेस",
+    "menu.help": "&सहायता",
+    "action.settings": "सेटिंग्स...",
+    "action.quit": "Eagle Library बंद करें",
+    "action.scanFolders": "फ़ोल्डर स्कैन करें",
+    "action.fetchAllMetadata": "सभी मेटाडेटा प्राप्त करें",
+    "action.advancedSearch": "उन्नत खोज...",
+    "action.gridView": "ग्रिड दृश्य",
+    "action.listView": "सूची दृश्य",
+    "action.refresh": "रीफ़्रेश",
+    "action.about": "Eagle Library के बारे में",
+    "settings.languageHint": "भाषा परिवर्तन तुरंत लागू होते हैं। अतिरिक्त JSON भाषा पैक translations फ़ोल्डर में जोड़े जा सकते हैं।",
+    "settings.language": "भाषा",
+    "settings.windowTitle": "सेटिंग्स - Eagle Library",
+    "status.ready": "तैयार",
+    "status.idle": "निष्क्रिय",
+    "splash.ready": "तैयार।"
+  }
+}

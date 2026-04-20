@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Menus and Toolbar</title>
+</head>
+<body>
+  <h1>Menus and Toolbar</h1>
+  <p>This page documents the main menu bar, toolbar, and the most important shortcuts in Eagle Library.</p>
+
+  <h2>File Menu</h2>
+  <ul>
+    <li><code>Settings...</code> opens the full settings dialog.</li>
+    <li><code>Export Library...</code> exports the active library to JSON, CSV, BibTeX, or RIS.</li>
+    <li><code>Import Library...</code> imports a previously exported library snapshot.</li>
+    <li><code>Stop All Tasks</code> stops scan, metadata, cover, and rename tasks. Shortcut: <code>Ctrl+.</code></li>
+    <li><code>Quit</code> closes the application.</li>
+  </ul>
+
+  <h2>Library Menu</h2>
+  <ul>
+    <li><code>Scan Folders</code> indexes the folders of the active library. Shortcut: <code>F5</code>.</li>
+    <li><code>Fetch All Metadata</code> fetches metadata for the active library.</li>
+    <li><code>Advanced Search...</code> opens the advanced search dialog. Shortcut: <code>Ctrl+Shift+F</code>.</li>
+    <li><code>Reference Views -&gt; Current Selection...</code> opens trusted external reference searches for the selected item.</li>
+    <li><code>Enrich Incomplete Books</code> refreshes weak or missing metadata only.</li>
+    <li><code>Quality Check</code> produces a quality report for the active library.</li>
+    <li><code>Find Duplicates</code> looks for duplicate files by hash, ISBN, and metadata similarity.</li>
+    <li><code>Extract ISBNs + Fetch Metadata</code> tries to recover ISBN values and queue metadata fetches.</li>
+    <li><code>Count Pages</code> updates page counts where possible.</li>
+    <li><code>Generate Missing Covers</code> creates missing cover art placeholders or extracted covers.</li>
+    <li><code>Normalize Covers</code> standardizes saved cover assets.</li>
+    <li><code>Smart Categorize</code> classifies items as books or documents and suggests categories.</li>
+    <li><code>Smart Rename All...</code> repairs weak titles across the active library. Shortcut: <code>Ctrl+R</code>.</li>
+    <li><code>Smart Rename Selected...</code> repairs only the current selection. Shortcut: <code>Ctrl+Shift+R</code>.</li>
+    <li><code>Remove Missing Files</code> deletes records whose files no longer exist on disk.</li>
+    <li><code>Remove Selected</code> removes the selected records from the library. Shortcut: <code>Delete</code>.</li>
+  </ul>
+
+  <h2>View Menu</h2>
+  <ul>
+    <li><code>Grid View</code> shows cards with cover art. Shortcut: <code>Ctrl+G</code>.</li>
+    <li><code>List View</code> shows denser rows. Shortcut: <code>Ctrl+L</code>.</li>
+    <li><code>Refresh</code> reloads the active library from the database.</li>
+  </ul>
+
+  <h2>Database Menu</h2>
+  <ul>
+    <li><code>Database Summary</code> shows basic library and database statistics.</li>
+    <li><code>Diagnose Text Problems</code> finds mojibake, replacement glyphs, suspicious titles, and similar text issues.</li>
+    <li><code>Repair Text Problems...</code> rescans suspicious records and updates recoverable metadata.</li>
+    <li><code>Open Database Folder</code> opens the folder that contains the SQLite database.</li>
+    <li><code>Database Editor...</code> opens the built-in editor for manual row edits.</li>
+    <li><code>Optimize Database</code> runs SQLite optimize and analyze for better performance.</li>
+    <li><code>Vacuum Database</code> rebuilds the SQLite file to reclaim space.</li>
+    <li><code>Reindex Database</code> rebuilds indexes after heavy changes.</li>
+  </ul>
+
+  <h2>Help Menu</h2>
+  <ul>
+    <li><code>About Eagle Library</code> shows version and company details.</li>
+    <li><code>User Guide</code> opens the CHM or HTML documentation set.</li>
+    <li><code>Install PDF/OCR Tools...</code> checks for <code>pdftotext</code>, <code>pdftoppm</code>, and <code>tesseract</code> and opens trusted install paths.</li>
+    <li><code>Visit Website</code> opens the Eagle Software website.</li>
+  </ul>
+
+  <h2>Toolbar</h2>
+  <ul>
+    <li><code>Library</code> switches the active library profile.</li>
+    <li><code>Shelf</code> switches virtual views such as <code>All Items</code>, <code>Books Only</code>, and <code>Missing Metadata</code>.</li>
+    <li><code>Format</code> narrows the current view by file format.</li>
+    <li><code>Category</code> narrows the current view by category or classification.</li>
+    <li><code>Sort</code> changes the database sort field.</li>
+    <li><code>Asc</code> flips the sort direction.</li>
+    <li><code>Grid</code> and <code>List</code> toggle the main view mode.</li>
+    <li><code>Favourites</code> toggles the favourites filter.</li>
+    <li><code>Settings</code> opens settings directly from the toolbar.</li>
+    <li><code>Advanced Search</code> opens the structured search dialog.</li>
+    <li>The search box supports free text plus advanced tokens such as <code>author:</code>, <code>title:</code>, <code>tag:</code>, <code>category:</code>, <code>isbn:</code>, and <code>path:</code>.</li>
+  </ul>
+
+  <h2>Live Language Switching</h2>
+  <ul>
+    <li>The interface ships with English, French, Spanish, Arabic, and Simplified Chinese.</li>
+    <li>The menu bar, toolbar, sidebar, splash messages, workspace header, and settings dialog update immediately after the language changes.</li>
+    <li>Arabic also switches the application layout to right-to-left while active.</li>
+  </ul>
+</body>
+</html>

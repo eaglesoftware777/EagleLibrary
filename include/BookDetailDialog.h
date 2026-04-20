@@ -41,7 +41,6 @@ private:
     QPushButton* m_openBtn;
     QPushButton* m_fetchBtn;
     QPushButton* m_googleBtn;
-    QPushButton* m_goodreadsBtn;
     QListWidget* m_locationsList = nullptr;
 
     void setupUi();

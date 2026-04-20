@@ -1,0 +1,19 @@
+{
+  "id": "com.eaglesoftware.device_sync_tools",
+  "name": "Device Sync Tools",
+  "version": "1.0.0",
+  "author": "Eagle Software",
+  "description": "Helpers for device changes, file lookups, and path-based recovery workflows.",
+  "bookActions": [
+    {
+      "title": "Search File Name on Google",
+      "description": "Search the current title or file name on Google.",
+      "urlTemplate": "https://www.google.com/search?q={title}"
+    },
+    {
+      "title": "Search PDF or Document Info",
+      "description": "Search general web results for the current item.",
+      "urlTemplate": "https://www.google.com/search?q={query}%20filetype%3Apdf"
+    }
+  ]
+}

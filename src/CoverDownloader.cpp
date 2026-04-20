@@ -41,6 +41,7 @@ void CoverDownloader::enqueue(qint64 bookId, const QStringList& urls, const QStr
 void CoverDownloader::cancelAll()
 {
     m_cancelling = true;
+    ++m_generation;
     m_queue.clear();
 
     const auto activeReplies = m_activeReplies;
@@ -61,11 +62,12 @@ void CoverDownloader::processNext()
         return;
     while (!m_queue.isEmpty() && m_active < MAX_CONCURRENT) {
         const CoverRequest req = m_queue.dequeue();
+        const quint64 generation = m_generation;
         ++m_active;
 
         auto attempt = std::make_shared<std::function<void(int)>>();
-        *attempt = [this, req, attempt](int index) {
-            if (m_cancelling)
+        *attempt = [this, req, attempt, generation](int index) {
+            if (m_cancelling || generation != m_generation)
                 return;
             if (index >= req.urls.size()) {
                 qWarning() << "[Cover] Failed all URLs for bookId=" << req.bookId
@@ -90,9 +92,9 @@ void CoverDownloader::processNext()
             QNetworkReply* reply = m_nam->get(netReq);
             m_activeReplies.insert(reply);
 
-            connect(reply, &QNetworkReply::finished, this, [this, req, index, reply, attempt]() {
+            connect(reply, &QNetworkReply::finished, this, [this, req, index, reply, attempt, generation]() {
                 m_activeReplies.remove(reply);
-                if (m_cancelling) {
+                if (m_cancelling || generation != m_generation) {
                     reply->deleteLater();
                     return;
                 }

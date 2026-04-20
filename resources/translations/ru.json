@@ -1,0 +1,28 @@
+{
+  "code": "ru",
+  "name": "Russian",
+  "nativeName": "Русский",
+  "rtl": false,
+  "translations": {
+    "menu.file": "&Файл",
+    "menu.library": "&Библиотека",
+    "menu.view": "&Вид",
+    "menu.database": "&База данных",
+    "menu.help": "&Справка",
+    "action.settings": "Настройки...",
+    "action.quit": "Выход из Eagle Library",
+    "action.scanFolders": "Сканировать папки",
+    "action.fetchAllMetadata": "Получить все метаданные",
+    "action.advancedSearch": "Расширенный поиск...",
+    "action.gridView": "Сетка",
+    "action.listView": "Список",
+    "action.refresh": "Обновить",
+    "action.about": "О программе Eagle Library",
+    "settings.languageHint": "Изменение языка применяется сразу. Вы можете добавить собственные JSON-пакеты в папку translations.",
+    "settings.language": "Язык",
+    "settings.windowTitle": "Настройки - Eagle Library",
+    "status.ready": "Готово",
+    "status.idle": "Ожидание",
+    "splash.ready": "Готово."
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "id": "com.eaglesoftware.catalog_enrichment",
+  "name": "Catalog Enrichment",
+  "version": "1.0.0",
+  "author": "Eagle Software",
+  "description": "Extra catalog and reference lookup actions for books and technical documents.",
+  "bookActions": [
+    {
+      "title": "Search Internet Archive",
+      "description": "Search Internet Archive for the current item.",
+      "urlTemplate": "https://archive.org/search?query={query}"
+    },
+    {
+      "title": "Search Semantic Scholar",
+      "description": "Search Semantic Scholar for papers and technical documents.",
+      "urlTemplate": "https://www.semanticscholar.org/search?q={query}"
+    }
+  ]
+}

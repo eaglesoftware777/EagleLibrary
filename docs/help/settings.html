@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Settings Reference</title>
+</head>
+<body>
+  <h1>Settings Reference</h1>
+  <p>This page documents every visible tab and option in the Settings dialog.</p>
+
+  <h2>Library Folders Tab</h2>
+  <ul>
+    <li><code>Library profile</code> selects the library profile being edited.</li>
+    <li><code>New Library...</code> creates a new top-level library profile.</li>
+    <li><code>Rename</code> renames the current library profile.</li>
+    <li><code>Remove</code> deletes the current library profile entry. This removes the profile configuration, not the real files.</li>
+    <li><code>Folder list</code> shows the watched folders assigned to the selected library.</li>
+    <li><code>Add Folder...</code> adds another watched folder to the selected library.</li>
+    <li><code>Remove</code> deletes the selected folder rows from the library profile.</li>
+  </ul>
+
+  <h2>Options Tab</h2>
+  <h3>Library Behavior</h3>
+  <ul>
+    <li><code>Automatically fetch metadata from internet</code> queues online metadata lookup automatically.</li>
+    <li><code>Automatically download book covers</code> downloads covers when metadata or cover URLs are found.</li>
+    <li><code>After scan, enrich only newly added books that still miss DB info</code> limits post-scan enrichment to new weak records.</li>
+    <li><code>Fast scan mode: index files first and defer deep metadata probing</code> speeds up initial indexing by skipping heavy probing during scan.</li>
+    <li><code>Grid card width</code> changes the card size in grid view.</li>
+    <li><code>Scan worker threads</code> controls the number of parallel workers for scan. <code>Auto</code> is usually best.</li>
+  </ul>
+
+  <h3>Interface</h3>
+  <ul>
+    <li><code>Startup view</code> chooses whether Eagle remembers the last view or always starts in grid or list mode.</li>
+    <li><code>Use denser cards and rows to fit smaller screens</code> enables compact mode.</li>
+    <li><code>Show the browse sidebar on wide screens</code> keeps the left navigation dock visible on larger windows.</li>
+    <li><code>Show smart category shortcuts in the sidebar</code> displays dynamic category shortcuts.</li>
+    <li><code>Remember window size and position</code> stores the main window geometry between launches.</li>
+    <li><code>Language</code> switches the application language in real time. English remains the default.</li>
+    <li><code>Open Language Packs Folder</code> opens the writable folder where custom JSON language packs can be added.</li>
+  </ul>
+
+  <h3>Language Packs</h3>
+  <ul>
+    <li>Built-in languages are bundled in the executable and are available immediately.</li>
+    <li>Additional language packs can be added in the <code>translations</code> folder beside the app or in the settings folder.</li>
+    <li>If a string is missing in a custom pack, Eagle Library falls back to the English text automatically.</li>
+  </ul>
+
+  <h2>About Tab</h2>
+  <ul>
+    <li>Shows the Eagle Library product name and version.</li>
+    <li>Shows the Eagle Software company line.</li>
+    <li>Provides a website link.</li>
+  </ul>
+
+  <h2>Saving and Canceling</h2>
+  <ul>
+    <li><code>OK</code> saves all changed settings and closes the dialog.</li>
+    <li><code>Cancel</code> closes the dialog without saving the current session changes. If you previewed another language, the dialog restores the previous language when canceled.</li>
+  </ul>
+</body>
+</html>

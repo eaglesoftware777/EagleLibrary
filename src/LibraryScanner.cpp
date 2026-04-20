@@ -59,6 +59,68 @@ bool hasReplacementLikeGlyphs(const QString& value)
         || value.contains(QStringLiteral("\uFFFD"));
 }
 
+bool looksLikePdfStructureText(const QString& value)
+{
+    const QString lowered = value.toLower();
+    static const QStringList blockedTokens = {
+        QStringLiteral("/filter"),
+        QStringLiteral("/flatedecode"),
+        QStringLiteral("/ascii85decode"),
+        QStringLiteral("/lzwdecode"),
+        QStringLiteral("/length"),
+        QStringLiteral("/type"),
+        QStringLiteral("/catalog"),
+        QStringLiteral("/pages"),
+        QStringLiteral("/metadata"),
+        QStringLiteral("endstream"),
+        QStringLiteral("endobj"),
+        QStringLiteral("xref"),
+        QStringLiteral("linearized"),
+        QStringLiteral(" obj<<"),
+        QStringLiteral(" obj <")
+    };
+    for (const QString& token : blockedTokens) {
+        if (lowered.contains(token))
+            return true;
+    }
+
+    static const QRegularExpression objRefRe(QStringLiteral(R"(\b\d+\s+\d+\s+obj\b)"),
+                                             QRegularExpression::CaseInsensitiveOption);
+    return objRefRe.match(lowered).hasMatch();
+}
+
+bool looksLikeBinaryishTitle(const QString& value)
+{
+    if (value.size() < 8)
+        return false;
+
+    int letters = 0;
+    int digits = 0;
+    int spaces = 0;
+    int symbols = 0;
+    int controls = 0;
+    for (const QChar ch : value) {
+        if (ch.isLetter())
+            ++letters;
+        else if (ch.isDigit())
+            ++digits;
+        else if (ch.isSpace())
+            ++spaces;
+        else if (ch.category() == QChar::Other_Control)
+            ++controls;
+        else
+            ++symbols;
+    }
+
+    if (controls > 0)
+        return true;
+    if (letters < 3 && symbols >= value.size() / 3)
+        return true;
+    if ((letters + digits + spaces) * 2 < value.size())
+        return true;
+    return false;
+}
+
 bool looksLikeMojibakeText(const QString& value)
 {
     static const QStringList markers = {
@@ -85,6 +147,8 @@ bool looksSuspiciousTitleValue(const QString& value, const QString& filePath)
     if (trimmed.size() <= 2)
         return true;
     if (hasReplacementLikeGlyphs(trimmed) || looksLikeMojibakeText(trimmed))
+        return true;
+    if (looksLikePdfStructureText(trimmed) || looksLikeBinaryishTitle(trimmed))
         return true;
 
     int punctuationCount = 0;
@@ -200,8 +264,13 @@ QString cleanPdfMetadataValue(const QString& raw)
     QString value = normaliseToken(raw);
     value.remove(QRegularExpression("[\\x00-\\x08\\x0B\\x0C\\x0E-\\x1F]"));
     value = normaliseToken(value);
-    if (looksLikeGarbageMetadata(value) || hasReplacementLikeGlyphs(value) || looksLikeMojibakeText(value))
+    if (looksLikeGarbageMetadata(value)
+        || hasReplacementLikeGlyphs(value)
+        || looksLikeMojibakeText(value)
+        || looksLikePdfStructureText(value)
+        || looksLikeBinaryishTitle(value)) {
         return {};
+    }
     return value;
 }
 

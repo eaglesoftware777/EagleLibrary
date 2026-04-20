@@ -122,6 +122,7 @@ C:/eagle_software/EagleLibrary/out/build/x64-Release/EagleLibrary_autogen/6YEA56
   C:/Qt/6.7.3/msvc2022_64/include/QtCore/qversiontagging.h \
   C:/Qt/6.7.3/msvc2022_64/include/QtCore/qxptype_traits.h \
   C:/Qt/6.7.3/msvc2022_64/include/QtCore/qyieldcpu.h \
+  C:/Qt/6.7.3/msvc2022_64/include/QtGui/QFont \
   C:/Qt/6.7.3/msvc2022_64/include/QtGui/QPixmap \
   C:/Qt/6.7.3/msvc2022_64/include/QtGui/qaction.h \
   C:/Qt/6.7.3/msvc2022_64/include/QtGui/qbitmap.h \

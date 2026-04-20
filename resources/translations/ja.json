@@ -1,0 +1,28 @@
+{
+  "code": "ja",
+  "name": "Japanese",
+  "nativeName": "日本語",
+  "rtl": false,
+  "translations": {
+    "menu.file": "ファイル(&F)",
+    "menu.library": "ライブラリ(&L)",
+    "menu.view": "表示(&V)",
+    "menu.database": "データベース(&D)",
+    "menu.help": "ヘルプ(&H)",
+    "action.settings": "設定...",
+    "action.quit": "Eagle Library を終了",
+    "action.scanFolders": "フォルダーをスキャン",
+    "action.fetchAllMetadata": "すべてのメタデータを取得",
+    "action.advancedSearch": "高度な検索...",
+    "action.gridView": "グリッド表示",
+    "action.listView": "リスト表示",
+    "action.refresh": "更新",
+    "action.about": "Eagle Library について",
+    "settings.languageHint": "言語の変更はすぐに適用されます。translations フォルダーに追加の JSON 言語パックを配置できます。",
+    "settings.language": "言語",
+    "settings.windowTitle": "設定 - Eagle Library",
+    "status.ready": "準備完了",
+    "status.idle": "待機中",
+    "splash.ready": "準備完了。"
+  }
+}

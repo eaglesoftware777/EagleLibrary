@@ -14,7 +14,6 @@
 #include <QComboBox>
 #include <QAction>
 #include <QThread>
-#include <QProgressDialog>
 #include <QSet>
 #include <QJsonObject>
 
@@ -34,6 +33,7 @@ class QPushButton;
 class QVBoxLayout;
 class QFileSystemWatcher;
 class QTimer;
+class QScrollArea;
 
 class MainWindow : public QMainWindow
 {
@@ -79,6 +79,7 @@ private slots:
     void showNoCoverFilter(bool on);
     void showNoMetaFilter(bool on);
     void fetchAllMetadata();
+    void openMetadataManager();
     void enrichIncompleteBooksAction();
     void runQualityCheck();
     void findDuplicates();
@@ -99,6 +100,7 @@ private slots:
     void openExternalToolsDialog();
     void openDatabaseFolder();
     void openDatabaseEditor();
+    void remapLibraryPaths();
     void openAdvancedSearch();
     void showAbout();
     void switchLibrary(const QString& libraryName);
@@ -147,10 +149,13 @@ private:
     QAction*    m_sortAscAct  = nullptr;
     QToolBar*   m_mainToolBar = nullptr;
     QDockWidget* m_sidebarDock = nullptr;
+    QScrollArea* m_sidebarScrollArea = nullptr;
     QWidget*    m_sidebarContent = nullptr;
     QVBoxLayout* m_sidebarLayout = nullptr;
     QWidget*    m_smartCategorySection = nullptr;
     QVBoxLayout* m_smartCategoryButtonsLayout = nullptr;
+    QWidget*    m_savedSearchSection = nullptr;
+    QVBoxLayout* m_savedSearchButtonsLayout = nullptr;
 
     // Status
     QLabel*       m_statusLabel = nullptr;
@@ -165,8 +170,6 @@ private:
     QLabel*       m_workspaceLibraryChip = nullptr;
     QLabel*       m_workspaceViewChip = nullptr;
     QLabel*       m_workspaceActionChip = nullptr;
-    QProgressDialog* m_taskProgressDialog = nullptr;
-
     // Backend
     LibraryScanner*  m_scanner          = nullptr;
     MetadataFetcher* m_metaFetcher      = nullptr;
@@ -182,6 +185,7 @@ private:
     QAction* m_themeBlueAct  = nullptr;
     QAction* m_themeWhiteAct = nullptr;
     QAction* m_themeMacAct   = nullptr;
+    QActionGroup* m_languageActionGroup = nullptr;
 
     bool        m_isGridView  = true;
     SortOrder   m_sortOrder   = SortOrder::Asc;
@@ -195,6 +199,7 @@ private:
     bool        m_autoEnrichAfterScan = true;
     bool        m_fastScanMode = true;
     bool        m_rememberWindowState = true;
+    bool        m_isClosing = false;
     int         m_scanThreads = 0;
     QString     m_startViewMode = "remember";
     QSet<qint64> m_forceCoverFetchIds;
@@ -218,6 +223,7 @@ private:
     void refreshCategoryOptions();
     void applyResponsiveLayout();
     void rebuildSmartCategorySidebar();
+    void rebuildSavedSearchSidebar();
     void refreshLibrarySelector();
     void refreshShelfOptions();
     void reloadCurrentLibrary();
@@ -227,7 +233,11 @@ private:
     void enrichIncompleteBooks(const QVector<Book>& books, const QString& title);
     void showTaskProgress(const QString& title, const QString& status, int current, int total, const QString& detail = QString());
     void hideTaskProgress(const QString& finalStatus = QString());
-    void scheduleMetadataFetch(const Book& book, bool forceCover = false);
+    void scheduleMetadataFetch(const Book& book,
+                               bool forceCover = false,
+                               bool useEmbedded = true,
+                               bool useGoogle = true,
+                               bool useOpenLibrary = true);
     void startSmartRename(const QVector<Book>& books, const QString& title, const QString& prompt);
     QVector<Book> chooseBooksScope(const QString& featureName);
     QVector<Book> currentLibraryBooks(SortField sort = SortField::Title, SortOrder order = SortOrder::Asc) const;

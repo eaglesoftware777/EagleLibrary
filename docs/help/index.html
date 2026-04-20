@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Eagle Library Help</title>
+  <style>
+    body { font-family: Segoe UI, Arial, sans-serif; margin: 24px auto; max-width: 960px; line-height: 1.55; color: #172332; }
+    h1, h2 { color: #193a58; }
+    a { color: #1d5e91; }
+    code { background: #eef4f8; padding: 2px 5px; border-radius: 4px; }
+    .card { background: #f7fafc; border: 1px solid #d7e2ea; border-radius: 10px; padding: 16px 18px; margin: 16px 0; }
+  </style>
+</head>
+<body>
+  <h1>Eagle Library Help</h1>
+  <p>This guide documents the current Eagle Library workflow, including libraries, shelves, metadata tools, smart rename, database editing, export, portable deployment, and the multilingual interface.</p>
+
+  <div class="card">
+    <h2>Contents</h2>
+    <ul>
+      <li><a href="libraries.html">Libraries and Shelves</a></li>
+      <li><a href="menus.html">Menus and Toolbar</a></li>
+      <li><a href="settings.html">Settings Reference</a></li>
+      <li><a href="tools.html">Scanning, Metadata, and Smart Rename</a></li>
+      <li><a href="database.html">Database Editor and Troubleshooting</a></li>
+      <li><a href="portable.html">Portable Build and Packaging</a></li>
+    </ul>
+  </div>
+
+  <div class="card">
+    <h2>Quick Start</h2>
+    <ol>
+      <li>Open <code>Settings</code> and create a library profile.</li>
+      <li>Add the folders that belong to that library.</li>
+      <li>Keep <code>Fast scan mode</code> enabled in <code>Settings</code> for large libraries, then run <code>Scan</code> to index files quickly.</li>
+      <li>Use the <code>Shelf</code> selector for views like <code>Books Only</code>, <code>Documents Only</code>, and <code>Missing Metadata</code>.</li>
+      <li>Use <code>Fetch All Metadata</code>, <code>Repair Text Problems</code>, <code>Smart Categorize</code>, and <code>Smart Rename</code> to improve the catalog after the fast scan.</li>
+      <li>Use <code>Settings -&gt; Language</code> to switch the interface in real time. English is the default language.</li>
+      <li>Export the active library to JSON, CSV, BibTeX, or RIS.</li>
+    </ol>
+  </div>
+
+  <div class="card">
+    <h2>New In This Build</h2>
+    <ul>
+      <li>Fast scan mode indexes files first and defers expensive PDF probing until later tools need it.</li>
+      <li><code>Database -&gt; Optimize Database</code> runs SQLite optimize and analyze for faster browsing after large imports.</li>
+      <li><code>Help -&gt; Install PDF/OCR Tools...</code> opens trusted setup paths for Poppler <code>pdftotext</code> tools and Tesseract OCR.</li>
+      <li>Reference URLs are now built only from trusted whitelisted domains.</li>
+      <li>The application now includes built-in English, French, Spanish, Arabic, and Simplified Chinese language support.</li>
+      <li>Custom language packs can be added as JSON files in the <code>translations</code> folder without rebuilding the app.</li>
+    </ul>
+  </div>
+</body>
+</html>

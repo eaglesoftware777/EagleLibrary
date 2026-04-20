@@ -1,12 +1,16 @@
 C:/eagle_software/EagleLibrary/out/build/x64-Release/EagleLibrary_autogen/6YEA5652QU/moc_BookDetailDialog.cpp: C:/eagle_software/EagleLibrary/include/BookDetailDialog.h \
   C:/Qt/6.7.3/msvc2022_64/include/QtCore/QDateTime \
   C:/Qt/6.7.3/msvc2022_64/include/QtCore/QFileInfo \
+  C:/Qt/6.7.3/msvc2022_64/include/QtCore/QMap \
+  C:/Qt/6.7.3/msvc2022_64/include/QtCore/QRegularExpression \
   C:/Qt/6.7.3/msvc2022_64/include/QtCore/QString \
   C:/Qt/6.7.3/msvc2022_64/include/QtCore/QStringList \
+  C:/Qt/6.7.3/msvc2022_64/include/QtCore/QVariant \
   C:/Qt/6.7.3/msvc2022_64/include/QtCore/q20functional.h \
   C:/Qt/6.7.3/msvc2022_64/include/QtCore/q20memory.h \
   C:/Qt/6.7.3/msvc2022_64/include/QtCore/q20type_traits.h \
   C:/Qt/6.7.3/msvc2022_64/include/QtCore/q23utility.h \
+  C:/Qt/6.7.3/msvc2022_64/include/QtCore/qabstractitemmodel.h \
   C:/Qt/6.7.3/msvc2022_64/include/QtCore/qalgorithms.h \
   C:/Qt/6.7.3/msvc2022_64/include/QtCore/qanystringview.h \
   C:/Qt/6.7.3/msvc2022_64/include/QtCore/qarraydata.h \
@@ -54,6 +58,7 @@ C:/eagle_software/EagleLibrary/out/build/x64-Release/EagleLibrary_autogen/6YEA56
   C:/Qt/6.7.3/msvc2022_64/include/QtCore/qhashfunctions.h \
   C:/Qt/6.7.3/msvc2022_64/include/QtCore/qiodevice.h \
   C:/Qt/6.7.3/msvc2022_64/include/QtCore/qiodevicebase.h \
+  C:/Qt/6.7.3/msvc2022_64/include/QtCore/qitemselectionmodel.h \
   C:/Qt/6.7.3/msvc2022_64/include/QtCore/qiterable.h \
   C:/Qt/6.7.3/msvc2022_64/include/QtCore/qiterator.h \
   C:/Qt/6.7.3/msvc2022_64/include/QtCore/qlatin1stringview.h \
@@ -167,20 +172,31 @@ C:/eagle_software/EagleLibrary/out/build/x64-Release/EagleLibrary_autogen/6YEA56
   C:/Qt/6.7.3/msvc2022_64/include/QtWidgets/QDoubleSpinBox \
   C:/Qt/6.7.3/msvc2022_64/include/QtWidgets/QLabel \
   C:/Qt/6.7.3/msvc2022_64/include/QtWidgets/QLineEdit \
+  C:/Qt/6.7.3/msvc2022_64/include/QtWidgets/QListWidget \
   C:/Qt/6.7.3/msvc2022_64/include/QtWidgets/QPushButton \
   C:/Qt/6.7.3/msvc2022_64/include/QtWidgets/QSpinBox \
   C:/Qt/6.7.3/msvc2022_64/include/QtWidgets/QTabWidget \
   C:/Qt/6.7.3/msvc2022_64/include/QtWidgets/QTextEdit \
   C:/Qt/6.7.3/msvc2022_64/include/QtWidgets/qabstractbutton.h \
+  C:/Qt/6.7.3/msvc2022_64/include/QtWidgets/qabstractitemdelegate.h \
+  C:/Qt/6.7.3/msvc2022_64/include/QtWidgets/qabstractitemview.h \
   C:/Qt/6.7.3/msvc2022_64/include/QtWidgets/qabstractscrollarea.h \
+  C:/Qt/6.7.3/msvc2022_64/include/QtWidgets/qabstractslider.h \
   C:/Qt/6.7.3/msvc2022_64/include/QtWidgets/qabstractspinbox.h \
   C:/Qt/6.7.3/msvc2022_64/include/QtWidgets/qdialog.h \
   C:/Qt/6.7.3/msvc2022_64/include/QtWidgets/qframe.h \
   C:/Qt/6.7.3/msvc2022_64/include/QtWidgets/qlabel.h \
   C:/Qt/6.7.3/msvc2022_64/include/QtWidgets/qlineedit.h \
+  C:/Qt/6.7.3/msvc2022_64/include/QtWidgets/qlistview.h \
+  C:/Qt/6.7.3/msvc2022_64/include/QtWidgets/qlistwidget.h \
   C:/Qt/6.7.3/msvc2022_64/include/QtWidgets/qpushbutton.h \
+  C:/Qt/6.7.3/msvc2022_64/include/QtWidgets/qrubberband.h \
   C:/Qt/6.7.3/msvc2022_64/include/QtWidgets/qsizepolicy.h \
+  C:/Qt/6.7.3/msvc2022_64/include/QtWidgets/qslider.h \
   C:/Qt/6.7.3/msvc2022_64/include/QtWidgets/qspinbox.h \
+  C:/Qt/6.7.3/msvc2022_64/include/QtWidgets/qstyle.h \
+  C:/Qt/6.7.3/msvc2022_64/include/QtWidgets/qstyleoption.h \
+  C:/Qt/6.7.3/msvc2022_64/include/QtWidgets/qtabbar.h \
   C:/Qt/6.7.3/msvc2022_64/include/QtWidgets/qtabwidget.h \
   C:/Qt/6.7.3/msvc2022_64/include/QtWidgets/qtextedit.h \
   C:/Qt/6.7.3/msvc2022_64/include/QtWidgets/qtwidgets-config.h \

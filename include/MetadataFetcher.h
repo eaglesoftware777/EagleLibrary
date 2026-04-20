@@ -23,6 +23,9 @@ struct FetchRequest {
     QString isbn;
     QString filePath;
     QString format;
+    bool    useEmbedded = true;
+    bool    useGoogle = true;
+    bool    useOpenLibrary = true;
 };
 
 class MetadataFetcher : public QObject
@@ -60,6 +63,7 @@ private:
     QHash<qint64, int> m_pendingReplies;
     QSet<QNetworkReply*> m_activeReplies;
     bool m_cancelling = false;
+    quint64 m_generation = 0;
 
     void fetchFromSources(const FetchRequest& req);
     void fetchFromGoogle(const FetchRequest& req);

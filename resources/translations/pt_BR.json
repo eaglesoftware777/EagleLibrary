@@ -1,0 +1,28 @@
+{
+  "code": "pt_br",
+  "name": "Portuguese (Brazil)",
+  "nativeName": "Português (Brasil)",
+  "rtl": false,
+  "translations": {
+    "menu.file": "&Arquivo",
+    "menu.library": "&Biblioteca",
+    "menu.view": "&Exibir",
+    "menu.database": "&Banco de Dados",
+    "menu.help": "&Ajuda",
+    "action.settings": "Preferências...",
+    "action.quit": "Sair do Eagle Library",
+    "action.scanFolders": "Escanear Pastas",
+    "action.fetchAllMetadata": "Buscar Todos os Metadados",
+    "action.advancedSearch": "Pesquisa Avançada...",
+    "action.gridView": "Visualização em Grade",
+    "action.listView": "Visualização em Lista",
+    "action.refresh": "Atualizar",
+    "action.about": "Sobre o Eagle Library",
+    "settings.languageHint": "As alterações de idioma são aplicadas imediatamente. Adicione pacotes JSON personalizados na pasta translations.",
+    "settings.language": "Idioma",
+    "settings.windowTitle": "Configurações - Eagle Library",
+    "status.ready": "Pronto",
+    "status.idle": "Ocioso",
+    "splash.ready": "Pronto."
+  }
+}

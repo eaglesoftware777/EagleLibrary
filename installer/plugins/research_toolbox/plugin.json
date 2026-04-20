@@ -1,0 +1,19 @@
+{
+  "id": "com.eaglesoftware.research_toolbox",
+  "name": "Research Toolbox",
+  "version": "1.0.0",
+  "author": "Eagle Software",
+  "description": "Starter research plugin manifest for reference lookups and document enrichment workflows.",
+  "bookActions": [
+    {
+      "title": "Search Google Scholar",
+      "description": "Search academic references for the current book or document.",
+      "urlTemplate": "https://scholar.google.com/scholar?q={query}"
+    },
+    {
+      "title": "Search WorldCat",
+      "description": "Search WorldCat for the current item.",
+      "urlTemplate": "https://www.worldcat.org/search?q={query}"
+    }
+  ]
+}

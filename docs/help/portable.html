@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Portable Build and Packaging</title>
+</head>
+<body>
+  <h1>Portable Build and Packaging</h1>
+  <p>The portable build keeps data and settings beside the executable when <code>portable.flag</code> or <code>portable.ini</code> is present.</p>
+  <h2>Portable Layout</h2>
+  <ul>
+    <li><code>data/</code> for the SQLite database, covers, and JSON reports</li>
+    <li><code>settings/</code> for the INI file</li>
+    <li><code>help/</code> for the CHM or HTML help</li>
+    <li><code>translations/</code> for optional custom JSON language packs</li>
+  </ul>
+  <h2>CHM Build</h2>
+  <p>Compile <code>EagleLibrary.hhp</code> with Microsoft HTML Help Workshop to generate <code>EagleLibrary.chm</code>.</p>
+  <h2>Bundled Tools</h2>
+  <p>The portable package does not automatically ship Poppler or Tesseract. Use <code>Help -&gt; Install PDF/OCR Tools...</code> on the target machine to open trusted install pages or launch the OCR installer command.</p>
+</body>
+</html>

@@ -1,4 +1,7 @@
 C:/eagle_software/EagleLibrary/out/build/x64-Release/EagleLibrary_autogen/6YEA5652QU/moc_SettingsDialog.cpp: C:/eagle_software/EagleLibrary/include/SettingsDialog.h \
+  C:/Qt/6.7.3/msvc2022_64/include/QtCore/QJsonObject \
+  C:/Qt/6.7.3/msvc2022_64/include/QtCore/QString \
+  C:/Qt/6.7.3/msvc2022_64/include/QtCore/QStringList \
   C:/Qt/6.7.3/msvc2022_64/include/QtCore/q20functional.h \
   C:/Qt/6.7.3/msvc2022_64/include/QtCore/q20memory.h \
   C:/Qt/6.7.3/msvc2022_64/include/QtCore/q20type_traits.h \
@@ -18,6 +21,9 @@ C:/eagle_software/EagleLibrary/out/build/x64-Release/EagleLibrary_autogen/6YEA56
   C:/Qt/6.7.3/msvc2022_64/include/QtCore/qbytearrayalgorithms.h \
   C:/Qt/6.7.3/msvc2022_64/include/QtCore/qbytearraylist.h \
   C:/Qt/6.7.3/msvc2022_64/include/QtCore/qbytearrayview.h \
+  C:/Qt/6.7.3/msvc2022_64/include/QtCore/qcalendar.h \
+  C:/Qt/6.7.3/msvc2022_64/include/QtCore/qcborcommon.h \
+  C:/Qt/6.7.3/msvc2022_64/include/QtCore/qcborvalue.h \
   C:/Qt/6.7.3/msvc2022_64/include/QtCore/qchar.h \
   C:/Qt/6.7.3/msvc2022_64/include/QtCore/qcompare.h \
   C:/Qt/6.7.3/msvc2022_64/include/QtCore/qcompare_impl.h \
@@ -31,6 +37,7 @@ C:/eagle_software/EagleLibrary/out/build/x64-Release/EagleLibrary_autogen/6YEA56
   C:/Qt/6.7.3/msvc2022_64/include/QtCore/qcontiguouscache.h \
   C:/Qt/6.7.3/msvc2022_64/include/QtCore/qdarwinhelpers.h \
   C:/Qt/6.7.3/msvc2022_64/include/QtCore/qdatastream.h \
+  C:/Qt/6.7.3/msvc2022_64/include/QtCore/qdatetime.h \
   C:/Qt/6.7.3/msvc2022_64/include/QtCore/qdebug.h \
   C:/Qt/6.7.3/msvc2022_64/include/QtCore/qendian.h \
   C:/Qt/6.7.3/msvc2022_64/include/QtCore/qexceptionhandling.h \
@@ -48,6 +55,8 @@ C:/eagle_software/EagleLibrary/out/build/x64-Release/EagleLibrary_autogen/6YEA56
   C:/Qt/6.7.3/msvc2022_64/include/QtCore/qitemselectionmodel.h \
   C:/Qt/6.7.3/msvc2022_64/include/QtCore/qiterable.h \
   C:/Qt/6.7.3/msvc2022_64/include/QtCore/qiterator.h \
+  C:/Qt/6.7.3/msvc2022_64/include/QtCore/qjsonobject.h \
+  C:/Qt/6.7.3/msvc2022_64/include/QtCore/qjsonvalue.h \
   C:/Qt/6.7.3/msvc2022_64/include/QtCore/qlatin1stringview.h \
   C:/Qt/6.7.3/msvc2022_64/include/QtCore/qline.h \
   C:/Qt/6.7.3/msvc2022_64/include/QtCore/qlist.h \
@@ -116,6 +125,7 @@ C:/eagle_software/EagleLibrary/out/build/x64-Release/EagleLibrary_autogen/6YEA56
   C:/Qt/6.7.3/msvc2022_64/include/QtCore/qtypes.h \
   C:/Qt/6.7.3/msvc2022_64/include/QtCore/qurl.h \
   C:/Qt/6.7.3/msvc2022_64/include/QtCore/qutf8stringview.h \
+  C:/Qt/6.7.3/msvc2022_64/include/QtCore/quuid.h \
   C:/Qt/6.7.3/msvc2022_64/include/QtCore/qvariant.h \
   C:/Qt/6.7.3/msvc2022_64/include/QtCore/qvarlengtharray.h \
   C:/Qt/6.7.3/msvc2022_64/include/QtCore/qversiontagging.h \
@@ -153,6 +163,7 @@ C:/eagle_software/EagleLibrary/out/build/x64-Release/EagleLibrary_autogen/6YEA56
   C:/Qt/6.7.3/msvc2022_64/include/QtGui/qwindowdefs.h \
   C:/Qt/6.7.3/msvc2022_64/include/QtGui/qwindowdefs_win.h \
   C:/Qt/6.7.3/msvc2022_64/include/QtWidgets/QCheckBox \
+  C:/Qt/6.7.3/msvc2022_64/include/QtWidgets/QComboBox \
   C:/Qt/6.7.3/msvc2022_64/include/QtWidgets/QDialog \
   C:/Qt/6.7.3/msvc2022_64/include/QtWidgets/QLineEdit \
   C:/Qt/6.7.3/msvc2022_64/include/QtWidgets/QListWidget \
@@ -164,6 +175,7 @@ C:/eagle_software/EagleLibrary/out/build/x64-Release/EagleLibrary_autogen/6YEA56
   C:/Qt/6.7.3/msvc2022_64/include/QtWidgets/qabstractslider.h \
   C:/Qt/6.7.3/msvc2022_64/include/QtWidgets/qabstractspinbox.h \
   C:/Qt/6.7.3/msvc2022_64/include/QtWidgets/qcheckbox.h \
+  C:/Qt/6.7.3/msvc2022_64/include/QtWidgets/qcombobox.h \
   C:/Qt/6.7.3/msvc2022_64/include/QtWidgets/qdialog.h \
   C:/Qt/6.7.3/msvc2022_64/include/QtWidgets/qframe.h \
   C:/Qt/6.7.3/msvc2022_64/include/QtWidgets/qlineedit.h \

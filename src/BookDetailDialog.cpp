@@ -215,15 +215,6 @@ void BookDetailDialog::setupUi()
     });
     leftLayout->addWidget(m_googleBtn);
 
-    m_goodreadsBtn = new QPushButton("Look up on Goodreads");
-    connect(m_goodreadsBtn, &QPushButton::clicked, this, [this]() {
-        const QString query = QString("%1 %2").arg(m_book.title, m_book.author).trimmed();
-        const QUrl url = QUrl(QString("https://www.goodreads.com/search?q=%1")
-                              .arg(QString::fromUtf8(QUrl::toPercentEncoding(query))));
-        QDesktopServices::openUrl(url);
-    });
-    leftLayout->addWidget(m_goodreadsBtn);
-
     const QList<QAction*> pluginActions = PluginManager::instance().contextActionsForBook(m_book.id);
     if (!pluginActions.isEmpty()) {
         auto* pluginGroup = new QGroupBox("Plugin Actions");

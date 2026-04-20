@@ -1,0 +1,102 @@
+Eagle Library packaging steps
+=============================
+
+What to download on Windows
+---------------------------
+1. Visual Studio 2022 or Visual Studio 2022 Build Tools
+   Install the `Desktop development with C++` workload.
+   Required components:
+   - MSVC v143 toolset
+   - Windows 10 or Windows 11 SDK
+   - C++ CMake tools for Windows
+
+2. Qt for MSVC 2022
+   Install one of these kits:
+   - Qt 6.7.3 `msvc2022_64`
+   - Qt 6.7.x `msvc2022_64` is also fine
+   Required modules for this app:
+   - Qt Base / Widgets
+   - Qt Network
+   - Qt SQL
+   - Qt SVG
+   - Qt XML
+
+3. CMake for Windows
+   Expected default path:
+   `C:\Program Files\CMake\bin`
+
+4. Microsoft HTML Help Workshop
+   Download and install to build the CHM help file.
+   Expected default path:
+   `C:\Program Files (x86)\HTML Help Workshop\hhc.exe`
+
+Main build
+----------
+1. Run:
+   `build.bat`
+2. Build output folder:
+   `C:\eagle_software\EagleLibrary\build-release\Release`
+3. Main executable:
+   `C:\eagle_software\EagleLibrary\build-release\Release\EagleLibrary.exe`
+
+CHM help
+--------
+1. Run:
+   `build_help.bat`
+2. Help source folder:
+   `C:\eagle_software\EagleLibrary\docs\help`
+3. Generated CHM:
+   `C:\eagle_software\EagleLibrary\docs\help\EagleLibrary.chm`
+
+Portable package
+----------------
+1. Build the app in Release mode and make sure the deployed output exists.
+2. Run:
+   installer\refresh_portable.bat
+3. The portable folder is recreated at:
+   C:\eagle_software\EagleLibrary_Portable
+
+Setup / NSIS installer
+----------------------
+1. Start from a deployed Release output that already contains Qt DLLs/plugins.
+2. Copy the required files into the installer folder:
+   EagleLibrary.exe
+   Qt6Core.dll
+   Qt6Gui.dll
+   Qt6Widgets.dll
+   Qt6Network.dll
+   Qt6Sql.dll
+   Qt6Svg.dll
+   README.txt
+   LICENSE.txt
+   d3dcompiler_47.dll
+   dxcompiler.dll
+   dxil.dll
+   opengl32sw.dll
+   platforms\qwindows.dll
+   imageformats\*.dll
+   styles\qmodernwindowsstyle.dll
+   iconengines\qsvgicon.dll
+   sqldrivers\qsqlite.dll
+   tls\qschannelbackend.dll
+   the MSVC runtime DLLs:
+   concrt140.dll
+   vccorlib140.dll
+   vcruntime140.dll
+   vcruntime140_1.dll
+   vcruntime140_threads.dll
+   msvcp140.dll
+   msvcp140_1.dll
+   msvcp140_2.dll
+   msvcp140_atomic_wait.dll
+   msvcp140_codecvt_ids.dll
+3. Open NSIS and compile:
+   installer\eagle_library.nsi
+4. The generated installer file name is defined by:
+   OutFile "EagleLibrary_Setup_1.1.0.exe"
+
+Notes
+-----
+- The portable package does not need a VC++ redistributable installer.
+- Portable mode is activated by portable.flag.
+- User data for the portable build stays inside data\ and settings\.

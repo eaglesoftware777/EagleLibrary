@@ -1,0 +1,19 @@
+[OPTIONS]
+Compatibility=1.1 or later
+Compiled file=EagleLibrary.chm
+Contents file=EagleLibrary.hhc
+Index file=EagleLibrary.hhk
+Default topic=index.html
+Display compile progress=No
+Full-text search=Yes
+Language=0x409 English (United States)
+Title=Eagle Library Help
+
+[FILES]
+index.html
+libraries.html
+menus.html
+settings.html
+tools.html
+database.html
+portable.html

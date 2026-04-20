@@ -55,6 +55,7 @@ private:
     QCheckBox*   m_autoCoverCheck;
     QCheckBox*   m_autoEnrichAfterScanCheck;
     QCheckBox*   m_fastScanModeCheck;
+    QComboBox*   m_iconSizePresetCombo;
     QSpinBox*    m_iconSizeSpin;
     QComboBox*   m_scanThreadsPresetCombo;
     QSpinBox*    m_scanThreadsSpin;

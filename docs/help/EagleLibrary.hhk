@@ -1,0 +1,22 @@
+<!DOCTYPE HTML PUBLIC "-//IETF//DTD HTML//EN">
+<HTML>
+<BODY>
+<UL>
+  <LI><OBJECT type="text/sitemap"><param name="Name" value="database editor"><param name="Local" value="database.html"></OBJECT></LI>
+  <LI><OBJECT type="text/sitemap"><param name="Name" value="database optimize"><param name="Local" value="database.html"></OBJECT></LI>
+  <LI><OBJECT type="text/sitemap"><param name="Name" value="fast scan mode"><param name="Local" value="tools.html"></OBJECT></LI>
+  <LI><OBJECT type="text/sitemap"><param name="Name" value="file menu"><param name="Local" value="menus.html"></OBJECT></LI>
+  <LI><OBJECT type="text/sitemap"><param name="Name" value="ocr tools"><param name="Local" value="tools.html"></OBJECT></LI>
+  <LI><OBJECT type="text/sitemap"><param name="Name" value="libraries"><param name="Local" value="libraries.html"></OBJECT></LI>
+  <LI><OBJECT type="text/sitemap"><param name="Name" value="library menu"><param name="Local" value="menus.html"></OBJECT></LI>
+  <LI><OBJECT type="text/sitemap"><param name="Name" value="menus"><param name="Local" value="menus.html"></OBJECT></LI>
+  <LI><OBJECT type="text/sitemap"><param name="Name" value="portable"><param name="Local" value="portable.html"></OBJECT></LI>
+  <LI><OBJECT type="text/sitemap"><param name="Name" value="scan worker threads"><param name="Local" value="tools.html"></OBJECT></LI>
+  <LI><OBJECT type="text/sitemap"><param name="Name" value="settings"><param name="Local" value="settings.html"></OBJECT></LI>
+  <LI><OBJECT type="text/sitemap"><param name="Name" value="settings dialog"><param name="Local" value="settings.html"></OBJECT></LI>
+  <LI><OBJECT type="text/sitemap"><param name="Name" value="smart rename"><param name="Local" value="tools.html"></OBJECT></LI>
+  <LI><OBJECT type="text/sitemap"><param name="Name" value="toolbar"><param name="Local" value="menus.html"></OBJECT></LI>
+  <LI><OBJECT type="text/sitemap"><param name="Name" value="view menu"><param name="Local" value="menus.html"></OBJECT></LI>
+</UL>
+</BODY>
+</HTML>

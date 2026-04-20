@@ -419,6 +419,8 @@ constexpr auto qt_meta_stringdata_CLASSSmartRenamerENDCLASS = QtMocHelpers::stri
     "progress",
     "done",
     "total",
+    "currentFile",
+    "detail",
     "finished",
     "changed"
 );
@@ -442,13 +444,13 @@ Q_CONSTINIT static const uint qt_meta_data_CLASSSmartRenamerENDCLASS[] = {
 
  // signals: name, argc, parameters, tag, flags, initial metatype offsets
        1,    1,   32,    2, 0x06,    1 /* Public */,
-       5,    2,   35,    2, 0x06,    3 /* Public */,
-       8,    1,   40,    2, 0x06,    6 /* Public */,
+       5,    4,   35,    2, 0x06,    3 /* Public */,
+      10,    1,   44,    2, 0x06,    8 /* Public */,
 
  // signals: parameters
     QMetaType::Void, 0x80000000 | 3,    4,
-    QMetaType::Void, QMetaType::Int, QMetaType::Int,    6,    7,
-    QMetaType::Void, QMetaType::Int,    9,
+    QMetaType::Void, QMetaType::Int, QMetaType::Int, QMetaType::QString, QMetaType::QString,    6,    7,    8,    9,
+    QMetaType::Void, QMetaType::Int,   11,
 
        0        // eod
 };
@@ -469,6 +471,8 @@ Q_CONSTINIT const QMetaObject SmartRenamer::staticMetaObject = { {
         QtPrivate::TypeAndForceComplete<void, std::false_type>,
         QtPrivate::TypeAndForceComplete<int, std::false_type>,
         QtPrivate::TypeAndForceComplete<int, std::false_type>,
+        QtPrivate::TypeAndForceComplete<const QString &, std::false_type>,
+        QtPrivate::TypeAndForceComplete<const QString &, std::false_type>,
         // method 'finished'
         QtPrivate::TypeAndForceComplete<void, std::false_type>,
         QtPrivate::TypeAndForceComplete<int, std::false_type>
@@ -483,7 +487,7 @@ void SmartRenamer::qt_static_metacall(QObject *_o, QMetaObject::Call _c, int _id
         (void)_t;
         switch (_id) {
         case 0: _t->renamed((*reinterpret_cast< std::add_pointer_t<RenameResult>>(_a[1]))); break;
-        case 1: _t->progress((*reinterpret_cast< std::add_pointer_t<int>>(_a[1])),(*reinterpret_cast< std::add_pointer_t<int>>(_a[2]))); break;
+        case 1: _t->progress((*reinterpret_cast< std::add_pointer_t<int>>(_a[1])),(*reinterpret_cast< std::add_pointer_t<int>>(_a[2])),(*reinterpret_cast< std::add_pointer_t<QString>>(_a[3])),(*reinterpret_cast< std::add_pointer_t<QString>>(_a[4]))); break;
         case 2: _t->finished((*reinterpret_cast< std::add_pointer_t<int>>(_a[1]))); break;
         default: ;
         }
@@ -497,7 +501,7 @@ void SmartRenamer::qt_static_metacall(QObject *_o, QMetaObject::Call _c, int _id
             }
         }
         {
-            using _t = void (SmartRenamer::*)(int , int );
+            using _t = void (SmartRenamer::*)(int , int , const QString & , const QString & );
             if (_t _q_method = &SmartRenamer::progress; *reinterpret_cast<_t *>(_a[1]) == _q_method) {
                 *result = 1;
                 return;
@@ -551,9 +555,9 @@ void SmartRenamer::renamed(RenameResult _t1)
 }
 
 // SIGNAL 1
-void SmartRenamer::progress(int _t1, int _t2)
+void SmartRenamer::progress(int _t1, int _t2, const QString & _t3, const QString & _t4)
 {
-    void *_a[] = { nullptr, const_cast<void*>(reinterpret_cast<const void*>(std::addressof(_t1))), const_cast<void*>(reinterpret_cast<const void*>(std::addressof(_t2))) };
+    void *_a[] = { nullptr, const_cast<void*>(reinterpret_cast<const void*>(std::addressof(_t1))), const_cast<void*>(reinterpret_cast<const void*>(std::addressof(_t2))), const_cast<void*>(reinterpret_cast<const void*>(std::addressof(_t3))), const_cast<void*>(reinterpret_cast<const void*>(std::addressof(_t4))) };
     QMetaObject::activate(this, &staticMetaObject, 1, _a);
 }
 

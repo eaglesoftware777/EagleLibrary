@@ -9373,8 +9373,8 @@ IDI_ICON1 ICON "eagle.ico"
 
 
 1 VERSIONINFO
-    FILEVERSION    1,0,0,0
-    PRODUCTVERSION 1,0,0,0
+    FILEVERSION    1,1,0,0
+    PRODUCTVERSION 1,1,0,0
     FILEFLAGSMASK  0x0000003FL
     FILEFLAGS      0
     FILEOS         0x00000004L
@@ -9387,12 +9387,12 @@ BEGIN
         BEGIN
             VALUE "CompanyName",      "Eagle Software\0"
             VALUE "FileDescription",  "Eagle Library - eBook Manager\0"
-            VALUE "FileVersion",      "1.0.0.0\0"
+            VALUE "FileVersion",      "1.1.0.0\0"
             VALUE "InternalName",     "EagleLibrary\0"
-            VALUE "LegalCopyright",   "Copyright (C) 2024 Eagle Software. All rights reserved.\0"
+            VALUE "LegalCopyright",   "Copyright (C) 2026 Eagle Software. All rights reserved.\0"
             VALUE "OriginalFilename", "EagleLibrary.exe\0"
             VALUE "ProductName",      "Eagle Library\0"
-            VALUE "ProductVersion",   "1.0.0.0\0"
+            VALUE "ProductVersion",   "1.1.0.0\0"
         END
     END
     BLOCK "VarFileInfo"

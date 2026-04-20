@@ -1,0 +1,14 @@
+<!DOCTYPE HTML PUBLIC "-//IETF//DTD HTML//EN">
+<HTML>
+<BODY>
+<UL>
+  <LI><OBJECT type="text/sitemap"><param name="Name" value="Home"><param name="Local" value="index.html"></OBJECT></LI>
+  <LI><OBJECT type="text/sitemap"><param name="Name" value="Libraries and Shelves"><param name="Local" value="libraries.html"></OBJECT></LI>
+  <LI><OBJECT type="text/sitemap"><param name="Name" value="Menus and Toolbar"><param name="Local" value="menus.html"></OBJECT></LI>
+  <LI><OBJECT type="text/sitemap"><param name="Name" value="Settings Reference"><param name="Local" value="settings.html"></OBJECT></LI>
+  <LI><OBJECT type="text/sitemap"><param name="Name" value="Scanning and Smart Rename"><param name="Local" value="tools.html"></OBJECT></LI>
+  <LI><OBJECT type="text/sitemap"><param name="Name" value="Database Editor and Troubleshooting"><param name="Local" value="database.html"></OBJECT></LI>
+  <LI><OBJECT type="text/sitemap"><param name="Name" value="Portable Build and Packaging"><param name="Local" value="portable.html"></OBJECT></LI>
+</UL>
+</BODY>
+</HTML>

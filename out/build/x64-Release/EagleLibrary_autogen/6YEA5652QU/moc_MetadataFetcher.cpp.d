@@ -2,17 +2,23 @@ C:/eagle_software/EagleLibrary/out/build/x64-Release/EagleLibrary_autogen/6YEA56
   C:/Qt/6.7.3/msvc2022_64/include/QtCore/QDateTime \
   C:/Qt/6.7.3/msvc2022_64/include/QtCore/QFileInfo \
   C:/Qt/6.7.3/msvc2022_64/include/QtCore/QFlags \
+  C:/Qt/6.7.3/msvc2022_64/include/QtCore/QHash \
   C:/Qt/6.7.3/msvc2022_64/include/QtCore/QIODevice \
+  C:/Qt/6.7.3/msvc2022_64/include/QtCore/QJsonObject \
   C:/Qt/6.7.3/msvc2022_64/include/QtCore/QList \
+  C:/Qt/6.7.3/msvc2022_64/include/QtCore/QMap \
   C:/Qt/6.7.3/msvc2022_64/include/QtCore/QMetaType \
   C:/Qt/6.7.3/msvc2022_64/include/QtCore/QObject \
   C:/Qt/6.7.3/msvc2022_64/include/QtCore/QQueue \
+  C:/Qt/6.7.3/msvc2022_64/include/QtCore/QRegularExpression \
+  C:/Qt/6.7.3/msvc2022_64/include/QtCore/QSet \
   C:/Qt/6.7.3/msvc2022_64/include/QtCore/QSharedDataPointer \
   C:/Qt/6.7.3/msvc2022_64/include/QtCore/QString \
   C:/Qt/6.7.3/msvc2022_64/include/QtCore/QStringList \
   C:/Qt/6.7.3/msvc2022_64/include/QtCore/QTimer \
   C:/Qt/6.7.3/msvc2022_64/include/QtCore/QUrl \
   C:/Qt/6.7.3/msvc2022_64/include/QtCore/QVariant \
+  C:/Qt/6.7.3/msvc2022_64/include/QtCore/QVector \
   C:/Qt/6.7.3/msvc2022_64/include/QtCore/q20functional.h \
   C:/Qt/6.7.3/msvc2022_64/include/QtCore/q20memory.h \
   C:/Qt/6.7.3/msvc2022_64/include/QtCore/q20type_traits.h \
@@ -33,6 +39,8 @@ C:/eagle_software/EagleLibrary/out/build/x64-Release/EagleLibrary_autogen/6YEA56
   C:/Qt/6.7.3/msvc2022_64/include/QtCore/qbytearraylist.h \
   C:/Qt/6.7.3/msvc2022_64/include/QtCore/qbytearrayview.h \
   C:/Qt/6.7.3/msvc2022_64/include/QtCore/qcalendar.h \
+  C:/Qt/6.7.3/msvc2022_64/include/QtCore/qcborcommon.h \
+  C:/Qt/6.7.3/msvc2022_64/include/QtCore/qcborvalue.h \
   C:/Qt/6.7.3/msvc2022_64/include/QtCore/qchar.h \
   C:/Qt/6.7.3/msvc2022_64/include/QtCore/qcompare.h \
   C:/Qt/6.7.3/msvc2022_64/include/QtCore/qcompare_impl.h \
@@ -49,6 +57,7 @@ C:/eagle_software/EagleLibrary/out/build/x64-Release/EagleLibrary_autogen/6YEA56
   C:/Qt/6.7.3/msvc2022_64/include/QtCore/qdatastream.h \
   C:/Qt/6.7.3/msvc2022_64/include/QtCore/qdatetime.h \
   C:/Qt/6.7.3/msvc2022_64/include/QtCore/qdebug.h \
+  C:/Qt/6.7.3/msvc2022_64/include/QtCore/qendian.h \
   C:/Qt/6.7.3/msvc2022_64/include/QtCore/qexceptionhandling.h \
   C:/Qt/6.7.3/msvc2022_64/include/QtCore/qfile.h \
   C:/Qt/6.7.3/msvc2022_64/include/QtCore/qfiledevice.h \
@@ -67,6 +76,8 @@ C:/eagle_software/EagleLibrary/out/build/x64-Release/EagleLibrary_autogen/6YEA56
   C:/Qt/6.7.3/msvc2022_64/include/QtCore/qiodevicebase.h \
   C:/Qt/6.7.3/msvc2022_64/include/QtCore/qiterable.h \
   C:/Qt/6.7.3/msvc2022_64/include/QtCore/qiterator.h \
+  C:/Qt/6.7.3/msvc2022_64/include/QtCore/qjsonobject.h \
+  C:/Qt/6.7.3/msvc2022_64/include/QtCore/qjsonvalue.h \
   C:/Qt/6.7.3/msvc2022_64/include/QtCore/qlatin1stringview.h \
   C:/Qt/6.7.3/msvc2022_64/include/QtCore/qline.h \
   C:/Qt/6.7.3/msvc2022_64/include/QtCore/qlist.h \
@@ -92,6 +103,7 @@ C:/eagle_software/EagleLibrary/out/build/x64-Release/EagleLibrary_autogen/6YEA56
   C:/Qt/6.7.3/msvc2022_64/include/QtCore/qqueue.h \
   C:/Qt/6.7.3/msvc2022_64/include/QtCore/qrect.h \
   C:/Qt/6.7.3/msvc2022_64/include/QtCore/qrefcount.h \
+  C:/Qt/6.7.3/msvc2022_64/include/QtCore/qregularexpression.h \
   C:/Qt/6.7.3/msvc2022_64/include/QtCore/qscopedpointer.h \
   C:/Qt/6.7.3/msvc2022_64/include/QtCore/qscopeguard.h \
   C:/Qt/6.7.3/msvc2022_64/include/QtCore/qset.h \
@@ -137,8 +149,10 @@ C:/eagle_software/EagleLibrary/out/build/x64-Release/EagleLibrary_autogen/6YEA56
   C:/Qt/6.7.3/msvc2022_64/include/QtCore/qtypes.h \
   C:/Qt/6.7.3/msvc2022_64/include/QtCore/qurl.h \
   C:/Qt/6.7.3/msvc2022_64/include/QtCore/qutf8stringview.h \
+  C:/Qt/6.7.3/msvc2022_64/include/QtCore/quuid.h \
   C:/Qt/6.7.3/msvc2022_64/include/QtCore/qvariant.h \
   C:/Qt/6.7.3/msvc2022_64/include/QtCore/qvarlengtharray.h \
+  C:/Qt/6.7.3/msvc2022_64/include/QtCore/qvector.h \
   C:/Qt/6.7.3/msvc2022_64/include/QtCore/qversiontagging.h \
   C:/Qt/6.7.3/msvc2022_64/include/QtCore/qxptype_traits.h \
   C:/Qt/6.7.3/msvc2022_64/include/QtCore/qyieldcpu.h \

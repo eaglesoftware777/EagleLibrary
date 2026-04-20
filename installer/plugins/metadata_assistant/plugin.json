@@ -1,0 +1,19 @@
+{
+  "id": "com.eaglesoftware.metadata_assistant",
+  "name": "Metadata Assistant",
+  "version": "1.0.0",
+  "author": "Eagle Software",
+  "description": "Adds quick metadata-oriented actions and serves as a starter plugin manifest.",
+  "bookActions": [
+    {
+      "title": "Search Google Books",
+      "description": "Look up the current item on Google Books.",
+      "urlTemplate": "https://www.google.com/search?tbm=bks&q={query}"
+    },
+    {
+      "title": "Search Open Library",
+      "description": "Open an Open Library search for the current item.",
+      "urlTemplate": "https://openlibrary.org/search?q={query}"
+    }
+  ]
+}

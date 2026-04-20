@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Scanning, Metadata, and Smart Rename</title>
+</head>
+<body>
+  <h1>Scanning, Metadata, and Smart Rename</h1>
+  <h2>Fast Scan Mode</h2>
+  <p>Fast scan mode is designed for large libraries. It stores the file path, format, size, hash, and filename title first, then leaves heavier PDF probing for later tools such as metadata fetch, repair, and smart rename. This makes first-time indexing much faster.</p>
+  <h2>Scan Worker Threads</h2>
+  <p>Use <code>Auto</code> for most systems. Use lower presets when the PC becomes slow during scanning. Use higher presets only when storage and CPU are fast.</p>
+  <h2>Metadata</h2>
+  <p>Eagle Library can fetch metadata, covers, ISBNs, page counts, and tags. The metadata tools can work on the whole active library or on the current selection.</p>
+  <h2>Smart Rename</h2>
+  <p>Smart Rename now prefers content-derived titles before weak filenames. For PDFs it tries embedded metadata, text extraction, <code>pdftotext</code>, and OCR fallbacks when available.</p>
+  <h2>Installing PDF and OCR Tools</h2>
+  <p>Open <code>Help -&gt; Install PDF/OCR Tools...</code> to check whether <code>pdftotext</code>, <code>pdftoppm</code>, and <code>tesseract</code> are available. The dialog opens the trusted Poppler download pages for PDF text extraction tools and can launch a Windows <code>winget</code> install command for Tesseract OCR.</p>
+  <h2>Reference Views</h2>
+  <p>Use the Library menu or the item context menu to open related references for the selected item on Wikipedia, Amazon Books, Open Library, Google Books, WorldCat, and the Library of Congress. Eagle now shows only syntactically valid URLs from trusted whitelisted domains.</p>
+</body>
+</html>

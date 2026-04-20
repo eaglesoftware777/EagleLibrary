@@ -14,12 +14,16 @@
 #include <QFont>
 #include <QFontDatabase>
 #include <QElapsedTimer>
+#include <QCommandLineParser>
+#include <QTextStream>
+#include <QEventLoop>
 
 #include "SplashScreen.h"
 #include "MainWindow.h"
 #include "Database.h"
 #include "AppConfig.h"
 #include "LanguageManager.h"
+#include "LibraryScanner.h"
 
 namespace {
 
@@ -77,6 +81,91 @@ void configureSettingsStorage()
     QSettings::setPath(QSettings::IniFormat, QSettings::UserScope, AppConfig::settingsDir());
 }
 
+int runCliCommand(QApplication& app)
+{
+    QCommandLineParser parser;
+    parser.setApplicationDescription("Eagle Library CLI");
+    parser.addHelpOption();
+    parser.addPositionalArgument("command", "Command: search | saved-searches | export | optimize | scan");
+    parser.addPositionalArgument("args", "Arguments for the selected command.");
+    parser.process(app);
+
+    const QStringList positional = parser.positionalArguments();
+    if (positional.isEmpty())
+        return -1;
+
+    QDir().mkpath(AppConfig::dataDir());
+    QDir().mkpath(AppConfig::settingsDir());
+    Database::instance().open(AppConfig::dbPath());
+
+    QTextStream out(stdout);
+    QTextStream err(stderr);
+    const QString command = positional.first().trimmed().toLower();
+
+    if (command == "search") {
+        if (positional.size() < 2) {
+            err << "Usage: EagleLibrary.exe search <query>\n";
+            return 2;
+        }
+        const QString query = positional.mid(1).join(' ');
+        const QVector<Book> books = Database::instance().search(query);
+        for (const Book& book : books)
+            out << book.displayTitle() << " | " << book.displayAuthor() << " | " << QDir::toNativeSeparators(book.filePath) << "\n";
+        return 0;
+    }
+
+    if (command == "saved-searches") {
+        const QVector<SavedSearch> searches = Database::instance().savedSearches();
+        for (const SavedSearch& search : searches)
+            out << search.id << " | " << search.name << " | " << search.query << "\n";
+        return 0;
+    }
+
+    if (command == "optimize") {
+        Database::instance().optimize();
+        out << "Database optimized.\n";
+        return 0;
+    }
+
+    if (command == "export") {
+        if (positional.size() < 2) {
+            err << "Usage: EagleLibrary.exe export <output.json>\n";
+            return 2;
+        }
+        QSettings s("Eagle Software", "Eagle Library");
+        const QStringList folders = s.value("library/folders").toStringList();
+        if (!Database::instance().exportLibrary(positional.at(1), folders)) {
+            err << "Export failed.\n";
+            return 1;
+        }
+        out << "Exported library to " << positional.at(1) << "\n";
+        return 0;
+    }
+
+    if (command == "scan") {
+        if (positional.size() < 2) {
+            err << "Usage: EagleLibrary.exe scan <folder1> [folder2 ...]\n";
+            return 2;
+        }
+        LibraryScanner scanner;
+        QEventLoop loop;
+        QObject::connect(&scanner, &LibraryScanner::scanFinished, &app, [&](int added, int skipped) {
+            out << "Scan complete. Added: " << added << ", skipped: " << skipped << "\n";
+            loop.quit();
+        });
+        QObject::connect(&scanner, &LibraryScanner::scanError, &app, [&](const QString& msg) {
+            err << "Scan error: " << msg << "\n";
+            loop.quit();
+        });
+        scanner.startScan(positional.mid(1), 0, true);
+        loop.exec();
+        return 0;
+    }
+
+    err << "Unknown command: " << command << "\n";
+    return 2;
+}
+
 } // namespace
 
 int main(int argc, char* argv[])
@@ -98,6 +187,12 @@ int main(int argc, char* argv[])
     QObject::connect(&LanguageManager::instance(), &LanguageManager::languageChanged, &app, [&app]() {
         app.setLayoutDirection(LanguageManager::instance().isRightToLeft() ? Qt::RightToLeft : Qt::LeftToRight);
     });
+
+    if (app.arguments().size() > 1) {
+        const int cliResult = runCliCommand(app);
+        if (cliResult >= 0)
+            return cliResult;
+    }
 
     QIcon appIcon(":/eagle_mark.svg");
     if (appIcon.isNull())

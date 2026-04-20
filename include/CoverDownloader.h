@@ -41,6 +41,7 @@ private:
     int                    m_totalDone   = 0;
     QSet<QNetworkReply*>   m_activeReplies;
     bool                   m_cancelling = false;
+    quint64                m_generation = 0;
 
     void processNext();
 };

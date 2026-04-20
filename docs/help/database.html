@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Database Editor and Troubleshooting</title>
+</head>
+<body>
+  <h1>Database Editor and Troubleshooting</h1>
+  <h2>Database Editor</h2>
+  <p>The editor lets you search, scroll, resize columns, move columns, edit metadata fields, reload rows, and delete selected records.</p>
+  <h2>Database Maintenance</h2>
+  <p>Use the <code>Database</code> menu for maintenance actions:</p>
+  <ul>
+    <li><code>Diagnose Text Problems</code> scans the active library for mojibake, replacement glyphs, empty titles, and suspicious metadata.</li>
+    <li><code>Repair Text Problems</code> rescans only suspicious records and verifies PDF ISBN values from extracted text before saving updates.</li>
+    <li><code>Optimize Database</code> runs SQLite optimize and analyze to improve browsing speed after large scans or imports.</li>
+    <li><code>Vacuum Database</code> rebuilds the file and can reduce wasted space after many edits.</li>
+    <li><code>Reindex Database</code> rebuilds SQLite indexes.</li>
+  </ul>
+  <h2>Why Some Titles May Show as Squares</h2>
+  <p>The most common cause is missing glyph coverage in the chosen UI font, not broken SQLite storage. Eagle Library now avoids forcing narrow font families so Qt can use normal fallback fonts for mixed-language titles.</p>
+  <h2>What To Check</h2>
+  <ul>
+    <li>Whether the same title looks correct in another app on the same machine.</li>
+    <li>Whether the problem affects only one script or language.</li>
+    <li>Whether the stored metadata itself contains replacement characters or OCR garbage.</li>
+  </ul>
+  <p>If the text is truly wrong in the database, run the diagnosis and repair tools first, then use the editor for the remaining exceptions.</p>
+</body>
+</html>

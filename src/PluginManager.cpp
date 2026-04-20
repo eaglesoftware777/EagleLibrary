@@ -18,6 +18,8 @@
 #include <QAction>
 #include <QDesktopServices>
 #include <QUrl>
+#include <QProcess>
+#include <QStandardPaths>
 
 PluginManager& PluginManager::instance()
 {
@@ -28,6 +30,11 @@ PluginManager& PluginManager::instance()
 PluginManager::PluginManager(QObject* parent) : QObject(parent) {}
 
 namespace {
+
+struct StarterPluginSeed {
+    const char* dirName;
+    const char* json;
+};
 
 QString encoded(QString value)
 {
@@ -47,6 +54,80 @@ QString fillBookTemplate(QString templ, const Book& book)
     return templ;
 }
 
+void runPythonHook(const QString& eventName, qint64 bookId)
+{
+    const QString python = QStandardPaths::findExecutable("python").isEmpty()
+        ? QStandardPaths::findExecutable("python3")
+        : QStandardPaths::findExecutable("python");
+    if (python.isEmpty())
+        return;
+
+    const QStringList hookDirs = {
+        QDir(AppConfig::appDir()).absoluteFilePath("hooks"),
+        QDir(AppConfig::settingsDir()).absoluteFilePath("hooks")
+    };
+
+    const Book book = Database::instance().bookById(bookId);
+    for (const QString& dirPath : hookDirs) {
+        const QString scriptPath = QDir(dirPath).absoluteFilePath(eventName + ".py");
+        if (!QFileInfo::exists(scriptPath))
+            continue;
+
+        QProcessEnvironment env = QProcessEnvironment::systemEnvironment();
+        env.insert("EAGLE_EVENT", eventName);
+        env.insert("EAGLE_BOOK_ID", QString::number(bookId));
+        env.insert("EAGLE_DB_PATH", AppConfig::dbPath());
+        env.insert("EAGLE_BOOK_TITLE", book.displayTitle());
+        env.insert("EAGLE_BOOK_AUTHOR", book.displayAuthor());
+        env.insert("EAGLE_BOOK_PATH", book.filePath);
+
+        auto* proc = new QProcess;
+        proc->setProgram(python);
+        proc->setArguments({scriptPath});
+        proc->setProcessEnvironment(env);
+        QObject::connect(proc, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished), proc, &QObject::deleteLater);
+        proc->start();
+    }
+}
+
+const StarterPluginSeed kStarterPlugins[] = {
+    { "metadata_assistant", R"json({
+  "id": "com.eaglesoftware.metadata_assistant",
+  "name": "Metadata Assistant",
+  "version": "1.1.0",
+  "author": "Eagle Software",
+  "description": "Quick metadata and catalog lookups for the current item.",
+  "bookActions": [
+    { "title": "Search Google Books", "description": "Look up the current item on Google Books.", "urlTemplate": "https://www.google.com/search?tbm=bks&q={query}" },
+    { "title": "Search Open Library", "description": "Open an Open Library search for the current item.", "urlTemplate": "https://openlibrary.org/search?q={query}" },
+    { "title": "Search Library of Congress", "description": "Search the Library of Congress catalog.", "urlTemplate": "https://catalog.loc.gov/vwebv/search?searchArg={query}&searchCode=GKEY%5E*&searchType=0&recCount=25" }
+  ]
+})json" },
+    { "research_toolbox", R"json({
+  "id": "com.eaglesoftware.research_toolbox",
+  "name": "Research Toolbox",
+  "version": "1.1.0",
+  "author": "Eagle Software",
+  "description": "Reference and academic research lookups for books and documents.",
+  "bookActions": [
+    { "title": "Search Google Scholar", "description": "Search academic references for the current item.", "urlTemplate": "https://scholar.google.com/scholar?q={query}" },
+    { "title": "Search WorldCat", "description": "Search WorldCat for the current item.", "urlTemplate": "https://www.worldcat.org/search?q={query}" },
+    { "title": "Search Wikipedia", "description": "Search Wikipedia for the current item.", "urlTemplate": "https://en.wikipedia.org/w/index.php?search={query}" }
+  ]
+})json" },
+    { "device_sync_tools", R"json({
+  "id": "com.eaglesoftware.device_sync_tools",
+  "name": "Device Sync Tools",
+  "version": "1.0.0",
+  "author": "Eagle Software",
+  "description": "Starter device and file-location helper plugin.",
+  "bookActions": [
+    { "title": "Search File Name on Google", "description": "Search the file name on Google.", "urlTemplate": "https://www.google.com/search?q={title}" },
+    { "title": "Search PDF or Document Info", "description": "Search general web results for the current item.", "urlTemplate": "https://www.google.com/search?q={query}%20filetype%3Apdf" }
+  ]
+})json" }
+};
+
 }
 
 void PluginManager::loadAll(const QString& pluginsDir)
@@ -54,8 +135,8 @@ void PluginManager::loadAll(const QString& pluginsDir)
     QDir dir(pluginsDir);
     if (!dir.exists()) {
         dir.mkpath(".");
-        return;
     }
+    ensureStarterPlugins(pluginsDir);
 
     for (const QFileInfo& fi : dir.entryInfoList(QDir::Dirs | QDir::NoDotAndDotDot)) {
         const QString manifestPath = fi.absoluteFilePath() + "/plugin.json";
@@ -64,6 +145,24 @@ void PluginManager::loadAll(const QString& pluginsDir)
     }
 
     syncPluginMenu();
+}
+
+void PluginManager::ensureStarterPlugins(const QString& pluginsDir)
+{
+    QDir root(pluginsDir);
+    root.mkpath(".");
+    for (const StarterPluginSeed& seed : kStarterPlugins) {
+        const QString pluginDir = root.absoluteFilePath(QString::fromUtf8(seed.dirName));
+        QDir().mkpath(pluginDir);
+        const QString manifestPath = QDir(pluginDir).absoluteFilePath("plugin.json");
+        if (QFileInfo::exists(manifestPath))
+            continue;
+        QFile file(manifestPath);
+        if (file.open(QIODevice::WriteOnly | QIODevice::Text)) {
+            file.write(seed.json);
+            file.close();
+        }
+    }
 }
 
 bool PluginManager::loadPlugin(const QString& jsonManifestPath)
@@ -180,6 +279,7 @@ void PluginManager::syncPluginMenu()
 
 void PluginManager::notifyBookAdded(qint64 id)
 {
+    runPythonHook(QStringLiteral("on_import"), id);
     for (auto& lp : m_plugins)
         if (lp.instance && lp.active)
             lp.instance->onBookAdded(id);
@@ -187,6 +287,7 @@ void PluginManager::notifyBookAdded(qint64 id)
 
 void PluginManager::notifyBookUpdated(qint64 id)
 {
+    runPythonHook(QStringLiteral("on_update"), id);
     for (auto& lp : m_plugins)
         if (lp.instance && lp.active)
             lp.instance->onBookUpdated(id);
@@ -194,6 +295,7 @@ void PluginManager::notifyBookUpdated(qint64 id)
 
 void PluginManager::notifyBookRemoved(qint64 id)
 {
+    runPythonHook(QStringLiteral("on_delete"), id);
     for (auto& lp : m_plugins)
         if (lp.instance && lp.active)
             lp.instance->onBookRemoved(id);

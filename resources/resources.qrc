@@ -8,6 +8,11 @@
         <file>translations/es.json</file>
         <file>translations/ar.json</file>
         <file>translations/zh_CN.json</file>
+        <file>translations/de.json</file>
+        <file>translations/pt_BR.json</file>
+        <file>translations/ru.json</file>
+        <file>translations/hi.json</file>
+        <file>translations/ja.json</file>
         <file>themes/blue.qss</file>
         <file>themes/white.qss</file>
         <file>themes/mac.qss</file>
