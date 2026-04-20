@@ -55,7 +55,7 @@ jobs:
           host: 'windows'
           target: 'desktop'
           arch: 'win64_msvc2019_64'
-          cache: ${{ github.event.inputs.bust_qt_cache != 'true' }}
+          cache: ${{ github.event.inputs.bust_qt_cache == 'false' }}
           cache-key-prefix: 'qt-6.7.3-msvc2019-x64-v1'
 
       # ── 3. Expose QT_DIR for the ci-release CMake preset ───────
@@ -249,31 +249,22 @@ jobs:
           }
           $notesBody = $match.Groups[1].Value.Trim()
 
-          # Read checksums to embed in the release description
-          $checksumBlock = ""
+          # Build release body using simple concatenation (avoids YAML/backtick conflicts)
+          $fence = '```'
+          $checksumSection = ""
           if (Test-Path "build\SHA256SUMS.txt") {
-            $lines = Get-Content "build\SHA256SUMS.txt"
-            $checksumBlock = @"
-
----
-
-### SHA256 Checksums
-
-``````
-$($lines -join "`n")
-``````
-
-Verify on Windows:
-``````powershell
-Get-FileHash EagleLibrary-Portable-x64.zip -Algorithm SHA256
-``````
-"@
+            $checksumLines = (Get-Content "build\SHA256SUMS.txt") -join [System.Environment]::NewLine
+            $checksumSection = [System.Environment]::NewLine + "---" + [System.Environment]::NewLine +
+              [System.Environment]::NewLine + "### SHA256 Checksums" + [System.Environment]::NewLine +
+              [System.Environment]::NewLine + $fence + [System.Environment]::NewLine +
+              $checksumLines + [System.Environment]::NewLine + $fence + [System.Environment]::NewLine +
+              [System.Environment]::NewLine + "Verify on Windows:" + [System.Environment]::NewLine +
+              $fence + "powershell" + [System.Environment]::NewLine +
+              "Get-FileHash EagleLibrary-Portable-x64.zip -Algorithm SHA256" + [System.Environment]::NewLine +
+              $fence
           }
 
-          $fullNotes = @"
-## Eagle Library $version
-
-$notesBody
+          $downloadsTable = @"
 
 ---
 
@@ -281,17 +272,19 @@ $notesBody
 
 | Asset | Description |
 |---|---|
-| **EagleLibrary-Portable-x64.zip** | Portable build — unzip and run, no installation needed. `portable.flag` keeps all data beside the `.exe`. |
-| **EagleLibrary-Setup-x64.exe** | Windows installer — installs to `Program Files`, creates Start Menu and Desktop shortcuts. |
-| **EagleLibrary.chm** | Offline help file — open with Windows Help Viewer (`hh.exe`). |
+| **EagleLibrary-Portable-x64.zip** | Portable build — unzip and run, no installation needed. portable.flag keeps all data beside the .exe. |
+| **EagleLibrary-Setup-x64.exe** | Windows installer — installs to Program Files, creates Start Menu and Desktop shortcuts. |
+| **EagleLibrary.chm** | Offline help file — open with Windows Help Viewer (hh.exe). |
 | **SHA256SUMS.txt** | SHA256 checksums for all release assets. |
 
 ### System Requirements
 
 - Windows 10 / 11 (64-bit)
 - No additional runtime required — Qt DLLs and MSVC redistributables are bundled
-$checksumBlock
 "@
+
+          $fullNotes = "## Eagle Library $version" + [System.Environment]::NewLine + [System.Environment]::NewLine +
+            $notesBody + $downloadsTable + $checksumSection
 
           $notesPath = Join-Path $env:RUNNER_TEMP "release-notes.md"
           Set-Content -Path $notesPath -Value $fullNotes -NoNewline
