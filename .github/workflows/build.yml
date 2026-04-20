@@ -1,7 +1,7 @@
 name: Build EagleLibrary
 
 # Only runs when triggered manually from the Actions tab on GitHub.
-# Go to: Actions → Build EagleLibrary → Run workflow
+# Go to: Actions -> Build EagleLibrary -> Run workflow
 on:
   workflow_dispatch:
     inputs:
@@ -16,69 +16,66 @@ on:
 
 jobs:
   build-windows:
-    name: Windows x64 — Qt6 / MSVC 2022
+    name: Windows x64 - Qt6 / MSVC 2022
     runs-on: windows-latest
 
     steps:
-      # ── 1. Checkout ─────────────────────────────────────────────
+      # 1. Checkout
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # ── 2. Install Qt 6.7 (MSVC 2022 64-bit) ───────────────────
+      # 2. Install Qt 6.7 (MSVC 2022 64-bit)
       - name: Install Qt 6.7
         uses: jurplel/install-qt-action@v3
         with:
-          version:  '6.7.3'
-          host:     'windows'
-          target:   'desktop'
-          arch:     'win64_msvc2019_64'
-          cache:    true
+          version: '6.7.3'
+          host: 'windows'
+          target: 'desktop'
+          arch: 'win64_msvc2019_64'
+          cache: true
 
-      # ── 3. Expose QT_DIR so CMakePresets / CMakeSettings can use it
+      # 3. Expose QT_DIR so CMakePresets / CMakeSettings can use it
       - name: Set QT_DIR environment variable
         run: echo "QT_DIR=${{ env.QT_ROOT_DIR }}" >> $env:GITHUB_ENV
 
-      # ── 4. Configure with CMake ──────────────────────────────────
+      # 4. Configure with CMake
       - name: Configure CMake
-        run: >
-          cmake -S . -B build
-          -G "Visual Studio 17 2022" -A x64
-          -DCMAKE_PREFIX_PATH="${{ env.QT_ROOT_DIR }}"
-          -DCMAKE_BUILD_TYPE=Release
+        run: cmake -S . -B build -G "Visual Studio 17 2022" -A x64 -DCMAKE_PREFIX_PATH="${{ env.QT_ROOT_DIR }}" -DCMAKE_BUILD_TYPE=Release
 
-      # ── 5. Build (Release) ───────────────────────────────────────
+      # 5. Build (Release)
       - name: Build
         run: cmake --build build --config Release --parallel
 
-      # ── 6. Deploy Qt DLLs (windeployqt) ─────────────────────────
+      # 6. Deploy Qt DLLs (windeployqt)
       - name: Deploy Qt DLLs
+        shell: pwsh
         run: |
-          "${{ env.QT_ROOT_DIR }}/bin/windeployqt.exe" `
-            --no-translations `
-            --compiler-runtime `
-            "build/Release/EagleLibrary.exe"
+          $qtBin = Join-Path "${{ env.QT_ROOT_DIR }}" "bin\windeployqt.exe"
+          & $qtBin --no-translations --compiler-runtime "build\Release\EagleLibrary.exe"
 
-      # ── 7. Copy starter plugins (if present) ─────────────────────
+      # 7. Copy starter plugins (if present)
       - name: Copy plugins
+        shell: pwsh
         run: |
           if (Test-Path "plugins") {
-            Copy-Item -Recurse -Force "plugins" "build/Release/plugins"
+            Copy-Item -Recurse -Force "plugins" "build\Release\plugins"
           }
 
-      # ── 8. Install NSIS (required for CPack NSIS generator) ─────
+      # 8. Install NSIS (required for CPack NSIS generator)
       - name: Install NSIS
         if: ${{ github.event.inputs.build_installer == 'true' }}
         run: choco install nsis --no-progress -y
 
-      # ── 9. NSIS installer (optional) ────────────────────────────
+      # 9. NSIS installer (optional)
       - name: Create NSIS installer
         if: ${{ github.event.inputs.build_installer == 'true' }}
+        shell: pwsh
         working-directory: build
         run: |
           $env:PATH += ";C:\Program Files (x86)\NSIS"
           cpack -C Release -G NSIS
 
-      # ── 10. Upload installer artifact ────────────────────────────
+      # 10. Upload installer artifact
       - name: Upload installer
         if: ${{ github.event.inputs.build_installer == 'true' }}
         uses: actions/upload-artifact@v4
@@ -87,7 +84,7 @@ jobs:
           path: build/*.exe
           retention-days: 30
 
-      # ── 11. Upload portable build artifact ───────────────────────
+      # 11. Upload portable build artifact
       - name: Upload portable build
         uses: actions/upload-artifact@v4
         with:
