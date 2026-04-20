@@ -1,58 +1,86 @@
 name: Build EagleLibrary
 
+# Only runs when triggered manually from the Actions tab on GitHub.
+# Go to: Actions → Build EagleLibrary → Run workflow
 on:
   workflow_dispatch:
+    inputs:
+      build_installer:
+        description: 'Also build NSIS installer (.exe)'
+        required: false
+        default: 'true'
+        type: choice
+        options:
+          - 'true'
+          - 'false'
 
 jobs:
   build-windows:
-    name: Windows (Qt6 / MSVC 2022)
+    name: Windows x64 — Qt6 / MSVC 2022
     runs-on: windows-latest
 
     steps:
-      # ── Checkout ────────────────────────────────────────────────
+      # ── 1. Checkout ─────────────────────────────────────────────
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # ── Install Qt 6 ────────────────────────────────────────────
-      - name: Install Qt 6
+      # ── 2. Install Qt 6.7 (MSVC 2022 64-bit) ───────────────────
+      - name: Install Qt 6.7
         uses: jurplel/install-qt-action@v3
         with:
-          version:   '6.7.0'
-          host:      'windows'
-          target:    'desktop'
-          arch:      'win64_msvc2019_64'
-          modules:   'qtnetworkauth'
-          cache:     true
+          version:  '6.7.3'
+          host:     'windows'
+          target:   'desktop'
+          arch:     'win64_msvc2019_64'
+          cache:    true
 
-      # ── Configure with CMake ─────────────────────────────────────
+      # ── 3. Configure with CMake ──────────────────────────────────
       - name: Configure CMake
         run: >
           cmake -S . -B build
           -G "Visual Studio 17 2022" -A x64
+          -DCMAKE_PREFIX_PATH="${{ env.QT_ROOT_DIR }}"
           -DCMAKE_BUILD_TYPE=Release
 
-      # ── Build ────────────────────────────────────────────────────
+      # ── 4. Build (Release) ───────────────────────────────────────
       - name: Build
         run: cmake --build build --config Release --parallel
 
-      # ── Package (NSIS installer) ─────────────────────────────────
-      - name: Create installer
+      # ── 5. Deploy Qt DLLs (windeployqt) ─────────────────────────
+      - name: Deploy Qt DLLs
+        run: |
+          "${{ env.QT_ROOT_DIR }}/bin/windeployqt.exe" `
+            --no-translations `
+            --compiler-runtime `
+            "build/Release/EagleLibrary.exe"
+
+      # ── 6. Copy starter plugins (if present) ─────────────────────
+      - name: Copy plugins
+        run: |
+          if (Test-Path "plugins") {
+            Copy-Item -Recurse -Force "plugins" "build/Release/plugins"
+          }
+
+      # ── 7. NSIS installer (optional) ────────────────────────────
+      - name: Create NSIS installer
+        if: ${{ github.event.inputs.build_installer == 'true' }}
         working-directory: build
         run: cpack -C Release -G NSIS
 
-      # ── Upload installer as artifact ─────────────────────────────
+      # ── 8. Upload installer artifact ─────────────────────────────
       - name: Upload installer
+        if: ${{ github.event.inputs.build_installer == 'true' }}
         uses: actions/upload-artifact@v4
         with:
-          name: EagleLibrary-installer-windows
+          name: EagleLibrary-Setup-x64
           path: build/*.exe
           retention-days: 30
 
-      # ── Upload portable build as artifact ────────────────────────
+      # ── 9. Upload portable build artifact ────────────────────────
       - name: Upload portable build
         uses: actions/upload-artifact@v4
         with:
-          name: EagleLibrary-portable-windows
+          name: EagleLibrary-Portable-x64
           path: |
             build/Release/EagleLibrary.exe
             build/Release/*.dll
@@ -60,4 +88,5 @@ jobs:
             build/Release/styles/
             build/Release/imageformats/
             build/Release/iconengines/
+            build/Release/plugins/
           retention-days: 30

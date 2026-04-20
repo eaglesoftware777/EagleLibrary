@@ -138,99 +138,143 @@ Typical generated outputs:
 
 ### Runtime
 
-- Windows 10 or Windows 11 recommended
+- Windows 10 or Windows 11 (64-bit)
 
-### Build Requirements
+### Build prerequisites
 
-- Visual Studio 2022 or Visual Studio 2022 Build Tools
-- `Desktop development with C++`
-- MSVC v143 toolset
-- Windows 10 or 11 SDK
-- Qt 6.7.x `msvc2022_64`
-- CMake
-- NSIS 3.x
-- Microsoft HTML Help Workshop
+| Tool | Required version | Download |
+|---|---|---|
+| Visual Studio 2022 | Community / Professional / Enterprise / Build Tools | https://visualstudio.microsoft.com/downloads/ |
+| VS workload | **Desktop development with C++** (includes MSVC v143 + Windows SDK) | via VS Installer |
+| Qt 6.7.x | `msvc2022_64` kit | https://www.qt.io/download-qt-installer |
+| CMake | 3.20 or later | https://cmake.org/download/ |
+| NSIS 3.x | only needed to build the installer | https://nsis.sourceforge.io/Download |
 
-### Required Qt Modules
+### Required Qt modules
 
-- Qt Core
-- Qt Gui
-- Qt Widgets
-- Qt Network
-- Qt Sql
-- Qt Concurrent
-- Qt Xml
-- Qt Svg
+Qt Core · Qt Gui · Qt Widgets · Qt Network · Qt Sql · Qt Concurrent · Qt Xml · Qt Svg
 
-## Build Instructions
+---
 
-### 1. Build the application
+## Building locally (Windows)
 
-From the repository root:
+### Quick start — double-click
+
+Double-click **`build.bat`** in the repository root.
+
+The script auto-detects Visual Studio 2022 and Qt 6.7.x in common install
+locations, configures CMake, compiles in Release mode, and runs `windeployqt`.
+
+```
+build-release\Release\EagleLibrary.exe   ← ready to run
+```
+
+If your Qt or Visual Studio is installed in a non-standard location, set these
+environment variables before running the script (or edit the defaults at the top
+of `build.bat`):
 
 ```bat
-build.bat
+set QT_DIR=C:\Qt\6.7.3\msvc2022_64
+set VS_DIR=C:\Program Files\Microsoft Visual Studio\2022\Community
+set CMAKE_DIR=C:\Program Files\CMake\bin
 ```
 
-This script:
+### Manual CMake build (optional)
 
-- locates Visual Studio 2022
-- locates Qt for MSVC 2022
-- configures CMake
-- builds the Release target
-- runs `windeployqt`
-- copies starter plugins into the runtime output
+If you prefer to drive CMake yourself:
 
-Main output:
+```bat
+rem Open a Visual Studio 2022 x64 developer command prompt, then:
 
-```text
-build-release\Release\EagleLibrary.exe
+cmake -S . -B build-release ^
+      -G "Visual Studio 17 2022" -A x64 ^
+      -DCMAKE_PREFIX_PATH="C:\Qt\6.7.3\msvc2022_64" ^
+      -DCMAKE_BUILD_TYPE=Release
+
+cmake --build build-release --config Release --parallel
+
+"C:\Qt\6.7.3\msvc2022_64\bin\windeployqt.exe" ^
+      --no-translations --compiler-runtime ^
+      build-release\Release\EagleLibrary.exe
 ```
 
-### 2. Build the CHM help file
+### Build the CHM help file
 
 ```bat
 build_help.bat
 ```
 
-Output:
+Output: `docs\help\EagleLibrary.chm`
 
-```text
-docs\help\EagleLibrary.chm
-```
+Requires **Microsoft HTML Help Workshop** (`hhc.exe`) on the PATH.
 
-### 3. Refresh the portable package
+### Create a portable package
 
 ```bat
 installer\refresh_portable.bat build-release\Release \EagleLibrary_Portable
 ```
 
-Portable mode stores data locally under:
+Portable mode activates when `portable.flag` (or `portable.ini`) exists
+next to the `.exe`. All data is then stored locally under:
 
-- `data\`
-- `settings\`
-- `help\`
-- `plugins\`
-- `translations\`
-
-Portable mode is enabled by:
-
-- `portable.flag`
-- or `portable.ini`
-
-### 4. Build the NSIS installer
-
-Compile:
-
-```text
-installer\eagle_library.nsi
+```
+plugins\        translations\
+data\           settings\
+help\
 ```
 
-Current setup filename:
+### Build the NSIS installer
 
-```text
-installer\EagleLibrary_Setup_2.0.0.exe
+Open `installer\eagle_library.nsi` in NSIS and click **Compile**, or:
+
+```bat
+makensis installer\eagle_library.nsi
 ```
+
+Output: `installer\EagleLibrary_Setup_2.0.0.exe`
+
+---
+
+## Building on GitHub (Actions)
+
+No local setup needed — GitHub's runners do everything.
+
+### How to trigger a build
+
+1. Go to your repository on **GitHub**
+2. Click the **Actions** tab
+3. Select **Build EagleLibrary** in the left sidebar
+4. Click **Run workflow** (top-right of the workflow list)
+5. Choose whether to also build the NSIS installer
+6. Click the green **Run workflow** button
+
+> Builds do **not** run automatically on commits or pull requests.
+> They only run when you manually trigger them here.
+
+### Downloading the output
+
+After the workflow finishes (≈ 10–15 minutes):
+
+1. Click the completed run
+2. Scroll to the **Artifacts** section at the bottom
+3. Download:
+   - `EagleLibrary-Portable-x64` — portable folder (`.exe` + Qt DLLs)
+   - `EagleLibrary-Setup-x64` — NSIS installer (if selected)
+
+Artifacts are kept for **30 days**.
+
+### What the workflow does
+
+| Step | Action |
+|---|---|
+| Checkout | Clones the repository |
+| Install Qt 6.7.3 | Downloads and caches the MSVC 64-bit Qt kit |
+| Configure CMake | Visual Studio 17 2022 generator, Release config |
+| Build | Compiles all sources in parallel |
+| windeployqt | Copies required Qt DLLs next to the executable |
+| Copy plugins | Bundles the `plugins/` folder into the output |
+| CPack / NSIS | Creates the installer (optional, chosen at trigger time) |
+| Upload artifacts | Makes both builds available for download |
 
 ## Documentation
 
