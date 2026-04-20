@@ -3451,10 +3451,8 @@ void MainWindow::stopAllTasks()
     m_recentlyAddedBooks.clear();
     m_forceCoverFetchIds.clear();
 
-    if (m_scanner && m_scanner->isRunning()) {
+    if (m_scanner && m_scanner->isRunning())
         m_scanner->cancel();
-        m_scanner->wait(3000);
-    }
 
     if (m_activeRenamer)
         m_activeRenamer->cancel();
