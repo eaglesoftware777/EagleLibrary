@@ -34,7 +34,11 @@ jobs:
           arch:     'win64_msvc2019_64'
           cache:    true
 
-      # ── 3. Configure with CMake ──────────────────────────────────
+      # ── 3. Expose QT_DIR so CMakePresets / CMakeSettings can use it
+      - name: Set QT_DIR environment variable
+        run: echo "QT_DIR=${{ env.QT_ROOT_DIR }}" >> $env:GITHUB_ENV
+
+      # ── 4. Configure with CMake ──────────────────────────────────
       - name: Configure CMake
         run: >
           cmake -S . -B build
@@ -42,11 +46,11 @@ jobs:
           -DCMAKE_PREFIX_PATH="${{ env.QT_ROOT_DIR }}"
           -DCMAKE_BUILD_TYPE=Release
 
-      # ── 4. Build (Release) ───────────────────────────────────────
+      # ── 5. Build (Release) ───────────────────────────────────────
       - name: Build
         run: cmake --build build --config Release --parallel
 
-      # ── 5. Deploy Qt DLLs (windeployqt) ─────────────────────────
+      # ── 6. Deploy Qt DLLs (windeployqt) ─────────────────────────
       - name: Deploy Qt DLLs
         run: |
           "${{ env.QT_ROOT_DIR }}/bin/windeployqt.exe" `
@@ -54,20 +58,20 @@ jobs:
             --compiler-runtime `
             "build/Release/EagleLibrary.exe"
 
-      # ── 6. Copy starter plugins (if present) ─────────────────────
+      # ── 7. Copy starter plugins (if present) ─────────────────────
       - name: Copy plugins
         run: |
           if (Test-Path "plugins") {
             Copy-Item -Recurse -Force "plugins" "build/Release/plugins"
           }
 
-      # ── 7. NSIS installer (optional) ────────────────────────────
+      # ── 8. NSIS installer (optional) ────────────────────────────
       - name: Create NSIS installer
         if: ${{ github.event.inputs.build_installer == 'true' }}
         working-directory: build
         run: cpack -C Release -G NSIS
 
-      # ── 8. Upload installer artifact ─────────────────────────────
+      # ── 9. Upload installer artifact ─────────────────────────────
       - name: Upload installer
         if: ${{ github.event.inputs.build_installer == 'true' }}
         uses: actions/upload-artifact@v4
@@ -76,7 +80,7 @@ jobs:
           path: build/*.exe
           retention-days: 30
 
-      # ── 9. Upload portable build artifact ────────────────────────
+      # ── 10. Upload portable build artifact ───────────────────────
       - name: Upload portable build
         uses: actions/upload-artifact@v4
         with:

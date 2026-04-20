@@ -158,45 +158,90 @@ Qt Core · Qt Gui · Qt Widgets · Qt Network · Qt Sql · Qt Concurrent · Qt X
 
 ## Building locally (Windows)
 
-### Quick start — double-click
+### Step 0 — set the QT_DIR environment variable once
+
+Every build path (Visual Studio, `build.bat`, and manual CMake) reads Qt's
+location from the `QT_DIR` environment variable.  Set it once in Windows and
+you never have to touch it again:
+
+1. Open **Start → Edit the system environment variables**
+2. Click **Environment Variables…**
+3. Under *User variables*, click **New**
+4. Variable name: `QT_DIR`
+5. Variable value: path to your Qt MSVC 2022 64-bit kit, e.g.
+   `C:\Qt\6.7.3\msvc2022_64`
+6. Click **OK** everywhere, then restart any open terminals or Visual Studio
+
+```
+QT_DIR = C:\Qt\6.7.3\msvc2022_64   ← adjust to your installed version
+```
+
+---
+
+### Option A — Visual Studio 2022 (Open Folder)
+
+This is the recommended workflow for day-to-day development.
+
+1. Open Visual Studio 2022
+2. Choose **Open a local folder** and select the repository root
+3. Visual Studio detects `CMakePresets.json` automatically
+4. In the toolbar dropdown select **Windows x64 Release (MSVC)**
+   (or **Windows x64 Debug (MSVC)** for a debug build)
+5. Press **Ctrl+Shift+B** to build
+
+Output: `out\build\windows-release\Release\EagleLibrary.exe`
+
+> Qt DLLs are copied automatically by the `windeployqt` post-build step
+> defined in `CMakeLists.txt`.
+
+**If you prefer a hardcoded path instead of the env var:**
+
+Copy `CMakeUserPresets.json.template` to `CMakeUserPresets.json` (gitignored)
+and edit the `CMAKE_PREFIX_PATH` value to your Qt path.  Visual Studio picks it
+up automatically and adds a **local** preset to the dropdown.
+
+---
+
+### Option B — build.bat (quick command-line build)
 
 Double-click **`build.bat`** in the repository root.
 
-The script auto-detects Visual Studio 2022 and Qt 6.7.x in common install
-locations, configures CMake, compiles in Release mode, and runs `windeployqt`.
+The script reads `QT_DIR` if set, otherwise auto-detects Qt 6.7.x and
+Visual Studio 2022 in common install locations.
 
 ```
 build-release\Release\EagleLibrary.exe   ← ready to run
 ```
 
-If your Qt or Visual Studio is installed in a non-standard location, set these
-environment variables before running the script (or edit the defaults at the top
-of `build.bat`):
+Override any path without editing the file:
 
 ```bat
 set QT_DIR=C:\Qt\6.7.3\msvc2022_64
 set VS_DIR=C:\Program Files\Microsoft Visual Studio\2022\Community
 set CMAKE_DIR=C:\Program Files\CMake\bin
+build.bat
 ```
 
-### Manual CMake build (optional)
+---
 
-If you prefer to drive CMake yourself:
+### Option C — manual CMake (command line)
+
+Open a **Visual Studio 2022 x64 Developer Command Prompt**, then:
 
 ```bat
-rem Open a Visual Studio 2022 x64 developer command prompt, then:
-
 cmake -S . -B build-release ^
       -G "Visual Studio 17 2022" -A x64 ^
-      -DCMAKE_PREFIX_PATH="C:\Qt\6.7.3\msvc2022_64" ^
+      -DCMAKE_PREFIX_PATH="%QT_DIR%" ^
       -DCMAKE_BUILD_TYPE=Release
 
 cmake --build build-release --config Release --parallel
 
-"C:\Qt\6.7.3\msvc2022_64\bin\windeployqt.exe" ^
+"%QT_DIR%\bin\windeployqt.exe" ^
       --no-translations --compiler-runtime ^
       build-release\Release\EagleLibrary.exe
 ```
+
+---
 
 ### Build the CHM help file
 
@@ -214,22 +259,20 @@ Requires **Microsoft HTML Help Workshop** (`hhc.exe`) on the PATH.
 installer\refresh_portable.bat build-release\Release \EagleLibrary_Portable
 ```
 
-Portable mode activates when `portable.flag` (or `portable.ini`) exists
-next to the `.exe`. All data is then stored locally under:
+Portable mode activates when `portable.flag` (or `portable.ini`) exists next
+to the `.exe`. All data and settings are then stored locally:
 
 ```
-plugins\        translations\
-data\           settings\
-help\
+data\   settings\   plugins\   translations\   help\
 ```
 
 ### Build the NSIS installer
 
-Open `installer\eagle_library.nsi` in NSIS and click **Compile**, or:
-
 ```bat
 makensis installer\eagle_library.nsi
 ```
+
+Or open the `.nsi` file in NSIS and click **Compile**.
 
 Output: `installer\EagleLibrary_Setup_2.0.0.exe`
 
@@ -237,7 +280,7 @@ Output: `installer\EagleLibrary_Setup_2.0.0.exe`
 
 ## Building on GitHub (Actions)
 
-No local setup needed — GitHub's runners do everything.
+No local setup needed — GitHub's runners handle everything.
 
 ### How to trigger a build
 
@@ -256,7 +299,7 @@ No local setup needed — GitHub's runners do everything.
 After the workflow finishes (≈ 10–15 minutes):
 
 1. Click the completed run
-2. Scroll to the **Artifacts** section at the bottom
+2. Scroll to **Artifacts** at the bottom of the page
 3. Download:
    - `EagleLibrary-Portable-x64` — portable folder (`.exe` + Qt DLLs)
    - `EagleLibrary-Setup-x64` — NSIS installer (if selected)
@@ -268,7 +311,7 @@ Artifacts are kept for **30 days**.
 | Step | Action |
 |---|---|
 | Checkout | Clones the repository |
-| Install Qt 6.7.3 | Downloads and caches the MSVC 64-bit Qt kit |
+| Install Qt 6.7.3 | Downloads and caches the MSVC 64-bit Qt kit, sets `QT_DIR` |
 | Configure CMake | Visual Studio 17 2022 generator, Release config |
 | Build | Compiles all sources in parallel |
 | windeployqt | Copies required Qt DLLs next to the executable |

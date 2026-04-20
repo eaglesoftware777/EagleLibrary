@@ -1,0 +1,50 @@
+{
+  "version": 3,
+  "cmakeMinimumRequired": { "major": 3, "minor": 20, "patch": 0 },
+  "configurePresets": [
+    {
+      "name": "windows-release",
+      "displayName": "Windows x64 Release (MSVC)",
+      "description": "Reads Qt location from the QT_DIR environment variable",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/out/build/${presetName}",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE":  "Release",
+        "CMAKE_PREFIX_PATH": "$env{QT_DIR}"
+      },
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Windows"
+      }
+    },
+    {
+      "name": "windows-debug",
+      "displayName": "Windows x64 Debug (MSVC)",
+      "description": "Reads Qt location from the QT_DIR environment variable",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/out/build/${presetName}",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE":  "Debug",
+        "CMAKE_PREFIX_PATH": "$env{QT_DIR}"
+      },
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Windows"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "windows-release",
+      "displayName": "Windows x64 Release",
+      "configurePreset": "windows-release"
+    },
+    {
+      "name": "windows-debug",
+      "displayName": "Windows x64 Debug",
+      "configurePreset": "windows-debug"
+    }
+  ]
+}
