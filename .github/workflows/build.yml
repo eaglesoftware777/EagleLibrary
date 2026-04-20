@@ -264,27 +264,21 @@ jobs:
               $fence
           }
 
-          $downloadsTable = @"
+          $n = [System.Environment]::NewLine
+          $downloadsTable = $n + "---" + $n + $n +
+            "### Downloads" + $n + $n +
+            "Asset | Description" + $n +
+            "--- | ---" + $n +
+            "**EagleLibrary-Portable-x64.zip** | Portable build — unzip and run, no install needed. portable.flag keeps all data beside the .exe." + $n +
+            "**EagleLibrary-Setup-x64.exe** | Windows installer — installs to Program Files, creates Start Menu and Desktop shortcuts." + $n +
+            "**EagleLibrary.chm** | Offline help — open with Windows Help Viewer (hh.exe)." + $n +
+            "**SHA256SUMS.txt** | SHA256 checksums for all release assets." + $n + $n +
+            "### System Requirements" + $n + $n +
+            "- Windows 10 / 11 (64-bit)" + $n +
+            "- No additional runtime required — Qt DLLs and MSVC redistributables are bundled" + $n
 
----
-
-### Downloads
-
-| Asset | Description |
-|---|---|
-| **EagleLibrary-Portable-x64.zip** | Portable build — unzip and run, no installation needed. portable.flag keeps all data beside the .exe. |
-| **EagleLibrary-Setup-x64.exe** | Windows installer — installs to Program Files, creates Start Menu and Desktop shortcuts. |
-| **EagleLibrary.chm** | Offline help file — open with Windows Help Viewer (hh.exe). |
-| **SHA256SUMS.txt** | SHA256 checksums for all release assets. |
-
-### System Requirements
-
-- Windows 10 / 11 (64-bit)
-- No additional runtime required — Qt DLLs and MSVC redistributables are bundled
-"@
-
-          $fullNotes = "## Eagle Library $version" + [System.Environment]::NewLine + [System.Environment]::NewLine +
-            $notesBody + $downloadsTable + $checksumSection
+          $fullNotes = "## Eagle Library $version" + $n + $n +
+            $notesBody + $n + $downloadsTable + $checksumSection
 
           $notesPath = Join-Path $env:RUNNER_TEMP "release-notes.md"
           Set-Content -Path $notesPath -Value $fullNotes -NoNewline
