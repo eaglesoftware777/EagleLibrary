@@ -127,7 +127,7 @@ Typical generated outputs:
 
 - App: `build-release/Release/EagleLibrary.exe`
 - Installer: `installer/EagleLibrary_Setup_2.0.0.exe`
-- Portable folder: `C:\eagle_software\EagleLibrary_Portable`
+- Portable folder: `\EagleLibrary_Portable`
 - GitHub-style release assets:
   - `release/EagleLibrary-Setup-x64.exe`
   - `release/EagleLibrary-Portable-x64.zip`
@@ -202,7 +202,7 @@ docs\help\EagleLibrary.chm
 ### 3. Refresh the portable package
 
 ```bat
-installer\refresh_portable.bat build-release\Release C:\eagle_software\EagleLibrary_Portable
+installer\refresh_portable.bat build-release\Release \EagleLibrary_Portable
 ```
 
 Portable mode stores data locally under:
@@ -296,7 +296,6 @@ This project is released under the MIT License.
 
 See [LICENSE](LICENSE).
 
-## Company
 
 Eagle Software  
 https://eaglesoftware.biz/
