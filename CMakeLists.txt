@@ -6,7 +6,7 @@
 cmake_minimum_required(VERSION 3.20)
 
 project(EagleLibrary
-    VERSION 2.1.0
+    VERSION 1.1.0
     DESCRIPTION "Eagle Software - Professional eBook & Document Library Manager"
     LANGUAGES CXX
 )
@@ -19,8 +19,38 @@ if(WIN32)
     set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} /SUBSYSTEM:WINDOWS /MANIFEST:NO")
 endif()
 
-# ── Find Qt6 (bundled with MSVC 2022 toolchain) ─────────────────────────────
-# Qt6 path — adjust if needed, e.g. set QT_DIR in cmake-gui
+# ── Locate Qt6 ───────────────────────────────────────────────────────────────
+# Priority: CMAKE_PREFIX_PATH (already set) > env vars > auto-scan C:/Qt
+# CI sets QT_DIR via the ci-release preset; local VS/Ninja builds auto-detect.
+if(WIN32 AND NOT CMAKE_PREFIX_PATH)
+    foreach(_env_var QT_DIR Qt6_DIR QTDIR)
+        if(DEFINED ENV{${_env_var}} AND NOT "$ENV{${_env_var}}" STREQUAL "")
+            set(CMAKE_PREFIX_PATH "$ENV{${_env_var}}" CACHE PATH "Qt6 prefix (from env ${_env_var})" FORCE)
+            message(STATUS "Qt6: using ${_env_var} = ${CMAKE_PREFIX_PATH}")
+            break()
+        endif()
+    endforeach()
+endif()
+
+if(WIN32 AND NOT CMAKE_PREFIX_PATH)
+    file(GLOB _qt6_candidates
+        "C:/Qt/6.*/msvc2022_64"
+        "C:/Qt/6.*/msvc2019_64"
+        "$ENV{USERPROFILE}/Qt/6.*/msvc2022_64"
+        "$ENV{USERPROFILE}/Qt/6.*/msvc2019_64"
+    )
+    if(_qt6_candidates)
+        list(SORT _qt6_candidates ORDER DESCENDING)
+        list(GET _qt6_candidates 0 _qt6_path)
+        set(CMAKE_PREFIX_PATH "${_qt6_path}" CACHE PATH "Auto-detected Qt6 path" FORCE)
+        message(STATUS "Qt6: auto-detected ${CMAKE_PREFIX_PATH}")
+        unset(_qt6_path)
+    else()
+        message(WARNING "Qt6 not found automatically. Set QT_DIR env var or CMAKE_PREFIX_PATH.")
+    endif()
+    unset(_qt6_candidates)
+endif()
+
 find_package(Qt6 REQUIRED COMPONENTS
     Core
     Gui
@@ -118,7 +148,7 @@ endif()
 
 # ── Definitions ──────────────────────────────────────────────────────────────
 target_compile_definitions(EagleLibrary PRIVATE
-    APP_VERSION="2.1.0"
+    APP_VERSION="1.1.0"
     APP_COMPANY="Eagle Software"
     APP_NAME="Eagle Library"
     UNICODE
@@ -201,11 +231,11 @@ include(CPack)
 set(CPACK_GENERATOR "NSIS")
 set(CPACK_PACKAGE_NAME "EagleLibrary")
 set(CPACK_PACKAGE_VENDOR "Eagle Software")
-set(CPACK_PACKAGE_VERSION "2.1.0")
+set(CPACK_PACKAGE_VERSION "1.1.0")
 set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "Eagle Library - Professional eBook & Document Manager")
 set(CPACK_PACKAGE_INSTALL_DIRECTORY "Eagle Library")
 set(CPACK_NSIS_DISPLAY_NAME "Eagle Library")
-set(CPACK_NSIS_PACKAGE_NAME "Eagle Library 2.1.0")
+set(CPACK_NSIS_PACKAGE_NAME "Eagle Library 1.1.0")
 set(CPACK_NSIS_MUI_ICON "${CMAKE_SOURCE_DIR}/resources/eagle.ico")
 set(CPACK_NSIS_MUI_UNIICON "${CMAKE_SOURCE_DIR}/resources/eagle.ico")
 set(CPACK_NSIS_INSTALLED_ICON_NAME "EagleLibrary.exe")

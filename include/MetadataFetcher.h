@@ -23,9 +23,17 @@ struct FetchRequest {
     QString isbn;
     QString filePath;
     QString format;
-    bool    useEmbedded = true;
-    bool    useGoogle = true;
+    bool    useEmbedded    = true;
+    bool    useGoogle      = true;
     bool    useOpenLibrary = true;
+};
+
+// One search result candidate. embedded=true means it came from the file itself.
+struct Candidate {
+    Book        book;
+    QStringList coverUrls;
+    int         score    = 0;
+    bool        embedded = false;
 };
 
 class MetadataFetcher : public QObject
@@ -50,24 +58,24 @@ private slots:
     void onOpenLibraryReply(QNetworkReply* reply, qint64 bookId);
 
 private:
-    QNetworkAccessManager* m_nam;
-    QQueue<FetchRequest>   m_queue;
-    int                    m_active        = 0;
-    int                    m_maxConcurrent = 4;
-    QTimer*                m_processTimer;
-    int                    m_totalQueued   = 0;
-    int                    m_totalDone     = 0;
-    QHash<qint64, FetchRequest> m_requests;
-    QHash<qint64, QVector<Book>> m_candidates;
-    QHash<qint64, QStringList> m_coverCandidates;
-    QHash<qint64, int> m_pendingReplies;
-    QSet<QNetworkReply*> m_activeReplies;
-    bool m_cancelling = false;
-    quint64 m_generation = 0;
+    QNetworkAccessManager*          m_nam;
+    QQueue<FetchRequest>            m_queue;
+    int                             m_active        = 0;
+    int                             m_maxConcurrent = 4;
+    QTimer*                         m_processTimer;
+    int                             m_totalQueued   = 0;
+    int                             m_totalDone     = 0;
+    QHash<qint64, FetchRequest>     m_requests;
+    QHash<qint64, QVector<Candidate>> m_candidates;
+    QHash<qint64, int>              m_pendingReplies;
+    QSet<QNetworkReply*>            m_activeReplies;
+    bool                            m_cancelling = false;
+    quint64                         m_generation = 0;
 
     void fetchFromSources(const FetchRequest& req);
     void fetchFromGoogle(const FetchRequest& req);
     void fetchFromOpenLibrary(const FetchRequest& req);
+    void finalize(qint64 bookId);
     Book parseGoogleVolume(const QJsonObject& volume) const;
     Book parseOpenLibraryDoc(const QJsonObject& doc) const;
     QString buildGoogleQuery(const FetchRequest& req) const;

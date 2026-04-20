@@ -3,13 +3,12 @@ name: Build EagleLibrary
 permissions:
   contents: write
 
-# Only runs when triggered manually from the Actions tab on GitHub.
-# Go to: Actions -> Build EagleLibrary -> Run workflow
+# Triggered manually from Actions → Build EagleLibrary → Run workflow
 on:
   workflow_dispatch:
     inputs:
       build_installer:
-        description: 'Also build NSIS installer (.exe)'
+        description: 'Build NSIS installer (.exe)'
         required: false
         default: 'true'
         type: choice
@@ -17,7 +16,7 @@ on:
           - 'true'
           - 'false'
       publish_release:
-        description: 'Publish assets to a GitHub release after a successful build'
+        description: 'Publish assets to a GitHub release'
         required: false
         default: 'false'
         type: choice
@@ -25,22 +24,30 @@ on:
           - 'false'
           - 'true'
       release_tag:
-        description: 'Release tag to update when publish_release=true'
+        description: 'Release tag (e.g. v1.1)'
         required: false
-        default: 'v2.1.0'
+        default: 'v1.1'
         type: string
+      bust_qt_cache:
+        description: 'Force re-download Qt (ignore cache)'
+        required: false
+        default: 'false'
+        type: choice
+        options:
+          - 'false'
+          - 'true'
 
 jobs:
   build-windows:
-    name: Windows x64 - Qt6 / MSVC 2022
+    name: Windows x64 — Qt6 / MSVC 2022
     runs-on: windows-latest
 
     steps:
-      # 1. Checkout
+      # ── 1. Checkout ────────────────────────────────────────────
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # 2. Install Qt 6.7 (MSVC 2022 64-bit)
+      # ── 2. Install Qt 6.7 ──────────────────────────────────────
       - name: Install Qt 6.7
         uses: jurplel/install-qt-action@v3
         with:
@@ -48,34 +55,44 @@ jobs:
           host: 'windows'
           target: 'desktop'
           arch: 'win64_msvc2019_64'
-          cache: true
+          cache: ${{ github.event.inputs.bust_qt_cache != 'true' }}
+          cache-key-prefix: 'qt-6.7.3-msvc2019-x64-v1'
 
-      # 3. Expose QT_DIR so CMakePresets / CMakeSettings can use it
-      - name: Set QT_DIR environment variable
+      # ── 3. Expose QT_DIR for the ci-release CMake preset ───────
+      - name: Set QT_DIR
         run: echo "QT_DIR=${{ env.QT_ROOT_DIR }}" >> $env:GITHUB_ENV
 
-      # 4. Configure with CMake
+      # ── 4. Clean any stale build directory ─────────────────────
+      - name: Clean build directory
+        shell: pwsh
+        run: |
+          if (Test-Path "build") {
+            Remove-Item -Recurse -Force "build"
+            Write-Host "Cleaned stale build/ directory"
+          }
+
+      # ── 5. Configure (ci-release preset) ───────────────────────
       - name: Configure CMake
-        run: cmake -S . -B build -G "Visual Studio 17 2022" -A x64 -DCMAKE_PREFIX_PATH="${{ env.QT_ROOT_DIR }}" -DCMAKE_BUILD_TYPE=Release
+        run: cmake --preset ci-release
 
-      # 5. Build (Release)
+      # ── 6. Build ────────────────────────────────────────────────
       - name: Build
-        run: cmake --build build --config Release --parallel
+        run: cmake --build --preset ci-release --parallel
 
-      # 6. Deploy Qt DLLs (windeployqt)
-      # CMakeLists.txt runs windeployqt as a POST_BUILD command so DLLs are
-      # already copied after the build step. This step runs it again as a
-      # safety net using the QT_DIR variable exported in step 3.
+      # ── 7. Deploy Qt DLLs (windeployqt safety net) ─────────────
+      # CMakeLists.txt already runs windeployqt as a POST_BUILD command.
+      # This step re-runs it as a safety net in case the path differed.
       - name: Deploy Qt DLLs
         shell: pwsh
         run: |
-          $qtRoot = $env:QT_DIR
-          if (-not $qtRoot) { Write-Host "QT_DIR not set, skipping (CMake post-build already ran windeployqt)"; exit 0 }
-          $qtBin = Join-Path $qtRoot "bin\windeployqt.exe"
-          if (-not (Test-Path $qtBin)) { Write-Host "windeployqt not found at $qtBin, skipping"; exit 0 }
+          $qtBin = Join-Path $env:QT_DIR "bin\windeployqt.exe"
+          if (-not (Test-Path $qtBin)) {
+            Write-Host "windeployqt not found at $qtBin — POST_BUILD already ran it, skipping"
+            exit 0
+          }
           & $qtBin --no-translations --compiler-runtime "build\Release\EagleLibrary.exe"
 
-      # 7. Copy starter plugins (if present)
+      # ── 8. Copy plugins ────────────────────────────────────────
       - name: Copy plugins
         shell: pwsh
         run: |
@@ -83,20 +100,22 @@ jobs:
             Copy-Item -Recurse -Force "plugins" "build\Release\plugins"
           }
 
+      # ── 9. Copy runtime assets ─────────────────────────────────
       - name: Copy runtime assets
         shell: pwsh
         run: |
           foreach ($pair in @(
             @{ Source = "resources\translations"; Target = "build\Release\translations" },
-            @{ Source = "resources\themes"; Target = "build\Release\themes" },
-            @{ Source = "resources"; Target = "build\Release\resources" }
+            @{ Source = "resources\themes";       Target = "build\Release\themes"       },
+            @{ Source = "resources";              Target = "build\Release\resources"    }
           )) {
             if (Test-Path $pair.Source) {
               Copy-Item -Recurse -Force $pair.Source $pair.Target
             }
           }
 
-      - name: Package portable zip
+      # ── 10. Package portable ZIP ───────────────────────────────
+      - name: Package portable ZIP
         shell: pwsh
         run: |
           $portableRoot = "build\portable\EagleLibrary"
@@ -105,7 +124,7 @@ jobs:
           }
           New-Item -ItemType Directory -Path $portableRoot | Out-Null
 
-          $portableItems = @(
+          $items = @(
             "build\Release\EagleLibrary.exe",
             "build\Release\*.dll",
             "build\Release\platforms",
@@ -123,33 +142,29 @@ jobs:
             "docs\help\EagleLibrary.chm"
           )
 
-          foreach ($item in $portableItems) {
-            if (-not (Test-Path $item)) {
-              continue
-            }
-
+          foreach ($item in $items) {
+            if (-not (Test-Path $item)) { continue }
             if ((Get-Item $item) -is [System.IO.DirectoryInfo]) {
               Copy-Item -Recurse -Force $item $portableRoot
-              continue
+            } else {
+              Copy-Item -Force $item $portableRoot
             }
-
-            Copy-Item -Force $item $portableRoot
           }
 
+          # portable.flag marks this as a portable installation
           New-Item -ItemType File -Path (Join-Path $portableRoot "portable.flag") -Force | Out-Null
 
           $zipPath = "build\EagleLibrary-Portable-x64.zip"
-          if (Test-Path $zipPath) {
-            Remove-Item -Force $zipPath
-          }
+          if (Test-Path $zipPath) { Remove-Item -Force $zipPath }
           Compress-Archive -Path "$portableRoot\*" -DestinationPath $zipPath -CompressionLevel Optimal
+          Write-Host "Portable ZIP: $zipPath ($('{0:N2}' -f ((Get-Item $zipPath).Length / 1MB)) MB)"
 
-      # 8. Install NSIS (required for CPack NSIS generator)
+      # ── 11. Install NSIS ───────────────────────────────────────
       - name: Install NSIS
         if: ${{ github.event.inputs.build_installer == 'true' }}
         run: choco install nsis --no-progress -y
 
-      # 9. NSIS installer (optional)
+      # ── 12. Build NSIS installer ───────────────────────────────
       - name: Create NSIS installer
         if: ${{ github.event.inputs.build_installer == 'true' }}
         shell: pwsh
@@ -157,25 +172,59 @@ jobs:
         run: |
           $env:PATH += ";C:\Program Files (x86)\NSIS"
           cpack -C Release -G NSIS
-          Copy-Item -Force (Get-ChildItem *.exe | Select-Object -First 1).FullName "..\EagleLibrary-Setup-x64.exe"
+          $exe = Get-ChildItem *.exe | Select-Object -First 1
+          if ($exe) {
+            Copy-Item -Force $exe.FullName "..\EagleLibrary-Setup-x64.exe"
+            Write-Host "Installer: $($exe.Name)"
+          }
 
-      # 10. Upload installer artifact
-      - name: Upload installer
+      # ── 13. Generate SHA256 checksums ──────────────────────────
+      - name: Generate SHA256 checksums
+        shell: pwsh
+        run: |
+          $files = @("build\EagleLibrary-Portable-x64.zip")
+          if (Test-Path "EagleLibrary-Setup-x64.exe") {
+            $files += "EagleLibrary-Setup-x64.exe"
+          }
+          if (Test-Path "docs\help\EagleLibrary.chm") {
+            $files += "docs\help\EagleLibrary.chm"
+          }
+          $lines = foreach ($f in $files) {
+            if (Test-Path $f) {
+              $hash = (Get-FileHash $f -Algorithm SHA256).Hash.ToLower()
+              "$hash  $(Split-Path $f -Leaf)"
+            }
+          }
+          $lines | Out-File -FilePath "build\SHA256SUMS.txt" -Encoding utf8
+          Write-Host "--- SHA256SUMS.txt ---"
+          Get-Content "build\SHA256SUMS.txt"
+
+      # ── 14. Upload installer artifact ─────────────────────────
+      - name: Upload installer artifact
         if: ${{ github.event.inputs.build_installer == 'true' }}
         uses: actions/upload-artifact@v4
         with:
           name: EagleLibrary-Setup-x64
-          path: build/EagleLibrary-Setup-x64.exe
+          path: EagleLibrary-Setup-x64.exe
           retention-days: 30
 
-      # 11. Upload portable build artifact
-      - name: Upload portable build
+      # ── 15. Upload portable artifact ───────────────────────────
+      - name: Upload portable artifact
         uses: actions/upload-artifact@v4
         with:
           name: EagleLibrary-Portable-x64
           path: build/EagleLibrary-Portable-x64.zip
           retention-days: 30
 
+      # ── 16. Upload checksums artifact ──────────────────────────
+      - name: Upload checksums artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: SHA256SUMS
+          path: build/SHA256SUMS.txt
+          retention-days: 30
+
+      # ── 17. Publish release ────────────────────────────────────
       - name: Publish release
         if: ${{ github.event.inputs.publish_release == 'true' }}
         env:
@@ -186,49 +235,89 @@ jobs:
           if ([string]::IsNullOrWhiteSpace($tag)) {
             throw "release_tag is required when publish_release=true"
           }
+          if (-not $tag.StartsWith("v")) { $tag = "v$tag" }
 
-          if (-not $tag.StartsWith("v")) {
-            $tag = "v$tag"
-          }
+          $version  = $tag.TrimStart("v")
+          $title    = "Eagle Library $version"
+          $readme   = Get-Content "README.md" -Raw
 
-          $version = $tag.TrimStart("v")
-          $title = "Eagle Library $version"
-          $readme = Get-Content "README.md" -Raw
-          $pattern = "(?ms)^## Release Notes\s+.*?^###\s+$([regex]::Escape($version))\s*\r?\n(.*?)(?=^###\s+\S|^##\s+\S|\z)"
-          $match = [regex]::Match($readme, $pattern)
+          # Extract release notes for this version from README
+          $pattern  = "(?ms)^## Release Notes\s+.*?^###\s+$([regex]::Escape($version))\s*\r?\n(.*?)(?=^###\s+\S|^##\s+\S|\z)"
+          $match    = [regex]::Match($readme, $pattern)
           if (-not $match.Success) {
-            throw "Could not find release notes for version $version in README.md"
+            throw "Could not find '### $version' under '## Release Notes' in README.md"
           }
+          $notesBody = $match.Groups[1].Value.Trim()
+
+          # Read checksums to embed in the release description
+          $checksumBlock = ""
+          if (Test-Path "build\SHA256SUMS.txt") {
+            $lines = Get-Content "build\SHA256SUMS.txt"
+            $checksumBlock = @"
+
+---
+
+### SHA256 Checksums
+
+``````
+$($lines -join "`n")
+``````
+
+Verify on Windows:
+``````powershell
+Get-FileHash EagleLibrary-Portable-x64.zip -Algorithm SHA256
+``````
+"@
+          }
+
+          $fullNotes = @"
+## Eagle Library $version
+
+$notesBody
+
+---
+
+### Downloads
+
+| Asset | Description |
+|---|---|
+| **EagleLibrary-Portable-x64.zip** | Portable build — unzip and run, no installation needed. `portable.flag` keeps all data beside the `.exe`. |
+| **EagleLibrary-Setup-x64.exe** | Windows installer — installs to `Program Files`, creates Start Menu and Desktop shortcuts. |
+| **EagleLibrary.chm** | Offline help file — open with Windows Help Viewer (`hh.exe`). |
+| **SHA256SUMS.txt** | SHA256 checksums for all release assets. |
+
+### System Requirements
+
+- Windows 10 / 11 (64-bit)
+- No additional runtime required — Qt DLLs and MSVC redistributables are bundled
+$checksumBlock
+"@
 
           $notesPath = Join-Path $env:RUNNER_TEMP "release-notes.md"
-          $notes = "## Eagle Library $version`r`n`r`n$($match.Groups[1].Value.Trim())"
-          Set-Content -Path $notesPath -Value $notes -NoNewline
+          Set-Content -Path $notesPath -Value $fullNotes -NoNewline
 
-          $releaseExists = $true
-          gh release view $tag | Out-Null
-          if ($LASTEXITCODE -ne 0) {
-            $releaseExists = $false
-          }
-
+          # Create or update the release
+          $releaseExists = ($null -ne (gh release view $tag 2>$null))
           if (-not $releaseExists) {
             gh release create $tag --title $title --notes-file $notesPath
           } else {
             gh release edit $tag --title $title --notes-file $notesPath
           }
 
-          $existingAssets = @(gh release view $tag --json assets --jq '.assets[].name')
-          foreach ($assetName in @("EagleLibrary-Portable-x64.zip", "EagleLibrary-Setup-x64.exe")) {
-            if ($existingAssets -contains $assetName) {
+          # Remove existing assets before uploading fresh ones
+          $existing = @(gh release view $tag --json assets --jq '.assets[].name' 2>$null)
+          foreach ($assetName in @("EagleLibrary-Portable-x64.zip", "EagleLibrary-Setup-x64.exe", "EagleLibrary.chm", "SHA256SUMS.txt")) {
+            if ($existing -contains $assetName) {
               gh release delete-asset $tag $assetName --yes
             }
           }
 
-          $uploadArgs = @(
-            "release", "upload", $tag,
-            "build\EagleLibrary-Portable-x64.zip"
-          )
-          if (Test-Path "build\EagleLibrary-Setup-x64.exe") {
-            $uploadArgs += "build\EagleLibrary-Setup-x64.exe"
+          # Upload assets
+          $uploadArgs = @("release", "upload", $tag, "build\EagleLibrary-Portable-x64.zip", "build\SHA256SUMS.txt")
+          if (Test-Path "EagleLibrary-Setup-x64.exe") {
+            $uploadArgs += "EagleLibrary-Setup-x64.exe"
           }
-
+          if (Test-Path "docs\help\EagleLibrary.chm") {
+            $uploadArgs += "docs\help\EagleLibrary.chm"
+          }
           & gh @uploadArgs

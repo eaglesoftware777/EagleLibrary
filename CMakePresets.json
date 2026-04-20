@@ -4,13 +4,12 @@
   "configurePresets": [
     {
       "name": "windows-release",
-      "displayName": "Windows x64 Release (MSVC)",
-      "description": "Reads Qt location from the QT_DIR environment variable",
+      "displayName": "Windows x64 Release (Ninja/MSVC)",
+      "description": "Local build — Qt auto-detected or set QT_DIR / Qt6_DIR env var",
       "generator": "Ninja",
       "binaryDir": "${sourceDir}/out/build/${presetName}",
       "cacheVariables": {
-        "CMAKE_BUILD_TYPE":  "Release",
-        "CMAKE_PREFIX_PATH": "$env{QT_DIR}"
+        "CMAKE_BUILD_TYPE": "Release"
       },
       "condition": {
         "type": "equals",
@@ -20,12 +19,30 @@
     },
     {
       "name": "windows-debug",
-      "displayName": "Windows x64 Debug (MSVC)",
-      "description": "Reads Qt location from the QT_DIR environment variable",
+      "displayName": "Windows x64 Debug (Ninja/MSVC)",
+      "description": "Local build — Qt auto-detected or set QT_DIR / Qt6_DIR env var",
       "generator": "Ninja",
       "binaryDir": "${sourceDir}/out/build/${presetName}",
       "cacheVariables": {
-        "CMAKE_BUILD_TYPE":  "Debug",
+        "CMAKE_BUILD_TYPE": "Debug"
+      },
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Windows"
+      }
+    },
+    {
+      "name": "ci-release",
+      "displayName": "CI x64 Release (VS 2022)",
+      "description": "Used by GitHub Actions — VS generator, output lands in build/Release",
+      "generator": "Visual Studio 17 2022",
+      "architecture": {
+        "value": "x64",
+        "strategy": "set"
+      },
+      "binaryDir": "${sourceDir}/build",
+      "cacheVariables": {
         "CMAKE_PREFIX_PATH": "$env{QT_DIR}"
       },
       "condition": {
@@ -45,6 +62,12 @@
       "name": "windows-debug",
       "displayName": "Windows x64 Debug",
       "configurePreset": "windows-debug"
+    },
+    {
+      "name": "ci-release",
+      "displayName": "CI x64 Release",
+      "configurePreset": "ci-release",
+      "configuration": "Release"
     }
   ]
 }

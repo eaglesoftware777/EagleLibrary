@@ -9,9 +9,8 @@
 #include <QPainterPath>
 #include <QApplication>
 #include <QCoreApplication>
+#include <QIcon>
 #include <QScreen>
-#include <QDir>
-#include <QFileInfo>
 #include <QFont>
 #include <QFontMetrics>
 #include <QLinearGradient>
@@ -42,26 +41,10 @@ SplashScreen::SplashScreen(QWidget* parent)
     p.setRenderHint(QPainter::TextAntialiasing, true);
     setPixmap(pm);
 
-    QImage source;
-    const QString appDir = QCoreApplication::applicationDirPath();
-    const QStringList logoCandidates = {
-        AppConfig::logoPngPath(),
-        QDir(appDir).absoluteFilePath("eagle_logo.png"),
-        QStringLiteral(":/eagle_logo.png"),
-        QDir(appDir).absoluteFilePath("../resources/eagle_logo.png"),
-        QDir(appDir).absoluteFilePath("../../resources/eagle_logo.png")
-    };
-    for (const QString& path : logoCandidates) {
-        if (!path.startsWith(QStringLiteral(":/")) && !QFileInfo::exists(path))
-            continue;
-        source.load(path);
-        if (!source.isNull())
-            break;
-    }
-
-    if (!source.isNull()) {
-        m_logo = QPixmap::fromImage(source.convertToFormat(QImage::Format_ARGB32));
-    }
+    // Use the vectorial eagle mark — renders cleanly at any size on the dark background
+    const QIcon markIcon(QStringLiteral(":/eagle_mark.svg"));
+    if (!markIcon.isNull())
+        m_logo = markIcon.pixmap(200, 200);
 }
 
 void SplashScreen::setProgress(int value, const QString& message)
@@ -115,41 +98,30 @@ void SplashScreen::drawBackground(QPainter* p)
     p->drawLine(40, 280, W - 40, 280);
 }
 
-// ── Eagle Logo — real company logo from resources ─────────────────────────────
+// ── Eagle Mark — vectorial SVG logo ──────────────────────────────────────────
 void SplashScreen::drawLogo(QPainter* p)
 {
-    const QRect target((W - 310) / 2, 18, 310, 168);
-    const QPixmap companyLogo = m_logo;
-    QRadialGradient glow(target.center(), 150);
-    glow.setColorAt(0.0, QColor(180, 200, 255, 52));
-    glow.setColorAt(1.0, Qt::transparent);
-    p->fillRect(target.adjusted(-18, -10, 18, 10), glow);
+    // Tight square target area; the SVG mark renders well on the dark background
+    const int markSize = 148;
+    const QRect target((W - markSize) / 2, 22, markSize, markSize);
 
+    // Radial gold glow behind the mark
+    QRadialGradient glow(target.center(), 110);
+    glow.setColorAt(0.0, QColor(210, 165, 55, 70));
+    glow.setColorAt(1.0, Qt::transparent);
+    p->fillRect(target.adjusted(-30, -20, 30, 20), glow);
+
+    // Dark navy panel with gold border — matches overall splash theme
     p->save();
-    p->setPen(QPen(QColor(222, 194, 114, 180), 1.2));
-    p->setBrush(QColor(250, 251, 254, 232));
-    p->drawRoundedRect(target.adjusted(10, 8, -10, -12), 24, 24);
+    p->setPen(QPen(QColor(210, 170, 70, 200), 1.5));
+    p->setBrush(QColor(12, 22, 52, 220));
+    p->drawRoundedRect(target.adjusted(-8, -6, 8, 6), 20, 20);
     p->restore();
 
-    if (!companyLogo.isNull()) {
-        const QSize paddedSize(target.width() - 36, target.height() - 34);
-        const QPixmap scaledLogo = companyLogo.scaled(paddedSize, Qt::KeepAspectRatio, Qt::SmoothTransformation);
-        const QPoint topLeft((W - scaledLogo.width()) / 2, target.y() + (target.height() - scaledLogo.height()) / 2 - 1);
-        p->drawPixmap(topLeft, scaledLogo);
-    } else {
-        p->save();
-        p->setPen(QPen(QColor(190, 46, 46), 2));
-        p->setBrush(Qt::NoBrush);
-        p->drawRoundedRect(target.adjusted(24, 24, -24, -26), 18, 18);
-        QFont fallbackFont = QApplication::font();
-        fallbackFont.setPointSize(14);
-        fallbackFont.setBold(true);
-        p->setFont(fallbackFont);
-        p->setPen(QColor(80, 20, 20));
-        p->drawText(target.adjusted(28, 28, -28, -28), Qt::AlignCenter,
-                    QString("Logo not loaded\n%1/resources/eagle_logo.png")
-                        .arg(QCoreApplication::applicationDirPath()));
-        p->restore();
+    if (!m_logo.isNull()) {
+        const QPixmap scaled = m_logo.scaled(target.size(), Qt::KeepAspectRatio, Qt::SmoothTransformation);
+        const QPoint topLeft((W - scaled.width()) / 2, target.y() + (target.height() - scaled.height()) / 2);
+        p->drawPixmap(topLeft, scaled);
     }
 
     // ── App name ─────────────────────────────────────────────

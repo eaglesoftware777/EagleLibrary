@@ -352,49 +352,59 @@ At minimum, Eagle Library currently provides:
 
 ## Release Notes
 
-### 2.1.0
+### 1.1
 
-- Redesigned Plugin Manager dialog with scrollable card list, status badges,
-  author, description, action count, and source path per plugin
-- Redesigned plugin action cards in book and document detail panels — styled
-  frames with accent border, action name, description subtitle, and click target
-- Fixed quit / close button freezing: scanner thread now waits up to 3 seconds
-  after cancel before the window closes; pending Qt events are flushed before
-  plugin unload to prevent stale signal delivery to destroyed objects
-- Fixed metadata fetcher not properly stopping its internal timer on cancel,
-  which kept the event loop busy during shutdown
-- Fixed wrong book metadata: ISBN extraction now searches labeled `ISBN:` text
-  first before falling back to numeric pattern matching, preventing phone
-  numbers and order IDs from being misidentified as ISBNs
-- Fixed wrong publisher: PDF `/Creator` field (authoring tool name) is no
-  longer used as the publisher source; only the `/Publisher` field is used
-- Fixed Open Library always picking the first ISBN in the array regardless of
-  type; ISBN-13 (978/979 prefix) is now preferred over ISBN-10
-- Fixed candidate scoring not penalizing wrong-ISBN API results; a −30 penalty
-  is now applied when a known ISBN exists and the API result has a different one
-- Fixed theme switching not applying visually: removed the erroneous
-  per-widget stylesheet clear that interfered with the app-level QSS cascade
-- Fixed version mismatch: application version was reported as 1.1.0 in several
-  places despite CMake targeting 2.0.0; all version sources now read from
-  `AppConfig::version()` consistently
-- Fixed splash screen logo path hardcoded to development machine path; now
-  resolved dynamically from `QCoreApplication::applicationDirPath()`
-- Added `CMakePresets.json` and updated `CMakeSettings.json` to use `QT_DIR`
-  environment variable, enabling Visual Studio Open Folder workflow with no
-  hardcoded paths
+**Eagle Library 1.1.0 — first public release**
 
-### 2.0.0
+#### New features
 
-- upgraded product version to `2.0.0`
-- added stronger reference-style indexing
-- added incremental watch-based refresh support
-- expanded metadata repair and diagnosis tools
-- improved plugin visibility and packaging
-- added more language packs and easier language switching
-- added metadata management controls
-- improved theme switching behavior
-- improved splash branding and packaging outputs
-- refreshed installer, portable package, and CHM help
+- Multi-library profiles with separate watched folders and active-library toolbar switcher
+- Parallel incremental library scanner with fast-scan mode for large collections
+- Smart rename engine: extracts title and author from filename patterns, embedded
+  PDF metadata, and content text (first-page extraction + OCR fallback via Tesseract)
+- Metadata Manager with per-item, selection-based, and full-library fetch modes
+- Online metadata enrichment from Google Books and Open Library APIs
+- Cover download, normalization, and local caching
+- Plugin Manager with scrollable card list, status badges, action counts, and runtime plugin folder
+- Plugin actions displayed in book and document detail panels
+- Advanced search with field-aware query tokens (`author:`, `title:`, `isbn:`, `tag:`, etc.)
+- Saved searches and smart category sidebar
+- Built-in database editor with direct SQLite record editing
+- Text diagnosis tools for mojibake, binary noise, and broken PDF metadata
+- Repair tools for suspicious, duplicate, and malformed records
+- Full-text search index with rebuild and optimize controls
+- Blue, white, and mac-style themes with runtime switching
+- Command palette for keyboard-driven access to all actions
+- Multilingual UI with built-in language packs (EN, FR, ES, DE, PT-BR, RU, AR, ZH, HI, JA)
+  and external language-pack folder support
+- Portable deployment mode: all data, settings, and covers stored beside the executable
+- CHM offline help with full topic coverage
+
+#### Fixes and improvements
+
+- Metadata accuracy: query title cleaned before API search — edition markers, version numbers,
+  source tags (`[z-lib]`, `[libgen]`), and trailing years stripped so APIs return correct results
+- Metadata accuracy: zero-word title overlap now scores −18; results with no meaningful words
+  in common with the searched title are rejected, eliminating false book matches
+- Metadata accuracy: ISBN-10 ↔ ISBN-13 (978-prefix) cross-match now scores +28 instead of −30,
+  preventing false mismatches between identical books in different edition formats
+- Cover accuracy: cover URLs now taken exclusively from the highest-scoring candidate;
+  the previous flat pool allowed wrong-book covers to override correct ones
+- Embedded metadata +15 bonus is now preserved through the scoring pipeline instead of being
+  silently discarded during the finalization re-score pass
+- ISBN extraction searches labeled `ISBN:` text before falling back to numeric patterns,
+  preventing phone numbers and order IDs from being misidentified
+- PDF `/Creator` field (authoring tool name) is no longer used as publisher source;
+  only the `/Publisher` field is accepted
+- Theme switching applies correctly; per-widget stylesheet clear that broke the QSS cascade removed
+- Scanner thread waits up to 3 seconds after cancel before the window closes; Qt events flushed
+  before plugin unload to prevent stale signal delivery
+- Metadata timer restarts correctly on subsequent fetches
+- App data and settings stored beside the executable for both portable and installed modes
+- CMake: Qt auto-detected in `C:/Qt/6.*/msvc2022_64` and `C:/Qt/6.*/msvc2019_64` — no
+  environment variable required for Visual Studio Open Folder workflow
+- CI: Actions workflow uses a named `ci-release` CMakePresets preset for reproducible builds;
+  `cache-key-prefix` makes Qt installation cache explicit and predictable
 
 ## Repository Layout
 

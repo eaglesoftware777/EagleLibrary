@@ -14,7 +14,7 @@ namespace AppConfig
 {
     inline QString appName()   { return QString("Eagle Library"); }
     inline QString company()   { return QString("Eagle Software"); }
-    inline QString version()   { return QString("2.1.0"); }
+    inline QString version()   { return QString("1.1.0"); }
     inline QString website()   { return QString("https://eaglesoftware.biz/"); }
     inline QString copyright() { return QString("Copyright (C) 2026 Eagle Software. All rights reserved."); }
 
