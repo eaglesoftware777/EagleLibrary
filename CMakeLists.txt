@@ -14,10 +14,6 @@ project(EagleLibrary
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-# ── Windows subsystem (no console) ──────────────────────────────────────────
-if(WIN32)
-    set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} /SUBSYSTEM:WINDOWS /MANIFEST:NO")
-endif()
 
 # ── Locate Qt6 ───────────────────────────────────────────────────────────────
 # Priority: CMAKE_PREFIX_PATH (already set) > env vars > auto-scan C:/Qt
@@ -123,6 +119,10 @@ qt_add_executable(EagleLibrary
 )
 
 target_include_directories(EagleLibrary PRIVATE include)
+
+if(WIN32)
+    target_link_options(EagleLibrary PRIVATE /SUBSYSTEM:WINDOWS /MANIFEST:NO)
+endif()
 
 target_link_libraries(EagleLibrary PRIVATE
     Qt6::Core
