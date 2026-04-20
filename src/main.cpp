@@ -17,6 +17,8 @@
 #include <QCommandLineParser>
 #include <QTextStream>
 #include <QEventLoop>
+#include <QFileInfo>
+#include <QFile>
 
 #include "SplashScreen.h"
 #include "MainWindow.h"
@@ -26,6 +28,64 @@
 #include "LibraryScanner.h"
 
 namespace {
+
+bool copyDirectoryTree(const QString& sourcePath, const QString& targetPath)
+{
+    const QDir sourceDir(sourcePath);
+    if (!sourceDir.exists())
+        return false;
+
+    QDir targetDir;
+    targetDir.mkpath(targetPath);
+
+    const QFileInfoList entries = sourceDir.entryInfoList(QDir::NoDotAndDotDot | QDir::AllEntries);
+    bool copiedAny = false;
+    for (const QFileInfo& entry : entries) {
+        const QString targetEntryPath = QDir(targetPath).absoluteFilePath(entry.fileName());
+        if (entry.isDir()) {
+            copiedAny = copyDirectoryTree(entry.absoluteFilePath(), targetEntryPath) || copiedAny;
+            continue;
+        }
+
+        if (QFileInfo::exists(targetEntryPath))
+            continue;
+
+        QDir().mkpath(QFileInfo(targetEntryPath).absolutePath());
+        if (QFile::copy(entry.absoluteFilePath(), targetEntryPath))
+            copiedAny = true;
+    }
+    return copiedAny;
+}
+
+void migrateLegacyStorage()
+{
+    QDir().mkpath(AppConfig::dataDir());
+    QDir().mkpath(AppConfig::settingsDir());
+
+    const QString newDbPath = AppConfig::dbPath();
+    const QString legacyDbPath = AppConfig::legacyDataDir() + "/library.db";
+    if (!QFileInfo::exists(newDbPath) && QFileInfo::exists(legacyDbPath)) {
+        QDir().mkpath(QFileInfo(newDbPath).absolutePath());
+        QFile::copy(legacyDbPath, newDbPath);
+    }
+
+    const QStringList dataSubdirs = { "covers", "thumbs", "json", "sidecars" };
+    for (const QString& subdir : dataSubdirs) {
+        copyDirectoryTree(QDir(AppConfig::legacyDataDir()).absoluteFilePath(subdir),
+                          QDir(AppConfig::dataDir()).absoluteFilePath(subdir));
+    }
+
+    const QString legacyIniPath = AppConfig::legacySettingsDir() + "/EagleLibrary.ini";
+    if (!QFileInfo::exists(AppConfig::settingsPath()) && QFileInfo::exists(legacyIniPath)) {
+        QDir().mkpath(QFileInfo(AppConfig::settingsPath()).absolutePath());
+        QFile::copy(legacyIniPath, AppConfig::settingsPath());
+    }
+
+    copyDirectoryTree(QDir(AppConfig::legacySettingsDir()).absoluteFilePath("translations"),
+                      QDir(AppConfig::settingsDir()).absoluteFilePath("translations"));
+    copyDirectoryTree(QDir(AppConfig::legacySettingsDir()).absoluteFilePath("hooks"),
+                      QDir(AppConfig::settingsDir()).absoluteFilePath("hooks"));
+}
 
 QFont buildUiFont()
 {
@@ -73,9 +133,6 @@ QFont buildUiFont()
 
 void configureSettingsStorage()
 {
-    if (!AppConfig::isPortableMode())
-        return;
-
     QDir().mkpath(AppConfig::settingsDir());
     QSettings::setDefaultFormat(QSettings::IniFormat);
     QSettings::setPath(QSettings::IniFormat, QSettings::UserScope, AppConfig::settingsDir());
@@ -182,6 +239,7 @@ int main(int argc, char* argv[])
     app.setFont(buildUiFont());
 
     configureSettingsStorage();
+    migrateLegacyStorage();
     LanguageManager::instance().initialize();
     app.setLayoutDirection(LanguageManager::instance().isRightToLeft() ? Qt::RightToLeft : Qt::LeftToRight);
     QObject::connect(&LanguageManager::instance(), &LanguageManager::languageChanged, &app, [&app]() {

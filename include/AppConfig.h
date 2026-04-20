@@ -36,18 +36,34 @@ namespace AppConfig
             || QFileInfo::exists(baseDir + "/portable.ini");
     }
 
+    inline QString localDataDir()
+    {
+        return appDir() + "/data";
+    }
+
+    inline QString localSettingsDir()
+    {
+        return appDir() + "/settings";
+    }
+
+    inline QString legacyDataDir()
+    {
+        return QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
+    }
+
+    inline QString legacySettingsDir()
+    {
+        return QStandardPaths::writableLocation(QStandardPaths::AppConfigLocation);
+    }
+
     inline QString dataDir()
     {
-        if (isPortableMode())
-            return appDir() + "/data";
-        return QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
+        return localDataDir();
     }
 
     inline QString settingsDir()
     {
-        if (isPortableMode())
-            return appDir() + "/settings";
-        return QStandardPaths::writableLocation(QStandardPaths::AppConfigLocation);
+        return localSettingsDir();
     }
 
     inline QString settingsPath()
@@ -55,7 +71,7 @@ namespace AppConfig
         return settingsDir() + "/EagleLibrary.ini";
     }
 
-    inline QString dbPath()      { return dataDir() + "/library.db"; }
+    inline QString dbPath()      { return appDir() + "/library.db"; }
     inline QString coversDir()   { return dataDir() + "/covers"; }
     inline QString thumbsDir()   { return dataDir() + "/thumbs"; }
     inline QString jsonDir()     { return dataDir() + "/json"; }
