@@ -4652,11 +4652,17 @@ void MainWindow::setupCommandPalette()
 void MainWindow::switchTheme(const QString& name)
 {
     ThemeManager::instance().applyTheme(name);
-    setStyleSheet(QString());
+
     if (m_themeBlueAct)  m_themeBlueAct->setChecked(name == "Blue Pro");
     if (m_themeWhiteAct) m_themeWhiteAct->setChecked(name == "Pure White");
     if (m_themeMacAct)   m_themeMacAct->setChecked(name == "macOS");
 
+    // Let Qt process the queued stylesheet-change events first so all widgets
+    // pick up the new app-level QSS before we force a repolish.
+    QCoreApplication::processEvents(QEventLoop::ExcludeUserInputEvents);
+
+    // Repolish every descendant so custom properties and palette-derived colours
+    // are re-evaluated against the new stylesheet.
     const QList<QWidget*> widgets = findChildren<QWidget*>();
     for (QWidget* widget : widgets) {
         if (!widget)
@@ -4665,36 +4671,8 @@ void MainWindow::switchTheme(const QString& name)
         widget->style()->polish(widget);
         widget->update();
     }
-    if (style()) {
-        style()->unpolish(this);
-        style()->polish(this);
-    }
-    if (menuBar()) {
-        menuBar()->style()->unpolish(menuBar());
-        menuBar()->style()->polish(menuBar());
-        menuBar()->update();
-    }
-    if (statusBar()) {
-        statusBar()->style()->unpolish(statusBar());
-        statusBar()->style()->polish(statusBar());
-        statusBar()->update();
-    }
-    if (m_mainToolBar) {
-        m_mainToolBar->style()->unpolish(m_mainToolBar);
-        m_mainToolBar->style()->polish(m_mainToolBar);
-        m_mainToolBar->update();
-    }
-    if (m_sidebarDock) {
-        m_sidebarDock->style()->unpolish(m_sidebarDock);
-        m_sidebarDock->style()->polish(m_sidebarDock);
-        m_sidebarDock->update();
-    }
-    if (centralWidget()) {
-        centralWidget()->style()->unpolish(centralWidget());
-        centralWidget()->style()->polish(centralWidget());
-        centralWidget()->update();
-    }
-    QCoreApplication::processEvents(QEventLoop::ExcludeUserInputEvents, 50);
+    style()->unpolish(this);
+    style()->polish(this);
     update();
     repaint();
     m_statusLabel->setText("Theme: " + name);

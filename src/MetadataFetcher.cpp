@@ -176,9 +176,7 @@ EmbeddedMetadata extractEmbeddedMetadata(const FetchRequest& req)
     QString text = QString::fromLatin1(raw);
     meta.book.title = extractPdfField(text, "Title");
     meta.book.author = extractPdfField(text, "Author");
-    meta.book.publisher = extractPdfField(text, "Creator");
-    if (meta.book.publisher.isEmpty())
-        meta.book.publisher = extractPdfField(text, "Publisher");
+    meta.book.publisher = extractPdfField(text, "Publisher");
     meta.book.language = extractPdfField(text, "Lang");
 
     QString dateText = extractPdfField(text, "CreationDate");
@@ -223,8 +221,12 @@ int candidateScore(const Book& book, const FetchRequest& req)
     if (!book.subjects.isEmpty())    score += 2;
     if (book.rating > 0)             score += 1;
 
-    if (!req.isbn.isEmpty() && !book.isbn.isEmpty() && norm(req.isbn) == norm(book.isbn))
-        score += 30;
+    if (!req.isbn.isEmpty() && !book.isbn.isEmpty()) {
+        if (norm(req.isbn) == norm(book.isbn))
+            score += 30;
+        else
+            score -= 30;
+    }
 
     const QString reqTitle = norm(req.title);
     const QString bookTitle = norm(book.title);
@@ -720,9 +722,24 @@ Book MetadataFetcher::parseOpenLibraryDoc(const QJsonObject& doc) const
 
     b.year = doc.value("first_publish_year").toInt();
 
+    // Prefer a valid ISBN-13 (978/979 prefix), fall back to ISBN-10
     QJsonArray isbns = doc.value("isbn").toArray();
-    if (!isbns.isEmpty())
-        b.isbn = isbns.first().toString();
+    for (const QJsonValue& v : isbns) {
+        const QString candidate = v.toString().remove('-').remove(' ');
+        if (candidate.size() == 13 && (candidate.startsWith("978") || candidate.startsWith("979"))) {
+            b.isbn = v.toString();
+            break;
+        }
+    }
+    if (b.isbn.isEmpty()) {
+        for (const QJsonValue& v : isbns) {
+            const QString candidate = v.toString().remove('-').remove(' ');
+            if (candidate.size() == 10) {
+                b.isbn = v.toString();
+                break;
+            }
+        }
+    }
 
     QJsonArray langs = doc.value("language").toArray();
     if (!langs.isEmpty()) {

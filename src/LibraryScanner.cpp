@@ -333,14 +333,46 @@ bool isValidIsbn13(const QString& isbn)
 
 QString extractIsbnFromText(const QString& text)
 {
-    static const QRegularExpression re(QStringLiteral(R"((?:97[89][-\s]?)?\d[-\s\d]{8,20}[\dXx])"));
-    QRegularExpressionMatchIterator it = re.globalMatch(text);
-    while (it.hasNext()) {
-        const QString isbn = sanitizeIsbn(it.next().captured(0));
-        if (isbn.size() == 13 && isValidIsbn13(isbn))
-            return isbn;
-        if (isbn.size() == 10 && isValidIsbn10(isbn))
-            return isbn;
+    // 1. Prefer explicitly-labeled ISBNs — most reliable, avoids phone/order-number false positives
+    {
+        static const QRegularExpression labeledRe(
+            QStringLiteral(R"(ISBN(?:-?1[03])?[:\s\-]*([0-9][- 0-9]{8,15}[0-9Xx]))"),
+            QRegularExpression::CaseInsensitiveOption);
+        // First pass: ISBN-13
+        QRegularExpressionMatchIterator it = labeledRe.globalMatch(text);
+        while (it.hasNext()) {
+            const QString isbn = sanitizeIsbn(it.next().captured(1));
+            if (isbn.size() == 13 && isValidIsbn13(isbn))
+                return isbn;
+        }
+        // Second pass: ISBN-10
+        QRegularExpressionMatchIterator it2 = labeledRe.globalMatch(text);
+        while (it2.hasNext()) {
+            const QString isbn = sanitizeIsbn(it2.next().captured(1));
+            if (isbn.size() == 10 && isValidIsbn10(isbn))
+                return isbn;
+        }
+    }
+
+    // 2. Unlabeled fallback — require 978/979 prefix for ISBN-13 to avoid false positives
+    {
+        static const QRegularExpression isbn13Re(
+            QStringLiteral(R"(\b97[89][- ]?[0-9][- ]?[0-9]{3}[- ]?[0-9]{5}[- ]?[0-9]\b)"));
+        QRegularExpressionMatchIterator it = isbn13Re.globalMatch(text);
+        while (it.hasNext()) {
+            const QString isbn = sanitizeIsbn(it.next().captured(0));
+            if (isbn.size() == 13 && isValidIsbn13(isbn))
+                return isbn;
+        }
+
+        static const QRegularExpression isbn10Re(
+            QStringLiteral(R"(\b[0-9][- ]?[0-9]{3}[- ]?[0-9]{5}[- ]?[0-9Xx]\b)"));
+        QRegularExpressionMatchIterator it2 = isbn10Re.globalMatch(text);
+        while (it2.hasNext()) {
+            const QString isbn = sanitizeIsbn(it2.next().captured(0));
+            if (isbn.size() == 10 && isValidIsbn10(isbn))
+                return isbn;
+        }
     }
     return {};
 }
@@ -556,9 +588,7 @@ FileHintMetadata extractFileHints(const Book& book)
         const QString text = QString::fromLatin1(raw);
         hint.title = extractPdfField(text, "Title");
         hint.author = extractPdfField(text, "Author");
-        hint.publisher = extractPdfField(text, "Creator");
-        if (hint.publisher.isEmpty())
-            hint.publisher = extractPdfField(text, "Publisher");
+        hint.publisher = extractPdfField(text, "Publisher");
         hint.year = extractYearToken(extractPdfField(text, "CreationDate"));
         if (hint.year == 0)
             hint.year = extractYearToken(extractPdfField(text, "ModDate"));
