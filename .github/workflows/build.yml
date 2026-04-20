@@ -1,0 +1,67 @@
+name: Build EagleLibrary
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build-windows:
+    name: Windows (Qt6 / MSVC 2022)
+    runs-on: windows-latest
+
+    steps:
+      # ── Checkout ────────────────────────────────────────────────
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # ── Install Qt 6 ────────────────────────────────────────────
+      - name: Install Qt 6
+        uses: jurplel/install-qt-action@v3
+        with:
+          version:   '6.7.0'
+          host:      'windows'
+          target:    'desktop'
+          arch:      'win64_msvc2019_64'
+          modules:   'qtnetworkauth'
+          cache:     true
+
+      # ── Configure with CMake ─────────────────────────────────────
+      - name: Configure CMake
+        run: >
+          cmake -S . -B build
+          -G "Visual Studio 17 2022" -A x64
+          -DCMAKE_BUILD_TYPE=Release
+
+      # ── Build ────────────────────────────────────────────────────
+      - name: Build
+        run: cmake --build build --config Release --parallel
+
+      # ── Package (NSIS installer) ─────────────────────────────────
+      - name: Create installer
+        working-directory: build
+        run: cpack -C Release -G NSIS
+
+      # ── Upload installer as artifact ─────────────────────────────
+      - name: Upload installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: EagleLibrary-installer-windows
+          path: build/*.exe
+          retention-days: 30
+
+      # ── Upload portable build as artifact ────────────────────────
+      - name: Upload portable build
+        uses: actions/upload-artifact@v4
+        with:
+          name: EagleLibrary-portable-windows
+          path: |
+            build/Release/EagleLibrary.exe
+            build/Release/*.dll
+            build/Release/platforms/
+            build/Release/styles/
+            build/Release/imageformats/
+            build/Release/iconengines/
+          retention-days: 30
