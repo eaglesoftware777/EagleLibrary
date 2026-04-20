@@ -290,13 +290,11 @@ void MetadataFetcher::enqueue(const FetchRequest& req)
     m_cancelling = false;
     m_queue.enqueue(req);
     ++m_totalQueued;
-    qWarning().noquote()
+    if (!m_processTimer->isActive())
+        m_processTimer->start();
+    qDebug().noquote()
         << "[Metadata] Queue bookId=" << req.bookId
-        << "title=" << req.title
-        << "author=" << req.author
-        << "isbn=" << req.isbn
-        << "path=" << req.filePath
-        << "format=" << req.format;
+        << "title=" << req.title << "isbn=" << req.isbn;
     emit fetchProgress(m_totalDone, m_totalQueued, QFileInfo(req.filePath).fileName(), "Queued");
 }
 
@@ -373,7 +371,7 @@ void MetadataFetcher::fetchFromSources(const FetchRequest& req)
             QVector<Book> books = m_candidates.value(req.bookId);
             books << local.book;
             m_candidates.insert(req.bookId, books);
-            qWarning().noquote()
+            qDebug().noquote()
                 << "[Metadata] Embedded metadata bookId=" << req.bookId
                 << "title=" << embedded.book.title
                 << "author=" << embedded.book.author
@@ -382,7 +380,7 @@ void MetadataFetcher::fetchFromSources(const FetchRequest& req)
             emit fetchProgress(m_totalDone, m_totalQueued, QFileInfo(req.filePath).fileName(),
                                "Found embedded file metadata");
         } else {
-            qWarning() << "[Metadata] No embedded metadata for bookId=" << req.bookId;
+            qDebug() << "[Metadata] No embedded metadata for bookId=" << req.bookId;
             emit fetchProgress(m_totalDone, m_totalQueued, QFileInfo(req.filePath).fileName(),
                                "No embedded file metadata");
         }
@@ -430,7 +428,7 @@ void MetadataFetcher::fetchFromGoogle(const FetchRequest& req)
         return;
 
     QString urlStr = AppConfig::googleBooksUrl(QUrl::toPercentEncoding(query));
-    qWarning().noquote() << "[Metadata] Google request bookId=" << req.bookId << "url=" << urlStr;
+    qDebug().noquote() << "[Metadata] Google request bookId=" << req.bookId << "url=" << urlStr;
 
     QNetworkRequest netReq{QUrl(urlStr)};
     netReq.setHeader(QNetworkRequest::UserAgentHeader, QString("EagleLibrary/1.0 (eaglesoftware.biz)"));
@@ -465,7 +463,7 @@ void MetadataFetcher::fetchFromOpenLibrary(const FetchRequest& req)
     urlQuery.addQueryItem("fields",
                           "title,author_name,first_publish_year,publisher,isbn,language,subject,edition_key,cover_i");
     url.setQuery(urlQuery);
-    qWarning().noquote() << "[Metadata] OpenLibrary request bookId=" << req.bookId << "url=" << url.toString();
+    qDebug().noquote() << "[Metadata] OpenLibrary request bookId=" << req.bookId << "url=" << url.toString();
 
     QNetworkRequest netReq{url};
     netReq.setHeader(QNetworkRequest::UserAgentHeader, QString("EagleLibrary/1.0 (eaglesoftware.biz)"));
@@ -522,11 +520,11 @@ void MetadataFetcher::onGoogleReply(QNetworkReply* reply, qint64 bookId)
         m_candidates.insert(bookId, books);
         m_coverCandidates.insert(bookId, coverUrls);
         emit fetchProgress(m_totalDone, m_totalQueued, fileName, "Checked Google Books");
-        qWarning() << "[Metadata] Google success bookId=" << bookId
+        qDebug() << "[Metadata] Google success bookId=" << bookId
                    << "candidates=" << books.size()
                    << "coverUrls=" << coverUrls.size();
     } else {
-        qWarning().noquote() << "[Metadata] Google error bookId=" << bookId
+        qDebug().noquote() << "[Metadata] Google error bookId=" << bookId
                              << "error=" << reply->errorString();
     }
 
@@ -542,7 +540,7 @@ void MetadataFetcher::onGoogleReply(QNetworkReply* reply, qint64 bookId)
         Book merged = mergeBooks(ranked);
         if (!merged.title.isEmpty() || !merged.author.isEmpty() || !merged.isbn.isEmpty()) {
             merged.id = bookId;
-            qWarning().noquote()
+            qDebug().noquote()
                 << "[Metadata] Final merged bookId=" << bookId
                 << "title=" << merged.title
                 << "author=" << merged.author
@@ -618,11 +616,11 @@ void MetadataFetcher::onOpenLibraryReply(QNetworkReply* reply, qint64 bookId)
         m_candidates.insert(bookId, books);
         m_coverCandidates.insert(bookId, coverUrls);
         emit fetchProgress(m_totalDone, m_totalQueued, fileName, "Checked Open Library");
-        qWarning() << "[Metadata] OpenLibrary success bookId=" << bookId
+        qDebug() << "[Metadata] OpenLibrary success bookId=" << bookId
                    << "candidates=" << books.size()
                    << "coverUrls=" << coverUrls.size();
     } else {
-        qWarning().noquote() << "[Metadata] OpenLibrary error bookId=" << bookId
+        qDebug().noquote() << "[Metadata] OpenLibrary error bookId=" << bookId
                              << "error=" << reply->errorString();
     }
 

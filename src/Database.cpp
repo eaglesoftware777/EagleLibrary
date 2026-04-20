@@ -516,8 +516,18 @@ bool Database::open(const QString& path)
     q.exec("PRAGMA temp_store=MEMORY");
     q.exec("PRAGMA mmap_size=268435456"); // 256 MB mmap
     const bool ok = createTables() && createIndexes();
-    if (ok)
-        rebuildSearchIndex();
+    if (ok) {
+        // Only rebuild the FTS index when it is empty (fresh DB or out-of-sync).
+        // Incremental updates via syncBookSearchRow keep it current during normal use.
+        QSqlQuery countQ(db);
+        countQ.exec("SELECT COUNT(*) FROM books_fts");
+        const int ftsCount = countQ.next() ? countQ.value(0).toInt() : 0;
+        QSqlQuery bookCountQ(db);
+        bookCountQ.exec("SELECT COUNT(*) FROM books");
+        const int bookCount = bookCountQ.next() ? bookCountQ.value(0).toInt() : 0;
+        if (ftsCount == 0 && bookCount > 0)
+            rebuildSearchIndex();
+    }
     return ok;
 }
 
