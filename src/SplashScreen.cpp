@@ -44,11 +44,11 @@ SplashScreen::SplashScreen(QWidget* parent)
 
     QImage source(QStringLiteral(":/eagle_logo.png"));
     if (source.isNull()) {
+        const QString appDir = QCoreApplication::applicationDirPath();
         const QStringList fallbackPaths = {
-            QDir(QCoreApplication::applicationDirPath()).absoluteFilePath("resources/eagle_logo.png"),
-            QDir(QCoreApplication::applicationDirPath()).absoluteFilePath("../resources/eagle_logo.png"),
-            QDir(QCoreApplication::applicationDirPath()).absoluteFilePath("../../resources/eagle_logo.png"),
-            QStringLiteral("C:/eagle_software/EagleLibrary/resources/eagle_logo.png")
+            QDir(appDir).absoluteFilePath("resources/eagle_logo.png"),
+            QDir(appDir).absoluteFilePath("../resources/eagle_logo.png"),
+            QDir(appDir).absoluteFilePath("../../resources/eagle_logo.png")
         };
         for (const QString& path : fallbackPaths) {
             if (QFileInfo::exists(path)) {
@@ -156,7 +156,8 @@ void SplashScreen::drawLogo(QPainter* p)
         p->setFont(fallbackFont);
         p->setPen(QColor(80, 20, 20));
         p->drawText(target.adjusted(28, 28, -28, -28), Qt::AlignCenter,
-                    "Logo not loaded\nC:/eagle_software/EagleLibrary/resources/eagle_logo.png");
+                    QString("Logo not loaded\n%1/resources/eagle_logo.png")
+                        .arg(QCoreApplication::applicationDirPath()));
         p->restore();
     }
 
