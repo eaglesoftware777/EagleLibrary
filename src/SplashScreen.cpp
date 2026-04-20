@@ -60,16 +60,7 @@ SplashScreen::SplashScreen(QWidget* parent)
     }
 
     if (!source.isNull()) {
-        QImage cleaned = source.convertToFormat(QImage::Format_ARGB32);
-        for (int y = 0; y < cleaned.height(); ++y) {
-            QRgb* line = reinterpret_cast<QRgb*>(cleaned.scanLine(y));
-            for (int x = 0; x < cleaned.width(); ++x) {
-                const QColor color = QColor::fromRgba(line[x]);
-                if (color.red() > 242 && color.green() > 242 && color.blue() > 242)
-                    line[x] = qRgba(color.red(), color.green(), color.blue(), 0);
-            }
-        }
-        m_logo = QPixmap::fromImage(cleaned);
+        m_logo = QPixmap::fromImage(source.convertToFormat(QImage::Format_ARGB32));
     }
 }
 

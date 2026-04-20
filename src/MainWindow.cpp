@@ -4053,8 +4053,10 @@ void MainWindow::refreshShelfOptions()
 void MainWindow::reloadCurrentLibrary()
 {
     BookFilter filter;
-    filter.restrictToPathPrefixes = true;
-    filter.pathPrefixes = m_watchFolders;
+    if (!m_watchFolders.isEmpty()) {
+        filter.restrictToPathPrefixes = true;
+        filter.pathPrefixes = m_watchFolders;
+    }
     const SortField sortField = m_sortCombo ? static_cast<SortField>(m_sortCombo->currentData().toInt()) : SortField::Title;
     m_model->reload(filter, sortField, m_sortOrder);
     refreshCategoryOptions();
