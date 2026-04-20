@@ -321,7 +321,6 @@ void MetadataFetcher::cancelAll()
     m_active = 0;
     m_totalQueued = 0;
     m_totalDone = 0;
-    m_processTimer->start();
 }
 
 void MetadataFetcher::processQueue()

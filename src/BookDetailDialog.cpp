@@ -28,6 +28,22 @@
 #include <QMessageBox>
 #include <QProcess>
 #include <QDebug>
+#include <QMouseEvent>
+
+namespace {
+// Lightweight event filter that fires a QAction when the watched widget is clicked.
+class CardClickFilter : public QObject {
+    QAction* m_action;
+public:
+    CardClickFilter(QAction* action, QObject* parent)
+        : QObject(parent), m_action(action) {}
+    bool eventFilter(QObject*, QEvent* e) override {
+        if (e->type() == QEvent::MouseButtonRelease && m_action)
+            m_action->trigger();
+        return false;
+    }
+};
+} // namespace
 #include <QFile>
 #include <QListWidget>
 
@@ -217,17 +233,63 @@ void BookDetailDialog::setupUi()
 
     const QList<QAction*> pluginActions = PluginManager::instance().contextActionsForBook(m_book.id);
     if (!pluginActions.isEmpty()) {
-        auto* pluginGroup = new QGroupBox("Plugin Actions");
-        auto* pluginLayout = new QVBoxLayout(pluginGroup);
+        // Section header
+        auto* sectionHeader = new QLabel("PLUGIN ACTIONS");
+        sectionHeader->setStyleSheet(
+            "font-size:9px;font-weight:800;letter-spacing:1.2px;"
+            "color:#3a6080;padding:12px 0 5px 2px;background:transparent;");
+        leftLayout->addWidget(sectionHeader);
+
         for (QAction* action : pluginActions) {
-            auto* button = new QPushButton(action->text());
-            button->setToolTip(action->toolTip());
-            connect(button, &QPushButton::clicked, this, [action]() {
-                action->trigger();
-            });
-            pluginLayout->addWidget(button);
+            // Card frame — visual container
+            auto* card = new QFrame;
+            card->setCursor(Qt::PointingHandCursor);
+            card->setFixedHeight(56);
+            card->setStyleSheet(
+                "QFrame{"
+                "  background:#0e1d2e;"
+                "  border:1px solid #1e3a54;"
+                "  border-left:3px solid #286090;"
+                "  border-radius:7px;"
+                "}"
+                "QFrame:hover{"
+                "  background:#122234;"
+                "  border-color:#3a6888;"
+                "  border-left-color:#4a9adc;"
+                "}");
+
+            auto* cl = new QHBoxLayout(card);
+            cl->setContentsMargins(12, 6, 12, 6);
+            cl->setSpacing(8);
+
+            auto* textCol = new QVBoxLayout;
+            textCol->setSpacing(2);
+
+            auto* nameLbl = new QLabel(action->text());
+            nameLbl->setStyleSheet(
+                "font-weight:700;font-size:12px;color:#dcd290;background:transparent;");
+            textCol->addWidget(nameLbl);
+
+            if (!action->toolTip().isEmpty()) {
+                auto* tipLbl = new QLabel(action->toolTip());
+                tipLbl->setStyleSheet(
+                    "font-size:10px;color:#3a6880;background:transparent;");
+                tipLbl->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+                textCol->addWidget(tipLbl);
+            }
+
+            auto* arrowLbl = new QLabel("›");
+            arrowLbl->setStyleSheet(
+                "font-size:20px;color:#284860;background:transparent;font-weight:300;");
+            arrowLbl->setFixedWidth(16);
+
+            cl->addLayout(textCol, 1);
+            cl->addWidget(arrowLbl);
+
+            // Make the whole card respond to clicks
+            card->installEventFilter(new CardClickFilter(action, card));
+            leftLayout->addWidget(card);
         }
-        leftLayout->addWidget(pluginGroup);
     }
     leftLayout->addStretch();
 

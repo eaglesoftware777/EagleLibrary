@@ -3451,8 +3451,10 @@ void MainWindow::stopAllTasks()
     m_recentlyAddedBooks.clear();
     m_forceCoverFetchIds.clear();
 
-    if (m_scanner && m_scanner->isRunning())
+    if (m_scanner && m_scanner->isRunning()) {
         m_scanner->cancel();
+        m_scanner->wait(3000);
+    }
 
     if (m_activeRenamer)
         m_activeRenamer->cancel();
@@ -3818,7 +3820,7 @@ void MainWindow::showAbout()
     box.setWindowTitle(trl("action.about", "About Eagle Library"));
     box.setText(
         "<h2 style='color:#c8aa50;'>Eagle Library</h2>"
-        "<p style='color:#aaa;'>Version 1.1.0</p>"
+        "<p style='color:#aaa;'>Version " + AppConfig::version() + "</p>"
         "<p>Copyright &copy; 2026 Eagle Software. All rights reserved.</p>"
         "<p>Professional eBook library manager. Manage thousands of books "
         "across any folder structure, fetch metadata from the internet, "
@@ -3858,6 +3860,7 @@ void MainWindow::closeEvent(QCloseEvent* event)
     disconnect(&PluginManager::instance(), nullptr, this, nullptr);
 
     stopAllTasks();
+    QApplication::processEvents(QEventLoop::ExcludeUserInputEvents);
     PluginManager::instance().unloadAll();
     saveSettings();
     event->accept();
@@ -4827,100 +4830,282 @@ void MainWindow::createCollection()
 void MainWindow::openPluginManager()
 {
     QDialog dlg(this);
-    dlg.setWindowTitle("Plugin Manager");
-    dlg.setMinimumWidth(720);
-    dlg.setMinimumHeight(460);
+    dlg.setWindowTitle("Plugin Manager — Eagle Library");
+    dlg.setMinimumWidth(800);
+    dlg.setMinimumHeight(580);
+    dlg.setStyleSheet(styleSheet());
 
-    auto* layout = new QVBoxLayout(&dlg);
+    auto* root = new QVBoxLayout(&dlg);
+    root->setSpacing(0);
+    root->setContentsMargins(0, 0, 0, 0);
 
-    auto* intro = new QLabel(
-        "<b>Eagle Library Plugin System</b><br>"
-        "Place plugin folders containing <code>plugin.json</code> in the plugins directory. "
-        "Starter plugins can be installed automatically, and plugin actions appear in the details panel for books and documents.");
-    intro->setWordWrap(true);
-    intro->setTextFormat(Qt::RichText);
-    layout->addWidget(intro);
+    // ── Header ────────────────────────────────────────────────
+    auto* header = new QFrame;
+    header->setStyleSheet(
+        "QFrame{"
+        "  background: qlineargradient(x1:0,y1:0,x2:1,y2:0,"
+        "    stop:0 #0d1f32, stop:1 #162c42);"
+        "  border-bottom: 1px solid #254060;"
+        "}");
+    auto* hbox = new QHBoxLayout(header);
+    hbox->setContentsMargins(26, 20, 26, 20);
+    hbox->setSpacing(18);
 
-    auto* table = new QTableWidget(&dlg);
-    table->setColumnCount(5);
-    table->setHorizontalHeaderLabels({"Name", "Version", "Author", "Status", "Actions"});
-    table->horizontalHeader()->setSectionResizeMode(0, QHeaderView::Stretch);
-    table->setSelectionBehavior(QAbstractItemView::SelectRows);
-    table->setEditTriggers(QAbstractItemView::NoEditTriggers);
-    table->setAlternatingRowColors(true);
+    auto* hIcon = new QLabel("\xF0\x9F\x94\x8C");
+    hIcon->setStyleSheet("font-size:38px;background:transparent;");
 
-    auto* runtimePathLabel = new QLabel(
-        QString("Runtime plugins folder: <code>%1</code>")
+    auto* hCol = new QVBoxLayout;
+    hCol->setSpacing(4);
+    auto* hTitle = new QLabel("Plugin Manager");
+    hTitle->setStyleSheet(
+        "font-size:18px;font-weight:800;color:#f2dc7a;background:transparent;");
+    auto* hSub = new QLabel(
+        "Extend Eagle Library with plugins. Each plugin folder must contain a "
+        "<span style='color:#7abcdc;font-family:monospace;'>plugin.json</span> manifest. "
+        "Plugin actions appear in book and document detail panels.");
+    hSub->setWordWrap(true);
+    hSub->setTextFormat(Qt::RichText);
+    hSub->setStyleSheet("font-size:12px;color:#7ea8c4;background:transparent;");
+    hCol->addWidget(hTitle);
+    hCol->addWidget(hSub);
+
+    hbox->addWidget(hIcon);
+    hbox->addLayout(hCol, 1);
+    root->addWidget(header);
+
+    // ── Path bar ──────────────────────────────────────────────
+    auto* pathBar = new QFrame;
+    pathBar->setStyleSheet(
+        "QFrame{background:#0a1825;border-bottom:1px solid #1c3448;padding:0;}");
+    auto* pbox = new QHBoxLayout(pathBar);
+    pbox->setContentsMargins(26, 8, 18, 8);
+    auto* pathLbl = new QLabel(
+        QString("<span style='color:#3e6080;'>Plugins folder:</span>"
+                "&nbsp;&nbsp;<code style='color:#5aa4cc;'>%1</code>")
             .arg(QDir::toNativeSeparators(AppConfig::pluginsDir())));
-    runtimePathLabel->setTextFormat(Qt::RichText);
-    runtimePathLabel->setWordWrap(true);
-    layout->addWidget(runtimePathLabel);
+    pathLbl->setTextFormat(Qt::RichText);
+    pathLbl->setStyleSheet("font-size:11px;background:transparent;");
+    pbox->addWidget(pathLbl, 1);
+    root->addWidget(pathBar);
 
-    auto* emptyState = new QLabel(
-        "No plugins are installed yet. The app now ships with starter plugin manifests when the runtime plugins folder is packaged correctly.");
-    emptyState->setWordWrap(true);
-    layout->addWidget(table);
-    layout->addWidget(emptyState);
+    // ── Scrollable plugin list ─────────────────────────────────
+    auto* scroll = new QScrollArea;
+    scroll->setFrameShape(QFrame::NoFrame);
+    scroll->setWidgetResizable(true);
+    scroll->setStyleSheet("QScrollArea,QWidget{background:#09111f;}");
 
-    auto* btnBar = new QHBoxLayout;
-    auto* installBtn = new QPushButton("Install Starter Plugins");
+    auto* listWidget = new QWidget;
+    listWidget->setStyleSheet("background:#09111f;");
+    auto* listVBox = new QVBoxLayout(listWidget);
+    listVBox->setContentsMargins(20, 18, 20, 18);
+    listVBox->setSpacing(10);
+    scroll->setWidget(listWidget);
+    root->addWidget(scroll, 1);
+
+    // ── Bottom action bar ──────────────────────────────────────
+    auto* bar = new QFrame;
+    bar->setStyleSheet(
+        "QFrame{"
+        "  background:#0c1b2c;"
+        "  border-top:1px solid #1e3a52;"
+        "}"
+        "QPushButton{"
+        "  border-radius:7px;font-weight:700;font-size:12px;"
+        "  padding:9px 18px;min-width:80px;"
+        "}"
+        "QPushButton#pmPrimary{"
+        "  background:#1b4e7a;color:#fff6dc;border:1px solid #2e72a8;"
+        "}"
+        "QPushButton#pmPrimary:hover{background:#236090;}"
+        "QPushButton#pmPrimary:pressed{background:#143860;}"
+        "QPushButton#pmSecondary{"
+        "  background:transparent;color:#7ab2d4;border:1px solid #244060;"
+        "}"
+        "QPushButton#pmSecondary:hover{background:#0f1e30;color:#c0dff4;border-color:#3a6888;}"
+        "QPushButton#pmSecondary:pressed{background:#091420;}");
+    auto* bbox = new QHBoxLayout(bar);
+    bbox->setContentsMargins(20, 14, 20, 14);
+    bbox->setSpacing(8);
+
+    auto* installBtn    = new QPushButton("Install Starter Plugins");
     auto* openFolderBtn = new QPushButton("Open Plugins Folder");
-    auto* reloadBtn = new QPushButton("Reload Plugins");
-    auto* closeBtn = new QPushButton("Close");
-    closeBtn->setProperty("primary", true);
-    btnBar->addWidget(installBtn);
-    btnBar->addWidget(openFolderBtn);
-    btnBar->addWidget(reloadBtn);
-    btnBar->addStretch();
-    btnBar->addWidget(closeBtn);
-    layout->addLayout(btnBar);
+    auto* reloadBtn     = new QPushButton("Reload");
+    auto* closeBtn      = new QPushButton("Close");
+    installBtn->setObjectName("pmSecondary");
+    openFolderBtn->setObjectName("pmSecondary");
+    reloadBtn->setObjectName("pmSecondary");
+    closeBtn->setObjectName("pmPrimary");
 
-    auto* note = new QLabel(
-        "Installed starter plugins include metadata lookup, research tools, and device/file helper actions. "
-        "Open a book or document details dialog to use plugin actions.");
-    note->setWordWrap(true);
-    note->setObjectName("settingsNote");
-    layout->addWidget(note);
+    bbox->addWidget(installBtn);
+    bbox->addWidget(openFolderBtn);
+    bbox->addWidget(reloadBtn);
+    bbox->addStretch();
+    bbox->addWidget(closeBtn);
+    root->addWidget(bar);
 
-    const auto refreshPluginTable = [&]() {
-        const auto plugins = PluginManager::instance().loadedPlugins();
-        table->setRowCount(plugins.size());
-        for (int i = 0; i < plugins.size(); ++i) {
-            const LoadedPlugin& lp = plugins[i];
-            table->setItem(i, 0, new QTableWidgetItem(lp.info.name));
-            table->setItem(i, 1, new QTableWidgetItem(lp.info.version));
-            table->setItem(i, 2, new QTableWidgetItem(lp.info.author));
-            table->setItem(i, 3, new QTableWidgetItem(lp.active ? "Active" : "Registered"));
-            table->setItem(i, 4, new QTableWidgetItem(QString::number(lp.bookActions.size())));
+    // ── Card builder (called per plugin) ──────────────────────
+    const auto buildCard = [](QWidget* parent, const LoadedPlugin& lp) -> QFrame* {
+        auto* card = new QFrame(parent);
+        card->setStyleSheet(
+            "QFrame{"
+            "  background:#0f1e30;border:1px solid #1e3a54;"
+            "  border-radius:10px;"
+            "}"
+            "QFrame:hover{background:#122034;border-color:#3a6a90;}");
+
+        auto* cl = new QHBoxLayout(card);
+        cl->setContentsMargins(18, 14, 18, 14);
+        cl->setSpacing(14);
+
+        // Active/inactive indicator dot
+        auto* dot = new QLabel(lp.active ? "●" : "○");
+        dot->setFixedWidth(16);
+        dot->setAlignment(Qt::AlignTop | Qt::AlignHCenter);
+        dot->setStyleSheet(
+            lp.active
+                ? "color:#4caf50;font-size:15px;background:transparent;margin-top:2px;"
+                : "color:#3a5060;font-size:15px;background:transparent;margin-top:2px;");
+
+        // Text column
+        auto* col = new QVBoxLayout;
+        col->setSpacing(4);
+
+        // Name + version + status badge
+        auto* row1 = new QHBoxLayout;
+        row1->setSpacing(8);
+
+        auto* nameLbl = new QLabel(lp.info.name.isEmpty() ? "(unnamed)" : lp.info.name);
+        nameLbl->setStyleSheet(
+            "font-weight:800;font-size:13px;color:#e8d898;background:transparent;");
+        row1->addWidget(nameLbl);
+
+        if (!lp.info.version.isEmpty()) {
+            auto* verLbl = new QLabel("v" + lp.info.version);
+            verLbl->setStyleSheet("font-size:10px;color:#486880;background:transparent;");
+            row1->addWidget(verLbl);
         }
-        emptyState->setVisible(plugins.isEmpty());
+
+        auto* badge = new QLabel(lp.active ? "Active" : "Registered");
+        badge->setStyleSheet(
+            lp.active
+                ? "font-size:10px;font-weight:700;color:#66bb6a;"
+                  "background:#0e2816;border:1px solid #2a5a2e;"
+                  "border-radius:4px;padding:1px 8px;"
+                : "font-size:10px;font-weight:700;color:#486070;"
+                  "background:#0c1c28;border:1px solid #1c3848;"
+                  "border-radius:4px;padding:1px 8px;");
+        row1->addWidget(badge);
+        row1->addStretch();
+        col->addLayout(row1);
+
+        // Description
+        if (!lp.info.description.isEmpty()) {
+            auto* descLbl = new QLabel(lp.info.description);
+            descLbl->setWordWrap(true);
+            descLbl->setStyleSheet("font-size:11px;color:#547a94;background:transparent;");
+            col->addWidget(descLbl);
+        }
+
+        // Author + action count
+        auto* row2 = new QHBoxLayout;
+        row2->setSpacing(16);
+        if (!lp.info.author.isEmpty()) {
+            auto* authLbl = new QLabel("by " + lp.info.author);
+            authLbl->setStyleSheet("font-size:10px;color:#344e60;background:transparent;");
+            row2->addWidget(authLbl);
+        }
+        const int nAct = lp.bookActions.size();
+        if (nAct > 0) {
+            auto* actLbl = new QLabel(
+                QString("%1 book action%2").arg(nAct).arg(nAct == 1 ? "" : "s"));
+            actLbl->setStyleSheet("font-size:10px;color:#2c5878;background:transparent;");
+            row2->addWidget(actLbl);
+        }
+        if (!lp.sourcePath.isEmpty()) {
+            auto* pathLbl = new QLabel(QDir::toNativeSeparators(lp.sourcePath));
+            pathLbl->setStyleSheet(
+                "font-size:10px;color:#284050;background:transparent;"
+                "font-family:monospace;");
+            pathLbl->setWordWrap(false);
+            row2->addWidget(pathLbl, 1);
+        }
+        row2->addStretch();
+        col->addLayout(row2);
+
+        cl->addWidget(dot);
+        cl->addLayout(col, 1);
+        return card;
     };
-    refreshPluginTable();
 
-    connect(installBtn, &QPushButton::clicked, &dlg, [this, &dlg]() {
-        PluginManager::instance().unloadAll();
-        PluginManager::instance().loadAll(AppConfig::pluginsDir());
-        m_statusLabel->setText("Starter plugins installed.");
-    });
+    // ── Populate (called on load and after reload) ─────────────
+    const auto populate = [&]() {
+        QLayoutItem* item;
+        while ((item = listVBox->takeAt(0)) != nullptr) {
+            if (item->widget()) item->widget()->deleteLater();
+            delete item;
+        }
 
-    connect(openFolderBtn, &QPushButton::clicked, &dlg, [this]() {
+        const QList<LoadedPlugin> plugins = PluginManager::instance().loadedPlugins();
+
+        if (plugins.isEmpty()) {
+            auto* empty = new QWidget;
+            auto* el = new QVBoxLayout(empty);
+            el->setAlignment(Qt::AlignCenter);
+            el->setSpacing(10);
+            el->setContentsMargins(40, 60, 40, 60);
+
+            auto* ei = new QLabel("\xF0\x9F\x94\x8C");
+            ei->setAlignment(Qt::AlignCenter);
+            ei->setStyleSheet("font-size:56px;background:transparent;");
+            auto* et = new QLabel("No plugins installed");
+            et->setAlignment(Qt::AlignCenter);
+            et->setStyleSheet(
+                "font-size:16px;font-weight:700;color:#304e64;background:transparent;");
+            auto* eh = new QLabel(
+                "Click <b style='color:#5090b4;'>Install Starter Plugins</b> "
+                "to install the built-in manifests,<br>or drop a plugin folder "
+                "containing <code style='color:#3a7090;'>plugin.json</code> "
+                "into the plugins directory.");
+            eh->setAlignment(Qt::AlignCenter);
+            eh->setTextFormat(Qt::RichText);
+            eh->setStyleSheet("font-size:12px;color:#284050;background:transparent;");
+
+            el->addWidget(ei);
+            el->addWidget(et);
+            el->addWidget(eh);
+            listVBox->addWidget(empty);
+        } else {
+            for (const LoadedPlugin& lp : plugins)
+                listVBox->addWidget(buildCard(listWidget, lp));
+        }
+        listVBox->addStretch();
+    };
+
+    populate();
+
+    // ── Wire up buttons ────────────────────────────────────────
+    connect(closeBtn, &QPushButton::clicked, &dlg, &QDialog::accept);
+
+    connect(openFolderBtn, &QPushButton::clicked, &dlg, []() {
         const QString dir = AppConfig::pluginsDir();
         QDir().mkpath(dir);
         QDesktopServices::openUrl(QUrl::fromLocalFile(dir));
     });
 
-    connect(installBtn, &QPushButton::clicked, &dlg, [&refreshPluginTable]() {
-        refreshPluginTable();
-    });
-
-    connect(reloadBtn, &QPushButton::clicked, &dlg, [this, &refreshPluginTable]() {
+    connect(installBtn, &QPushButton::clicked, &dlg, [this, &populate]() {
         PluginManager::instance().unloadAll();
         PluginManager::instance().loadAll(AppConfig::pluginsDir());
-        m_statusLabel->setText("Plugins reloaded.");
-        refreshPluginTable();
+        if (m_statusLabel) m_statusLabel->setText("Starter plugins installed.");
+        populate();
     });
 
-    connect(closeBtn, &QPushButton::clicked, &dlg, &QDialog::accept);
+    connect(reloadBtn, &QPushButton::clicked, &dlg, [this, &populate]() {
+        PluginManager::instance().unloadAll();
+        PluginManager::instance().loadAll(AppConfig::pluginsDir());
+        if (m_statusLabel) m_statusLabel->setText("Plugins reloaded.");
+        populate();
+    });
+
     dlg.exec();
 }
 

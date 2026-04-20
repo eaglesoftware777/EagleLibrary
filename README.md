@@ -126,7 +126,7 @@ Current format support includes:
 Typical generated outputs:
 
 - App: `build-release/Release/EagleLibrary.exe`
-- Installer: `installer/EagleLibrary_Setup_2.0.0.exe`
+- Installer: `installer/EagleLibrary_Setup_2.1.0.exe`
 - Portable folder: `\EagleLibrary_Portable`
 - GitHub-style release assets:
   - `release/EagleLibrary-Setup-x64.exe`
@@ -274,7 +274,7 @@ makensis installer\eagle_library.nsi
 
 Or open the `.nsi` file in NSIS and click **Compile**.
 
-Output: `installer\EagleLibrary_Setup_2.0.0.exe`
+Output: `installer\EagleLibrary_Setup_2.1.0.exe`
 
 ---
 
@@ -351,6 +351,37 @@ At minimum, Eagle Library currently provides:
 - portable and installer packaging
 
 ## Release Notes
+
+### 2.1.0
+
+- Redesigned Plugin Manager dialog with scrollable card list, status badges,
+  author, description, action count, and source path per plugin
+- Redesigned plugin action cards in book and document detail panels — styled
+  frames with accent border, action name, description subtitle, and click target
+- Fixed quit / close button freezing: scanner thread now waits up to 3 seconds
+  after cancel before the window closes; pending Qt events are flushed before
+  plugin unload to prevent stale signal delivery to destroyed objects
+- Fixed metadata fetcher not properly stopping its internal timer on cancel,
+  which kept the event loop busy during shutdown
+- Fixed wrong book metadata: ISBN extraction now searches labeled `ISBN:` text
+  first before falling back to numeric pattern matching, preventing phone
+  numbers and order IDs from being misidentified as ISBNs
+- Fixed wrong publisher: PDF `/Creator` field (authoring tool name) is no
+  longer used as the publisher source; only the `/Publisher` field is used
+- Fixed Open Library always picking the first ISBN in the array regardless of
+  type; ISBN-13 (978/979 prefix) is now preferred over ISBN-10
+- Fixed candidate scoring not penalizing wrong-ISBN API results; a −30 penalty
+  is now applied when a known ISBN exists and the API result has a different one
+- Fixed theme switching not applying visually: removed the erroneous
+  per-widget stylesheet clear that interfered with the app-level QSS cascade
+- Fixed version mismatch: application version was reported as 1.1.0 in several
+  places despite CMake targeting 2.0.0; all version sources now read from
+  `AppConfig::version()` consistently
+- Fixed splash screen logo path hardcoded to development machine path; now
+  resolved dynamically from `QCoreApplication::applicationDirPath()`
+- Added `CMakePresets.json` and updated `CMakeSettings.json` to use `QT_DIR`
+  environment variable, enabling Visual Studio Open Folder workflow with no
+  hardcoded paths
 
 ### 2.0.0
 

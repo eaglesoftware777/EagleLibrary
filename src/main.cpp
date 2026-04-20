@@ -178,7 +178,7 @@ int main(int argc, char* argv[])
     QApplication app(argc, argv);
     app.setApplicationName("Eagle Library");
     app.setOrganizationName("Eagle Software");
-    app.setApplicationVersion("1.1.0");
+    app.setApplicationVersion(AppConfig::version());
     app.setFont(buildUiFont());
 
     configureSettingsStorage();
