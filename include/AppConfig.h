@@ -46,6 +46,26 @@ namespace AppConfig
         return appDir() + "/settings";
     }
 
+    inline QString translationsDir()
+    {
+        return appDir() + "/translations";
+    }
+
+    inline QString themesDir()
+    {
+        return appDir() + "/themes";
+    }
+
+    inline QString hooksDir()
+    {
+        return appDir() + "/hooks";
+    }
+
+    inline QString resourcesDir()
+    {
+        return appDir() + "/resources";
+    }
+
     inline QString legacyDataDir()
     {
         return QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
@@ -68,7 +88,7 @@ namespace AppConfig
 
     inline QString settingsPath()
     {
-        return settingsDir() + "/EagleLibrary.ini";
+        return appDir() + "/EagleLibrary.ini";
     }
 
     inline QString dbPath()      { return appDir() + "/library.db"; }
@@ -77,6 +97,8 @@ namespace AppConfig
     inline QString jsonDir()     { return dataDir() + "/json"; }
     inline QString pluginsDir()  { return appDir()  + "/plugins"; }
     inline QString sidecarsDir() { return dataDir() + "/sidecars"; }
+    inline QString logoPngPath() { return resourcesDir() + "/eagle_logo.png"; }
+    inline QString markSvgPath() { return resourcesDir() + "/eagle_mark.svg"; }
     inline QString normalizedPath(const QString& path) { return QDir::cleanPath(QDir::fromNativeSeparators(path)); }
     inline bool isManagedDataPath(const QString& path) {
         const QString normalized = normalizedPath(path);

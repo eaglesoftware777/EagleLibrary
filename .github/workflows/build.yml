@@ -1,5 +1,8 @@
 name: Build EagleLibrary
 
+permissions:
+  contents: write
+
 # Only runs when triggered manually from the Actions tab on GitHub.
 # Go to: Actions -> Build EagleLibrary -> Run workflow
 on:
@@ -13,6 +16,19 @@ on:
         options:
           - 'true'
           - 'false'
+      publish_release:
+        description: 'Publish assets to a GitHub release after a successful build'
+        required: false
+        default: 'false'
+        type: choice
+        options:
+          - 'false'
+          - 'true'
+      release_tag:
+        description: 'Release tag to update when publish_release=true'
+        required: false
+        default: 'v2.1.0'
+        type: string
 
 jobs:
   build-windows:
@@ -67,6 +83,67 @@ jobs:
             Copy-Item -Recurse -Force "plugins" "build\Release\plugins"
           }
 
+      - name: Copy runtime assets
+        shell: pwsh
+        run: |
+          foreach ($pair in @(
+            @{ Source = "resources\translations"; Target = "build\Release\translations" },
+            @{ Source = "resources\themes"; Target = "build\Release\themes" },
+            @{ Source = "resources"; Target = "build\Release\resources" }
+          )) {
+            if (Test-Path $pair.Source) {
+              Copy-Item -Recurse -Force $pair.Source $pair.Target
+            }
+          }
+
+      - name: Package portable zip
+        shell: pwsh
+        run: |
+          $portableRoot = "build\portable\EagleLibrary"
+          if (Test-Path $portableRoot) {
+            Remove-Item -Recurse -Force $portableRoot
+          }
+          New-Item -ItemType Directory -Path $portableRoot | Out-Null
+
+          $portableItems = @(
+            "build\Release\EagleLibrary.exe",
+            "build\Release\*.dll",
+            "build\Release\platforms",
+            "build\Release\styles",
+            "build\Release\imageformats",
+            "build\Release\iconengines",
+            "build\Release\sqldrivers",
+            "build\Release\tls",
+            "build\Release\plugins",
+            "build\Release\translations",
+            "build\Release\themes",
+            "build\Release\resources",
+            "installer\README.txt",
+            "installer\LICENSE.txt",
+            "docs\help\EagleLibrary.chm"
+          )
+
+          foreach ($item in $portableItems) {
+            if (-not (Test-Path $item)) {
+              continue
+            }
+
+            if ((Get-Item $item) -is [System.IO.DirectoryInfo]) {
+              Copy-Item -Recurse -Force $item $portableRoot
+              continue
+            }
+
+            Copy-Item -Force $item $portableRoot
+          }
+
+          New-Item -ItemType File -Path (Join-Path $portableRoot "portable.flag") -Force | Out-Null
+
+          $zipPath = "build\EagleLibrary-Portable-x64.zip"
+          if (Test-Path $zipPath) {
+            Remove-Item -Force $zipPath
+          }
+          Compress-Archive -Path "$portableRoot\*" -DestinationPath $zipPath -CompressionLevel Optimal
+
       # 8. Install NSIS (required for CPack NSIS generator)
       - name: Install NSIS
         if: ${{ github.event.inputs.build_installer == 'true' }}
@@ -80,6 +157,7 @@ jobs:
         run: |
           $env:PATH += ";C:\Program Files (x86)\NSIS"
           cpack -C Release -G NSIS
+          Copy-Item -Force (Get-ChildItem *.exe | Select-Object -First 1).FullName "..\EagleLibrary-Setup-x64.exe"
 
       # 10. Upload installer artifact
       - name: Upload installer
@@ -87,7 +165,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: EagleLibrary-Setup-x64
-          path: build/*.exe
+          path: build/EagleLibrary-Setup-x64.exe
           retention-days: 30
 
       # 11. Upload portable build artifact
@@ -95,12 +173,62 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: EagleLibrary-Portable-x64
-          path: |
-            build/Release/EagleLibrary.exe
-            build/Release/*.dll
-            build/Release/platforms/
-            build/Release/styles/
-            build/Release/imageformats/
-            build/Release/iconengines/
-            build/Release/plugins/
+          path: build/EagleLibrary-Portable-x64.zip
           retention-days: 30
+
+      - name: Publish release
+        if: ${{ github.event.inputs.publish_release == 'true' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: pwsh
+        run: |
+          $tag = "${{ github.event.inputs.release_tag }}".Trim()
+          if ([string]::IsNullOrWhiteSpace($tag)) {
+            throw "release_tag is required when publish_release=true"
+          }
+
+          if (-not $tag.StartsWith("v")) {
+            $tag = "v$tag"
+          }
+
+          $version = $tag.TrimStart("v")
+          $title = "Eagle Library $version"
+          $readme = Get-Content "README.md" -Raw
+          $pattern = "(?ms)^## Release Notes\s+.*?^###\s+$([regex]::Escape($version))\s*\r?\n(.*?)(?=^###\s+\S|^##\s+\S|\z)"
+          $match = [regex]::Match($readme, $pattern)
+          if (-not $match.Success) {
+            throw "Could not find release notes for version $version in README.md"
+          }
+
+          $notesPath = Join-Path $env:RUNNER_TEMP "release-notes.md"
+          $notes = "## Eagle Library $version`r`n`r`n$($match.Groups[1].Value.Trim())"
+          Set-Content -Path $notesPath -Value $notes -NoNewline
+
+          $releaseExists = $true
+          gh release view $tag | Out-Null
+          if ($LASTEXITCODE -ne 0) {
+            $releaseExists = $false
+          }
+
+          if (-not $releaseExists) {
+            gh release create $tag --title $title --notes-file $notesPath
+          } else {
+            gh release edit $tag --title $title --notes-file $notesPath
+          }
+
+          $existingAssets = @(gh release view $tag --json assets --jq '.assets[].name')
+          foreach ($assetName in @("EagleLibrary-Portable-x64.zip", "EagleLibrary-Setup-x64.exe")) {
+            if ($existingAssets -contains $assetName) {
+              gh release delete-asset $tag $assetName --yes
+            }
+          }
+
+          $uploadArgs = @(
+            "release", "upload", $tag,
+            "build\EagleLibrary-Portable-x64.zip"
+          )
+          if (Test-Path "build\EagleLibrary-Setup-x64.exe") {
+            $uploadArgs += "build\EagleLibrary-Setup-x64.exe"
+          }
+
+          & gh @uploadArgs

@@ -93,10 +93,11 @@ Setup / NSIS installer
 3. Open NSIS and compile:
    installer\eagle_library.nsi
 4. The generated installer file name is defined by:
-   OutFile "EagleLibrary_Setup_1.1.0.exe"
+   OutFile "EagleLibrary_Setup_2.1.0.exe"
 
 Notes
 -----
 - The portable package does not need a VC++ redistributable installer.
 - Portable mode is activated by portable.flag.
-- User data for the portable build stays inside data\ and settings\.
+- User data for the portable build stays beside the executable:
+  EagleLibrary.ini, library.db, data\, translations\, themes\, hooks\, and plugins\.

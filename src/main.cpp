@@ -57,10 +57,47 @@ bool copyDirectoryTree(const QString& sourcePath, const QString& targetPath)
     return copiedAny;
 }
 
+bool copyFileIfMissing(const QString& sourcePath, const QString& targetPath)
+{
+    if (!sourcePath.startsWith(":/") && !QFileInfo::exists(sourcePath))
+        return false;
+    if (QFileInfo::exists(targetPath))
+        return false;
+
+    QDir().mkpath(QFileInfo(targetPath).absolutePath());
+    return QFile::copy(sourcePath, targetPath);
+}
+
+void seedBundledRuntimeAssets()
+{
+    QDir().mkpath(AppConfig::translationsDir());
+    QDir().mkpath(AppConfig::themesDir());
+    QDir().mkpath(AppConfig::hooksDir());
+    QDir().mkpath(AppConfig::resourcesDir());
+
+    const QDir translationsResourceDir(":/translations");
+    for (const QString& fileName : translationsResourceDir.entryList(QStringList() << "*.json", QDir::Files, QDir::Name))
+        copyFileIfMissing(translationsResourceDir.absoluteFilePath(fileName),
+                          QDir(AppConfig::translationsDir()).absoluteFilePath(fileName));
+
+    const QDir themesResourceDir(":/themes");
+    for (const QString& fileName : themesResourceDir.entryList(QStringList() << "*.qss", QDir::Files, QDir::Name))
+        copyFileIfMissing(themesResourceDir.absoluteFilePath(fileName),
+                          QDir(AppConfig::themesDir()).absoluteFilePath(fileName));
+
+    copyFileIfMissing(":/eagle_logo.png", AppConfig::logoPngPath());
+    copyFileIfMissing(":/eagle_mark.svg", AppConfig::markSvgPath());
+    copyFileIfMissing(":/eagle_256.png", QDir(AppConfig::resourcesDir()).absoluteFilePath("eagle_256.png"));
+}
+
 void migrateLegacyStorage()
 {
     QDir().mkpath(AppConfig::dataDir());
     QDir().mkpath(AppConfig::settingsDir());
+    QDir().mkpath(AppConfig::translationsDir());
+    QDir().mkpath(AppConfig::themesDir());
+    QDir().mkpath(AppConfig::hooksDir());
+    QDir().mkpath(AppConfig::resourcesDir());
 
     const QString newDbPath = AppConfig::dbPath();
     const QString legacyDbPath = AppConfig::legacyDataDir() + "/library.db";
@@ -75,16 +112,29 @@ void migrateLegacyStorage()
                           QDir(AppConfig::dataDir()).absoluteFilePath(subdir));
     }
 
-    const QString legacyIniPath = AppConfig::legacySettingsDir() + "/EagleLibrary.ini";
-    if (!QFileInfo::exists(AppConfig::settingsPath()) && QFileInfo::exists(legacyIniPath)) {
-        QDir().mkpath(QFileInfo(AppConfig::settingsPath()).absolutePath());
-        QFile::copy(legacyIniPath, AppConfig::settingsPath());
+    const QStringList legacyIniPaths = {
+        AppConfig::legacySettingsDir() + "/EagleLibrary.ini",
+        AppConfig::localSettingsDir() + "/EagleLibrary.ini"
+    };
+    for (const QString& legacyIniPath : legacyIniPaths) {
+        if (!QFileInfo::exists(AppConfig::settingsPath()) && QFileInfo::exists(legacyIniPath)) {
+            QDir().mkpath(QFileInfo(AppConfig::settingsPath()).absolutePath());
+            QFile::copy(legacyIniPath, AppConfig::settingsPath());
+        }
     }
 
     copyDirectoryTree(QDir(AppConfig::legacySettingsDir()).absoluteFilePath("translations"),
-                      QDir(AppConfig::settingsDir()).absoluteFilePath("translations"));
+                      AppConfig::translationsDir());
+    copyDirectoryTree(QDir(AppConfig::localSettingsDir()).absoluteFilePath("translations"),
+                      AppConfig::translationsDir());
     copyDirectoryTree(QDir(AppConfig::legacySettingsDir()).absoluteFilePath("hooks"),
-                      QDir(AppConfig::settingsDir()).absoluteFilePath("hooks"));
+                      AppConfig::hooksDir());
+    copyDirectoryTree(QDir(AppConfig::localSettingsDir()).absoluteFilePath("hooks"),
+                      AppConfig::hooksDir());
+    copyDirectoryTree(QDir(AppConfig::localSettingsDir()).absoluteFilePath("themes"),
+                      AppConfig::themesDir());
+    copyDirectoryTree(QDir(AppConfig::localSettingsDir()).absoluteFilePath("resources"),
+                      AppConfig::resourcesDir());
 }
 
 QFont buildUiFont()
@@ -133,9 +183,9 @@ QFont buildUiFont()
 
 void configureSettingsStorage()
 {
-    QDir().mkpath(AppConfig::settingsDir());
+    QDir().mkpath(QFileInfo(AppConfig::settingsPath()).absolutePath());
     QSettings::setDefaultFormat(QSettings::IniFormat);
-    QSettings::setPath(QSettings::IniFormat, QSettings::UserScope, AppConfig::settingsDir());
+    QSettings::setPath(QSettings::IniFormat, QSettings::UserScope, AppConfig::appDir());
 }
 
 int runCliCommand(QApplication& app)
@@ -152,7 +202,10 @@ int runCliCommand(QApplication& app)
         return -1;
 
     QDir().mkpath(AppConfig::dataDir());
-    QDir().mkpath(AppConfig::settingsDir());
+    QDir().mkpath(AppConfig::translationsDir());
+    QDir().mkpath(AppConfig::themesDir());
+    QDir().mkpath(AppConfig::hooksDir());
+    QDir().mkpath(AppConfig::resourcesDir());
     Database::instance().open(AppConfig::dbPath());
 
     QTextStream out(stdout);
@@ -189,7 +242,7 @@ int runCliCommand(QApplication& app)
             err << "Usage: EagleLibrary.exe export <output.json>\n";
             return 2;
         }
-        QSettings s("Eagle Software", "Eagle Library");
+        QSettings s(AppConfig::settingsPath(), QSettings::IniFormat);
         const QStringList folders = s.value("library/folders").toStringList();
         if (!Database::instance().exportLibrary(positional.at(1), folders)) {
             err << "Export failed.\n";
@@ -240,6 +293,7 @@ int main(int argc, char* argv[])
 
     configureSettingsStorage();
     migrateLegacyStorage();
+    seedBundledRuntimeAssets();
     LanguageManager::instance().initialize();
     app.setLayoutDirection(LanguageManager::instance().isRightToLeft() ? Qt::RightToLeft : Qt::LeftToRight);
     QObject::connect(&LanguageManager::instance(), &LanguageManager::languageChanged, &app, [&app]() {
@@ -252,7 +306,11 @@ int main(int argc, char* argv[])
             return cliResult;
     }
 
-    QIcon appIcon(":/eagle_mark.svg");
+    QIcon appIcon(AppConfig::markSvgPath());
+    if (appIcon.isNull())
+        appIcon = QIcon(":/eagle_mark.svg");
+    if (appIcon.isNull())
+        appIcon = QIcon(AppConfig::logoPngPath());
     if (appIcon.isNull())
         appIcon = QIcon(":/eagle_logo.png");
     if (!appIcon.isNull())
@@ -278,10 +336,10 @@ int main(int argc, char* argv[])
     QDir().mkpath(AppConfig::coversDir());
     QDir().mkpath(AppConfig::thumbsDir());
     QDir().mkpath(AppConfig::jsonDir());
-    for (const QString& translationsDir : LanguageManager::instance().packDirectories())
-        QDir().mkpath(translationsDir);
-    if (AppConfig::isPortableMode())
-        QDir().mkpath(AppConfig::settingsDir());
+    QDir().mkpath(AppConfig::translationsDir());
+    QDir().mkpath(AppConfig::themesDir());
+    QDir().mkpath(AppConfig::hooksDir());
+    QDir().mkpath(AppConfig::resourcesDir());
 
     step(35, LanguageManager::instance().text("splash.database", "Opening library database..."));
     Database::instance().open(AppConfig::dbPath());
@@ -307,7 +365,7 @@ int main(int argc, char* argv[])
     splash->deleteLater();
 
     // First-run welcome
-    QSettings s("Eagle Software", "Eagle Library");
+    QSettings s(AppConfig::settingsPath(), QSettings::IniFormat);
     if (!s.contains("library/folders")) {
         QTimer::singleShot(500, mainWin, [mainWin]() {
             QMessageBox::information(mainWin,

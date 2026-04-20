@@ -1289,6 +1289,9 @@ MainWindow::MainWindow(QWidget* parent)
 
     // Set application icon
     QIcon appIcon;
+    appIcon.addFile(AppConfig::markSvgPath());
+    appIcon.addFile(AppConfig::logoPngPath());
+    appIcon.addFile(":/eagle_mark.svg");
     appIcon.addFile(":/eagle_logo.png");
     if (!appIcon.isNull()) {
         setWindowIcon(appIcon);
@@ -1329,7 +1332,7 @@ MainWindow::MainWindow(QWidget* parent)
 
     // Apply saved theme
     {
-        QSettings s;
+        QSettings s(AppConfig::settingsPath(), QSettings::IniFormat);
         const QString savedTheme = s.value("ui/theme", "Blue Pro").toString();
         ThemeManager::instance().applyTheme(savedTheme);
         if (m_themeBlueAct && m_themeWhiteAct && m_themeMacAct) {
@@ -1677,7 +1680,7 @@ void MainWindow::setupMenuBar()
         action->setChecked(info.code == LanguageManager::instance().currentLanguage());
         connect(action, &QAction::triggered, this, [this, code = info.code]() {
             if (LanguageManager::instance().applyLanguage(code)) {
-                QSettings s("Eagle Software", "Eagle Library");
+                QSettings s(AppConfig::settingsPath(), QSettings::IniFormat);
                 s.setValue("ui/language", code);
                 if (m_statusLabel)
                     m_statusLabel->setText(QString("Language: %1").arg(code));
@@ -2447,7 +2450,7 @@ void MainWindow::onBookFound(Book book)
     m_model->addBook(book);
     m_recentlyAddedBooks << book;
     PluginManager::instance().notifyBookAdded(book.id);
-    QSettings s("Eagle Software", "Eagle Library");
+    QSettings s(AppConfig::settingsPath(), QSettings::IniFormat);
     if (!m_autoEnrichAfterScan && s.value("options/autoMeta", true).toBool())
         scheduleMetadataFetch(book);
 }
@@ -2480,7 +2483,7 @@ void MainWindow::onCoverUrlsReady(qint64 id, const QStringList& urls)
 {
     if (m_isClosing || !m_coverDownloader)
         return;
-    QSettings s("Eagle Software", "Eagle Library");
+    QSettings s(AppConfig::settingsPath(), QSettings::IniFormat);
     const bool forceCover = m_forceCoverFetchIds.remove(id);
     if (!forceCover && !s.value("options/autoCover", true).toBool())
         return;
@@ -3425,7 +3428,7 @@ void MainWindow::importLibrarySnapshot()
     }
 
     if (!importedFolders.isEmpty()) {
-        QSettings s("Eagle Software", "Eagle Library");
+        QSettings s(AppConfig::settingsPath(), QSettings::IniFormat);
         m_libraryProfiles = loadLibraryProfiles(s);
         const QStringList existingFolders = foldersForLibrary(m_libraryProfiles, m_currentLibraryName);
         QSet<QString> merged(existingFolders.begin(), existingFolders.end());
@@ -3872,7 +3875,7 @@ void MainWindow::resizeEvent(QResizeEvent* event)
 
 void MainWindow::loadSettings()
 {
-    QSettings s("Eagle Software", "Eagle Library");
+    QSettings s(AppConfig::settingsPath(), QSettings::IniFormat);
     m_libraryProfiles = loadLibraryProfiles(s);
     m_currentLibraryName = s.value("library/currentName").toString().trimmed();
     if (m_currentLibraryName.isEmpty() || !m_libraryProfiles.contains(m_currentLibraryName)) {
@@ -3903,7 +3906,7 @@ void MainWindow::loadSettings()
 
 void MainWindow::saveSettings()
 {
-    QSettings s("Eagle Software", "Eagle Library");
+    QSettings s(AppConfig::settingsPath(), QSettings::IniFormat);
     s.setValue("view/isGrid", m_isGridView);
     s.setValue("library/currentName", m_currentLibraryName);
     s.setValue("library/activeShelf", m_activeShelfName);
@@ -4202,7 +4205,7 @@ void MainWindow::applyResponsiveLayout()
     if (m_workspaceHintLabel)
         m_workspaceHintLabel->setVisible(false);
 
-    const QSettings s("Eagle Software", "Eagle Library");
+    const QSettings s(AppConfig::settingsPath(), QSettings::IniFormat);
     int cardWidth = qBound(120, s.value("options/iconSize", 160).toInt(), 280);
     if (m_compactMode)
         cardWidth -= 14;

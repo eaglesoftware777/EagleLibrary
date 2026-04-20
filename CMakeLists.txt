@@ -32,6 +32,7 @@ find_package(Qt6 REQUIRED COMPONENTS
     Svg
 )
 qt_standard_project_setup()
+include(CTest)
 
 # ── Source files ─────────────────────────────────────────────────────────────
 set(SOURCES
@@ -133,6 +134,25 @@ if(WIN32)
                 --no-translations
                 --compiler-runtime
                 "$<TARGET_FILE:EagleLibrary>"
+        COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:EagleLibrary>/resources"
+        COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:EagleLibrary>/translations"
+        COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:EagleLibrary>/themes"
+        COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:EagleLibrary>/hooks"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "${CMAKE_SOURCE_DIR}/resources/eagle_logo.png"
+                "$<TARGET_FILE_DIR:EagleLibrary>/resources/eagle_logo.png"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "${CMAKE_SOURCE_DIR}/resources/eagle_mark.svg"
+                "$<TARGET_FILE_DIR:EagleLibrary>/resources/eagle_mark.svg"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "${CMAKE_SOURCE_DIR}/resources/eagle_256.png"
+                "$<TARGET_FILE_DIR:EagleLibrary>/resources/eagle_256.png"
+        COMMAND ${CMAKE_COMMAND} -E copy_directory
+                "${CMAKE_SOURCE_DIR}/resources/translations"
+                "$<TARGET_FILE_DIR:EagleLibrary>/translations"
+        COMMAND ${CMAKE_COMMAND} -E copy_directory
+                "${CMAKE_SOURCE_DIR}/resources/themes"
+                "$<TARGET_FILE_DIR:EagleLibrary>/themes"
         COMMENT "Running windeployqt..."
     )
 endif()
@@ -144,10 +164,37 @@ install(TARGETS EagleLibrary
 install(DIRECTORY "${CMAKE_BINARY_DIR}/platforms"    DESTINATION "." OPTIONAL)
 install(DIRECTORY "${CMAKE_BINARY_DIR}/styles"       DESTINATION "." OPTIONAL)
 install(DIRECTORY "${CMAKE_BINARY_DIR}/imageformats" DESTINATION "." OPTIONAL)
+install(DIRECTORY "${CMAKE_BINARY_DIR}/translations" DESTINATION "." OPTIONAL)
+install(DIRECTORY "${CMAKE_BINARY_DIR}/themes"       DESTINATION "." OPTIONAL)
+install(DIRECTORY "${CMAKE_BINARY_DIR}/resources"    DESTINATION "." OPTIONAL)
+install(DIRECTORY "${CMAKE_BINARY_DIR}/hooks"        DESTINATION "." OPTIONAL)
 install(FILES     "${CMAKE_SOURCE_DIR}/installer/LICENSE.txt"
                   "${CMAKE_SOURCE_DIR}/installer/README.txt"
     DESTINATION "."
 )
+
+if(BUILD_TESTING)
+    find_package(Qt6 REQUIRED COMPONENTS Test)
+
+    qt_add_executable(EagleLibraryRuntimeTests
+        tests/RuntimeLayoutTests.cpp
+        src/ThemeManager.cpp
+        src/LanguageManager.cpp
+        include/AppConfig.h
+        include/ThemeManager.h
+        include/LanguageManager.h
+    )
+
+    target_include_directories(EagleLibraryRuntimeTests PRIVATE include)
+    target_link_libraries(EagleLibraryRuntimeTests PRIVATE
+        Qt6::Core
+        Qt6::Gui
+        Qt6::Widgets
+        Qt6::Test
+    )
+
+    add_test(NAME EagleLibraryRuntimeTests COMMAND EagleLibraryRuntimeTests)
+endif()
 
 # ── CPack / NSIS installer ───────────────────────────────────────────────────
 include(CPack)

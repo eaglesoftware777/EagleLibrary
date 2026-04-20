@@ -3,8 +3,11 @@
 //  Copyright (c) 2026 Eagle Software. All rights reserved.
 // ============================================================
 #include "ThemeManager.h"
+#include "AppConfig.h"
 #include <QApplication>
+#include <QDir>
 #include <QFile>
+#include <QFileInfo>
 #include <QSettings>
 #include <QDebug>
 
@@ -14,23 +17,42 @@ ThemeManager& ThemeManager::instance()
     return inst;
 }
 
-void ThemeManager::applyTheme(Theme t)
+namespace {
+
+QString themeSourcePath(ThemeManager::Theme t)
 {
-    m_current = t;
-    static const char* paths[] = {
+    static const char* resourcePaths[] = {
         ":/themes/blue.qss",
         ":/themes/white.qss",
         ":/themes/mac.qss"
     };
-    QFile f(paths[static_cast<int>(t)]);
+    static const char* fileNames[] = {
+        "blue.qss",
+        "white.qss",
+        "mac.qss"
+    };
+
+    const QString externalPath = QDir(AppConfig::themesDir()).absoluteFilePath(QString::fromUtf8(fileNames[static_cast<int>(t)]));
+    if (QFileInfo::exists(externalPath))
+        return externalPath;
+    return QString::fromUtf8(resourcePaths[static_cast<int>(t)]);
+}
+
+}
+
+void ThemeManager::applyTheme(Theme t)
+{
+    m_current = t;
+    const QString themePath = themeSourcePath(t);
+    QFile f(themePath);
     if (f.open(QIODevice::ReadOnly | QIODevice::Text)) {
         qApp->setStyleSheet(QString());
         qApp->setStyleSheet(QString::fromUtf8(f.readAll()));
         f.close();
     } else {
-        qWarning() << "ThemeManager: could not load theme" << paths[static_cast<int>(t)];
+        qWarning() << "ThemeManager: could not load theme" << themePath;
     }
-    QSettings s;
+    QSettings s(AppConfig::settingsPath(), QSettings::IniFormat);
     s.setValue("ui/theme", themeName(t));
     emit themeChanged(t);
 }

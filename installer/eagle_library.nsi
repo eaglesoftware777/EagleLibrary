@@ -16,18 +16,18 @@
 
 ; ── General ──────────────────────────────────────────────────
 Name              "Eagle Library"
-OutFile           "EagleLibrary_Setup_2.0.0.exe"
+OutFile           "EagleLibrary_Setup_2.1.0.exe"
 InstallDir        "$PROGRAMFILES64\Eagle Library"
 InstallDirRegKey  HKLM "Software\Eagle Software\Eagle Library" "InstallDir"
 RequestExecutionLevel admin
 
 ; ── Version info ─────────────────────────────────────────────
-VIProductVersion  "2.0.0.0"
+VIProductVersion  "2.1.0.0"
 VIAddVersionKey   "ProductName"     "Eagle Library"
 VIAddVersionKey   "CompanyName"     "Eagle Software"
 VIAddVersionKey   "LegalCopyright"  "Copyright (C) 2026 Eagle Software"
-VIAddVersionKey   "FileDescription" "Eagle Library 2.0 Installer"
-VIAddVersionKey   "FileVersion"     "2.0.0.0"
+VIAddVersionKey   "FileDescription" "Eagle Library 2.1 Installer"
+VIAddVersionKey   "FileVersion"     "2.1.0.0"
 
 ; ── MUI Settings ─────────────────────────────────────────────
 !define MUI_ABORTWARNING
@@ -35,7 +35,7 @@ VIAddVersionKey   "FileVersion"     "2.0.0.0"
 !define MUI_UNICON            "..\resources\eagle.ico"
 !define MUI_HEADERIMAGE
 
-!define MUI_WELCOMEPAGE_TITLE   "Welcome to Eagle Library 1.1 Setup"
+!define MUI_WELCOMEPAGE_TITLE   "Welcome to Eagle Library 2.1 Setup"
 !define MUI_WELCOMEPAGE_TEXT    "Eagle Library is a professional eBook library manager by Eagle Software.$\r$\n$\r$\nManage thousands of books across any folder structure, fetch metadata from the internet, and build your personal reading collection.$\r$\n$\r$\nClick Next to continue."
 
 !define MUI_FINISHPAGE_RUN         "$INSTDIR\EagleLibrary.exe"
@@ -130,13 +130,19 @@ Section "Eagle Library (required)" SecMain
     SetOutPath "$INSTDIR\help"
     File /nonfatal "help\EagleLibrary.chm"
     SetOutPath "$INSTDIR\translations"
-    File /nonfatal "translations\README.txt"
+    File /nonfatal /r "translations\*.*"
+    SetOutPath "$INSTDIR\themes"
+    File /nonfatal /r "themes\*.*"
+    SetOutPath "$INSTDIR\resources"
+    File /nonfatal /r "resources\*.*"
+    SetOutPath "$INSTDIR\hooks"
+    File /nonfatal /r "hooks\*.*"
     SetOutPath "$INSTDIR\plugins"
     File /nonfatal /r "plugins\*.*"
 
     ; ── Registry ─────────────────────────────────────────────
     WriteRegStr HKLM "Software\Eagle Software\Eagle Library" "InstallDir" "$INSTDIR"
-    WriteRegStr HKLM "Software\Eagle Software\Eagle Library" "Version"    "1.1.0"
+    WriteRegStr HKLM "Software\Eagle Software\Eagle Library" "Version"    "2.1.0"
 
     ; ── Uninstall info (Add/Remove Programs) ─────────────────
     WriteRegStr HKLM \
@@ -153,7 +159,7 @@ Section "Eagle Library (required)" SecMain
         "Publisher"            "Eagle Software"
     WriteRegStr HKLM \
         "Software\Microsoft\Windows\CurrentVersion\Uninstall\EagleLibrary" \
-        "DisplayVersion"       "1.1.0"
+        "DisplayVersion"       "2.1.0"
     WriteRegStr HKLM \
         "Software\Microsoft\Windows\CurrentVersion\Uninstall\EagleLibrary" \
         "URLInfoAbout"         "https://eaglesoftware.biz/"
@@ -186,7 +192,6 @@ Section "Uninstall"
     Delete "$INSTDIR\LICENSE.txt"
     Delete "$INSTDIR\Uninstall.exe"
     Delete "$INSTDIR\help\EagleLibrary.chm"
-    Delete "$INSTDIR\translations\README.txt"
     RMDir /r "$INSTDIR\platforms"
     RMDir /r "$INSTDIR\imageformats"
     RMDir /r "$INSTDIR\sqldrivers"
@@ -195,6 +200,9 @@ Section "Uninstall"
     RMDir /r "$INSTDIR\tls"
     RMDir /r "$INSTDIR\help"
     RMDir /r "$INSTDIR\translations"
+    RMDir /r "$INSTDIR\themes"
+    RMDir /r "$INSTDIR\resources"
+    RMDir /r "$INSTDIR\hooks"
     RMDir /r "$INSTDIR\plugins"
     RMDir  "$INSTDIR"
 
@@ -208,12 +216,13 @@ Section "Uninstall"
     DeleteRegKey HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\EagleLibrary"
     DeleteRegKey HKLM "Software\Eagle Software\Eagle Library"
 
-    ; Optional: remove user data (ask)
+    ; Optional: remove local runtime data
     MessageBox MB_YESNO|MB_ICONQUESTION \
-        "Do you want to remove your Eagle Library database and settings?$\r$\n(All metadata and covers will be deleted.)" \
+        "Do you want to remove the local Eagle Library database, settings, and cached data from the install folder?$\r$\n(This deletes EagleLibrary.ini, library.db, and the data folder.)" \
         IDNO skip_userdata
-        SetShellVarContext current
-        RMDir /r "$APPDATA\Eagle Software\Eagle Library"
+        Delete "$INSTDIR\EagleLibrary.ini"
+        Delete "$INSTDIR\library.db"
+        RMDir /r "$INSTDIR\data"
     skip_userdata:
 
 SectionEnd

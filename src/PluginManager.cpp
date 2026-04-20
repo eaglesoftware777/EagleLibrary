@@ -62,32 +62,25 @@ void runPythonHook(const QString& eventName, qint64 bookId)
     if (python.isEmpty())
         return;
 
-    const QStringList hookDirs = {
-        QDir(AppConfig::appDir()).absoluteFilePath("hooks"),
-        QDir(AppConfig::settingsDir()).absoluteFilePath("hooks")
-    };
-
     const Book book = Database::instance().bookById(bookId);
-    for (const QString& dirPath : hookDirs) {
-        const QString scriptPath = QDir(dirPath).absoluteFilePath(eventName + ".py");
-        if (!QFileInfo::exists(scriptPath))
-            continue;
+    const QString scriptPath = QDir(AppConfig::hooksDir()).absoluteFilePath(eventName + ".py");
+    if (!QFileInfo::exists(scriptPath))
+        return;
 
-        QProcessEnvironment env = QProcessEnvironment::systemEnvironment();
-        env.insert("EAGLE_EVENT", eventName);
-        env.insert("EAGLE_BOOK_ID", QString::number(bookId));
-        env.insert("EAGLE_DB_PATH", AppConfig::dbPath());
-        env.insert("EAGLE_BOOK_TITLE", book.displayTitle());
-        env.insert("EAGLE_BOOK_AUTHOR", book.displayAuthor());
-        env.insert("EAGLE_BOOK_PATH", book.filePath);
+    QProcessEnvironment env = QProcessEnvironment::systemEnvironment();
+    env.insert("EAGLE_EVENT", eventName);
+    env.insert("EAGLE_BOOK_ID", QString::number(bookId));
+    env.insert("EAGLE_DB_PATH", AppConfig::dbPath());
+    env.insert("EAGLE_BOOK_TITLE", book.displayTitle());
+    env.insert("EAGLE_BOOK_AUTHOR", book.displayAuthor());
+    env.insert("EAGLE_BOOK_PATH", book.filePath);
 
-        auto* proc = new QProcess;
-        proc->setProgram(python);
-        proc->setArguments({scriptPath});
-        proc->setProcessEnvironment(env);
-        QObject::connect(proc, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished), proc, &QObject::deleteLater);
-        proc->start();
-    }
+    auto* proc = new QProcess;
+    proc->setProgram(python);
+    proc->setArguments({scriptPath});
+    proc->setProcessEnvironment(env);
+    QObject::connect(proc, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished), proc, &QObject::deleteLater);
+    proc->start();
 }
 
 const StarterPluginSeed kStarterPlugins[] = {
@@ -348,7 +341,7 @@ QJsonObject PluginManager::settings() const
 void PluginManager::saveSettings(const QJsonObject& s)
 {
     m_settings = s;
-    QSettings qs;
+    QSettings qs(AppConfig::settingsPath(), QSettings::IniFormat);
     qs.setValue("plugins/settings", QJsonDocument(s).toJson(QJsonDocument::Compact));
 }
 

@@ -45,7 +45,7 @@ void LanguageManager::initialize()
     loadBuiltInPacks();
     loadExternalPacks();
 
-    QSettings settings(QStringLiteral("Eagle Software"), QStringLiteral("Eagle Library"));
+    QSettings settings(AppConfig::settingsPath(), QSettings::IniFormat);
     const QString configuredCode = normalizeCode(settings.value(QStringLiteral("ui/language"), QStringLiteral("en")).toString());
     if (!applyLanguage(configuredCode))
         applyLanguage(QStringLiteral("en"));
@@ -169,11 +169,6 @@ bool LanguageManager::isRightToLeft() const
 QStringList LanguageManager::packDirectories() const
 {
     QStringList dirs;
-    dirs << QDir(AppConfig::appDir()).absoluteFilePath(QStringLiteral("translations"));
-
-    const QString settingsTranslations = QDir(AppConfig::settingsDir()).absoluteFilePath(QStringLiteral("translations"));
-    if (!dirs.contains(settingsTranslations))
-        dirs << settingsTranslations;
-
+    dirs << AppConfig::translationsDir();
     return dirs;
 }

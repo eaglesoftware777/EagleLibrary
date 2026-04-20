@@ -42,21 +42,21 @@ SplashScreen::SplashScreen(QWidget* parent)
     p.setRenderHint(QPainter::TextAntialiasing, true);
     setPixmap(pm);
 
-    QImage source(QStringLiteral(":/eagle_logo.png"));
-    if (source.isNull()) {
-        const QString appDir = QCoreApplication::applicationDirPath();
-        const QStringList fallbackPaths = {
-            QDir(appDir).absoluteFilePath("resources/eagle_logo.png"),
-            QDir(appDir).absoluteFilePath("../resources/eagle_logo.png"),
-            QDir(appDir).absoluteFilePath("../../resources/eagle_logo.png")
-        };
-        for (const QString& path : fallbackPaths) {
-            if (QFileInfo::exists(path)) {
-                source.load(path);
-                if (!source.isNull())
-                    break;
-            }
-        }
+    QImage source;
+    const QString appDir = QCoreApplication::applicationDirPath();
+    const QStringList logoCandidates = {
+        AppConfig::logoPngPath(),
+        QDir(appDir).absoluteFilePath("eagle_logo.png"),
+        QStringLiteral(":/eagle_logo.png"),
+        QDir(appDir).absoluteFilePath("../resources/eagle_logo.png"),
+        QDir(appDir).absoluteFilePath("../../resources/eagle_logo.png")
+    };
+    for (const QString& path : logoCandidates) {
+        if (!path.startsWith(QStringLiteral(":/")) && !QFileInfo::exists(path))
+            continue;
+        source.load(path);
+        if (!source.isNull())
+            break;
     }
 
     if (!source.isNull()) {

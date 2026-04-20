@@ -16,12 +16,15 @@ if not exist "%SRC%\EagleLibrary.exe" (
     exit /b 1
 )
 
-echo [1/5] Recreating portable folder...
-if exist "%DST%" rmdir /s /q "%DST%"
-mkdir "%DST%"
-mkdir "%DST%\data"
-mkdir "%DST%\settings"
-mkdir "%DST%\translations"
+echo [1/5] Preparing portable folder without touching local data...
+if not exist "%DST%" mkdir "%DST%"
+if not exist "%DST%\data" mkdir "%DST%\data"
+if not exist "%DST%\translations" mkdir "%DST%\translations"
+if not exist "%DST%\themes" mkdir "%DST%\themes"
+if not exist "%DST%\hooks" mkdir "%DST%\hooks"
+if not exist "%DST%\resources" mkdir "%DST%\resources"
+if not exist "%DST%\plugins" mkdir "%DST%\plugins"
+if not exist "%DST%\platforms" mkdir "%DST%\platforms"
 type nul > "%DST%\portable.flag"
 
 echo [2/5] Copying app payload...
@@ -50,6 +53,10 @@ if exist "%SRC%\styles\qmodernwindowsstyle.dll" (
     copy /y "%SRC%\styles\qmodernwindowsstyle.dll" "%DST%\styles\" >nul
 )
 if exist "%SRC%\plugins" xcopy "%SRC%\plugins" "%DST%\plugins" /E /I /Y >nul
+if exist "%SRC%\translations" xcopy "%SRC%\translations" "%DST%\translations" /E /I /Y >nul
+if exist "%SRC%\themes" xcopy "%SRC%\themes" "%DST%\themes" /E /I /Y >nul
+if exist "%SRC%\hooks" xcopy "%SRC%\hooks" "%DST%\hooks" /E /I /Y >nul
+if exist "%SRC%\resources" xcopy "%SRC%\resources" "%DST%\resources" /E /I /Y >nul
 if exist "%SRC%\iconengines\qsvgicon.dll" (
     mkdir "%DST%\iconengines"
     copy /y "%SRC%\iconengines\qsvgicon.dll" "%DST%\iconengines\" >nul
@@ -81,8 +88,13 @@ for %%F in (concrt140.dll vccorlib140.dll vcruntime140.dll vcruntime140_1.dll vc
 echo [5/5] Portable package refreshed:
 echo        %DST%
 echo.
-echo Portable mode is enabled by portable.flag and stores all data under:
+echo Portable mode is enabled by portable.flag and keeps runtime state in:
+echo   %DST%\EagleLibrary.ini
+echo   %DST%\library.db
 echo   %DST%\data
-echo   %DST%\settings
+echo   %DST%\translations
+echo   %DST%\themes
+echo   %DST%\plugins
+echo   %DST%\hooks
 
 exit /b 0

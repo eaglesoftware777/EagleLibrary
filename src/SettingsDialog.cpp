@@ -344,7 +344,7 @@ void SettingsDialog::removeFolder()
 
 void SettingsDialog::loadSettings()
 {
-    QSettings s("Eagle Software", "Eagle Library");
+    QSettings s(AppConfig::settingsPath(), QSettings::IniFormat);
     const QString currentLibrary = s.value("library/currentName", "Main Library").toString();
     const QJsonDocument profilesDoc = QJsonDocument::fromJson(s.value("library/profiles").toByteArray());
     if (profilesDoc.isObject())
@@ -412,7 +412,7 @@ void SettingsDialog::loadSettings()
 
 void SettingsDialog::saveSettings()
 {
-    QSettings s("Eagle Software", "Eagle Library");
+    QSettings s(AppConfig::settingsPath(), QSettings::IniFormat);
     syncCurrentProfileFromUi();
     s.setValue("library/currentName", currentLibraryName());
     s.setValue("library/profiles", QJsonDocument(m_libraryProfiles).toJson(QJsonDocument::Compact));
@@ -533,7 +533,7 @@ void SettingsDialog::retranslateUi()
     if (m_showSmartCategoriesCheck) m_showSmartCategoriesCheck->setText(trl("settings.showSmartCategories", "Show smart category shortcuts in the sidebar"));
     if (m_rememberWindowCheck) m_rememberWindowCheck->setText(trl("settings.rememberWindowState", "Remember window size and position"));
     if (m_openLanguageFolderBtn) m_openLanguageFolderBtn->setText(trl("settings.openPackFolder", "Open Language Packs Folder"));
-    if (m_languageHintLabel) m_languageHintLabel->setText(trl("settings.languageHint", "Language changes apply immediately. Add custom JSON language packs in the translations folder to extend Eagle Library."));
+    if (m_languageHintLabel) m_languageHintLabel->setText(trl("settings.languageHint", "Language changes apply immediately. Add custom JSON language packs in the application translations folder to extend Eagle Library."));
     if (m_layoutHintLabel) m_layoutHintLabel->setText(trl("settings.layoutHint", "Compact mode and the adaptive layout help Eagle stay usable on smaller laptops, tablets, and high-DPI displays."));
     if (m_aboutNameLabel) m_aboutNameLabel->setText(QString("<b style='font-size:18px;color:#c8aa50;'>%1</b>").arg(AppConfig::appName()));
     if (m_aboutVersionLabel) m_aboutVersionLabel->setText(trl("settings.about.version", "Version %1").arg(AppConfig::version()));
