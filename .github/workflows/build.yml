@@ -65,13 +65,20 @@ jobs:
             Copy-Item -Recurse -Force "plugins" "build/Release/plugins"
           }
 
-      # ── 8. NSIS installer (optional) ────────────────────────────
+      # ── 8. Install NSIS (required for CPack NSIS generator) ─────
+      - name: Install NSIS
+        if: ${{ github.event.inputs.build_installer == 'true' }}
+        run: choco install nsis --no-progress -y
+
+      # ── 9. NSIS installer (optional) ────────────────────────────
       - name: Create NSIS installer
         if: ${{ github.event.inputs.build_installer == 'true' }}
         working-directory: build
-        run: cpack -C Release -G NSIS
+        run: |
+          $env:PATH += ";C:\Program Files (x86)\NSIS"
+          cpack -C Release -G NSIS
 
-      # ── 9. Upload installer artifact ─────────────────────────────
+      # ── 10. Upload installer artifact ────────────────────────────
       - name: Upload installer
         if: ${{ github.event.inputs.build_installer == 'true' }}
         uses: actions/upload-artifact@v4
@@ -80,7 +87,7 @@ jobs:
           path: build/*.exe
           retention-days: 30
 
-      # ── 10. Upload portable build artifact ───────────────────────
+      # ── 11. Upload portable build artifact ───────────────────────
       - name: Upload portable build
         uses: actions/upload-artifact@v4
         with:
