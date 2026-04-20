@@ -47,10 +47,16 @@ jobs:
         run: cmake --build build --config Release --parallel
 
       # 6. Deploy Qt DLLs (windeployqt)
+      # CMakeLists.txt runs windeployqt as a POST_BUILD command so DLLs are
+      # already copied after the build step. This step runs it again as a
+      # safety net using the QT_DIR variable exported in step 3.
       - name: Deploy Qt DLLs
         shell: pwsh
         run: |
-          $qtBin = Join-Path "${{ env.QT_ROOT_DIR }}" "bin\windeployqt.exe"
+          $qtRoot = $env:QT_DIR
+          if (-not $qtRoot) { Write-Host "QT_DIR not set, skipping (CMake post-build already ran windeployqt)"; exit 0 }
+          $qtBin = Join-Path $qtRoot "bin\windeployqt.exe"
+          if (-not (Test-Path $qtBin)) { Write-Host "windeployqt not found at $qtBin, skipping"; exit 0 }
           & $qtBin --no-translations --compiler-runtime "build\Release\EagleLibrary.exe"
 
       # 7. Copy starter plugins (if present)
