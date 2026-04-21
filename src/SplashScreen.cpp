@@ -41,10 +41,18 @@ SplashScreen::SplashScreen(QWidget* parent)
     p.setRenderHint(QPainter::TextAntialiasing, true);
     setPixmap(pm);
 
-    // Use the vectorial eagle mark — renders cleanly at any size on the dark background
-    const QIcon markIcon(QStringLiteral(":/eagle_mark.svg"));
-    if (!markIcon.isNull())
-        m_logo = markIcon.pixmap(200, 200);
+    const QStringList logoCandidates = {
+        AppConfig::logoPngPath(),
+        QCoreApplication::applicationDirPath() + "/resources/eagle_logo.png",
+        QStringLiteral(":/eagle_logo.png")
+    };
+    for (const QString& candidate : logoCandidates) {
+        QPixmap logo(candidate);
+        if (!logo.isNull()) {
+            m_logo = logo;
+            break;
+        }
+    }
 }
 
 void SplashScreen::setProgress(int value, const QString& message)
@@ -98,12 +106,10 @@ void SplashScreen::drawBackground(QPainter* p)
     p->drawLine(40, 280, W - 40, 280);
 }
 
-// ── Eagle Mark — vectorial SVG logo ──────────────────────────────────────────
+// ── Company logo ─────────────────────────────────────────────────────────────
 void SplashScreen::drawLogo(QPainter* p)
 {
-    // Tight square target area; the SVG mark renders well on the dark background
-    const int markSize = 148;
-    const QRect target((W - markSize) / 2, 22, markSize, markSize);
+    const QRect target((W - 250) / 2, 24, 250, 132);
 
     // Radial gold glow behind the mark
     QRadialGradient glow(target.center(), 110);
@@ -111,15 +117,26 @@ void SplashScreen::drawLogo(QPainter* p)
     glow.setColorAt(1.0, Qt::transparent);
     p->fillRect(target.adjusted(-30, -20, 30, 20), glow);
 
-    // Dark navy panel with gold border — matches overall splash theme
     p->save();
     p->setPen(QPen(QColor(210, 170, 70, 200), 1.5));
-    p->setBrush(QColor(12, 22, 52, 220));
-    p->drawRoundedRect(target.adjusted(-8, -6, 8, 6), 20, 20);
+    p->setBrush(QColor(255, 255, 255, 238));
+    p->drawRoundedRect(target.adjusted(-10, -8, 10, 8), 20, 20);
     p->restore();
 
     if (!m_logo.isNull()) {
-        const QPixmap scaled = m_logo.scaled(target.size(), Qt::KeepAspectRatio, Qt::SmoothTransformation);
+        QImage image = m_logo.toImage().convertToFormat(QImage::Format_ARGB32);
+        QRect bounds;
+        for (int y = 0; y < image.height(); ++y) {
+            for (int x = 0; x < image.width(); ++x) {
+                const QColor c = image.pixelColor(x, y);
+                if (c.alpha() > 8 && !(c.red() > 245 && c.green() > 245 && c.blue() > 245)) {
+                    const QPoint pt(x, y);
+                    bounds = bounds.isNull() ? QRect(pt, QSize(1, 1)) : bounds.united(QRect(pt, QSize(1, 1)));
+                }
+            }
+        }
+        QPixmap source = bounds.isNull() ? m_logo : QPixmap::fromImage(image.copy(bounds.adjusted(-6, -6, 6, 6).intersected(image.rect())));
+        const QPixmap scaled = source.scaled(target.size(), Qt::KeepAspectRatio, Qt::SmoothTransformation);
         const QPoint topLeft((W - scaled.width()) / 2, target.y() + (target.height() - scaled.height()) / 2);
         p->drawPixmap(topLeft, scaled);
     }

@@ -352,6 +352,30 @@ At minimum, Eagle Library currently provides:
 
 ## Release Notes
 
+### 1.0
+
+**Eagle Library 1.0 — GitHub release package**
+
+This release prepares the first GitHub-ready distribution of Eagle Library with
+installer, portable package, offline help, and checksums published together.
+
+#### Included downloads
+
+- `EagleLibrary-Setup-x64.exe` — Windows installer for 64-bit systems
+- `EagleLibrary-Portable-x64.zip` — portable package that keeps data beside the executable
+- `EagleLibrary.chm` — offline help file
+- `SHA256SUMS.txt` — checksums for release verification
+
+#### Highlights
+
+- Reference-first library management: files remain in their original folders
+- Local database and settings stored beside the executable
+- Metadata enrichment, repair, and diagnosis tools
+- Grid/list views, command palette, themes, and multilingual UI
+- Plugin actions for book and document details
+- CHM documentation bundled with release artifacts
+- Improved company-logo branding in the toolbar and splash screen
+
 ### 1.1
 
 **Eagle Library 1.1.0 — first public release**

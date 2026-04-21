@@ -1289,10 +1289,10 @@ MainWindow::MainWindow(QWidget* parent)
 
     // Set application icon
     QIcon appIcon;
-    appIcon.addFile(AppConfig::markSvgPath());
     appIcon.addFile(AppConfig::logoPngPath());
-    appIcon.addFile(":/eagle_mark.svg");
     appIcon.addFile(":/eagle_logo.png");
+    appIcon.addFile(AppConfig::markSvgPath());
+    appIcon.addFile(":/eagle_mark.svg");
     if (!appIcon.isNull()) {
         setWindowIcon(appIcon);
         qApp->setWindowIcon(appIcon);
@@ -1838,7 +1838,11 @@ void MainWindow::setupToolBar()
     brandLayout->setContentsMargins(6, 0, 14, 0);
     brandLayout->setSpacing(7);
     auto* brandIcon = new QLabel(brand);
-    brandIcon->setPixmap(QIcon(":/eagle_mark.svg").pixmap(24, 24));
+    QPixmap brandLogo(AppConfig::logoPngPath());
+    if (brandLogo.isNull())
+        brandLogo.load(":/eagle_logo.png");
+    if (!brandLogo.isNull())
+        brandIcon->setPixmap(brandLogo.scaled(30, 24, Qt::KeepAspectRatio, Qt::SmoothTransformation));
     auto* brandText = new QLabel("Eagle Library", brand);
     brandText->setObjectName("toolbarBrandText");
     brandLayout->addWidget(brandIcon);

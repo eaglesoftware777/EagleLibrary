@@ -120,7 +120,27 @@ jobs:
             }
           }
 
-      # ── 10. Package portable ZIP ───────────────────────────────
+      # ── 10. Build CHM help ────────────────────────────────────
+      - name: Build CHM help
+        shell: pwsh
+        run: |
+          $hhcCandidates = @(
+            "${env:ProgramFiles(x86)}\HTML Help Workshop\hhc.exe",
+            "C:\Program Files (x86)\HTML Help Workshop\hhc.exe"
+          )
+          $hhc = $hhcCandidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+          if ($hhc) {
+            Push-Location "docs\help"
+            & $hhc "EagleLibrary.hhp"
+            Pop-Location
+          } else {
+            Write-Host "HTML Help Workshop not found on runner; using checked EagleLibrary.chm"
+          }
+          if (-not (Test-Path "docs\help\EagleLibrary.chm")) {
+            throw "EagleLibrary.chm is missing"
+          }
+
+      # ── 11. Package portable ZIP ───────────────────────────────
       - name: Package portable ZIP
         shell: pwsh
         run: |
@@ -165,12 +185,12 @@ jobs:
           Compress-Archive -Path "$portableRoot\*" -DestinationPath $zipPath -CompressionLevel Optimal
           Write-Host "Portable ZIP: $zipPath ($('{0:N2}' -f ((Get-Item $zipPath).Length / 1MB)) MB)"
 
-      # ── 11. Install NSIS ───────────────────────────────────────
+      # ── 12. Install NSIS ───────────────────────────────────────
       - name: Install NSIS
         if: ${{ github.event.inputs.build_installer == 'true' }}
         run: choco install nsis --no-progress -y
 
-      # ── 12. Build NSIS installer ───────────────────────────────
+      # ── 13. Build NSIS installer ───────────────────────────────
       - name: Create NSIS installer
         if: ${{ github.event.inputs.build_installer == 'true' }}
         shell: pwsh
@@ -184,7 +204,7 @@ jobs:
             Write-Host "Installer: $($exe.Name)"
           }
 
-      # ── 13. Generate SHA256 checksums ──────────────────────────
+      # ── 14. Generate SHA256 checksums ──────────────────────────
       - name: Generate SHA256 checksums
         shell: pwsh
         run: |
@@ -205,7 +225,7 @@ jobs:
           Write-Host "--- SHA256SUMS.txt ---"
           Get-Content "build\SHA256SUMS.txt"
 
-      # ── 14. Upload installer artifact ─────────────────────────
+      # ── 15. Upload installer artifact ─────────────────────────
       - name: Upload installer artifact
         if: ${{ github.event.inputs.build_installer == 'true' }}
         uses: actions/upload-artifact@v4
@@ -214,7 +234,7 @@ jobs:
           path: EagleLibrary-Setup-x64.exe
           retention-days: 30
 
-      # ── 15. Upload portable artifact ───────────────────────────
+      # ── 16. Upload portable artifact ───────────────────────────
       - name: Upload portable artifact
         uses: actions/upload-artifact@v4
         with:
@@ -222,7 +242,7 @@ jobs:
           path: build/EagleLibrary-Portable-x64.zip
           retention-days: 30
 
-      # ── 16. Upload checksums artifact ──────────────────────────
+      # ── 17. Upload checksums artifact ──────────────────────────
       - name: Upload checksums artifact
         uses: actions/upload-artifact@v4
         with:
@@ -230,7 +250,16 @@ jobs:
           path: build/SHA256SUMS.txt
           retention-days: 30
 
-      # ── 17. Publish release ────────────────────────────────────
+      # ── 18. Upload CHM help artifact ──────────────────────────
+      - name: Upload CHM help artifact
+        if: ${{ hashFiles('docs/help/EagleLibrary.chm') != '' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: EagleLibrary-CHM-Help
+          path: docs/help/EagleLibrary.chm
+          retention-days: 30
+
+      # ── 19. Publish release ────────────────────────────────────
       - name: Publish release
         if: ${{ github.event.inputs.publish_release == 'true' }}
         env:

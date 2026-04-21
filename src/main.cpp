@@ -306,13 +306,13 @@ int main(int argc, char* argv[])
             return cliResult;
     }
 
-    QIcon appIcon(AppConfig::markSvgPath());
-    if (appIcon.isNull())
-        appIcon = QIcon(":/eagle_mark.svg");
-    if (appIcon.isNull())
-        appIcon = QIcon(AppConfig::logoPngPath());
+    QIcon appIcon(AppConfig::logoPngPath());
     if (appIcon.isNull())
         appIcon = QIcon(":/eagle_logo.png");
+    if (appIcon.isNull())
+        appIcon = QIcon(AppConfig::markSvgPath());
+    if (appIcon.isNull())
+        appIcon = QIcon(":/eagle_mark.svg");
     if (!appIcon.isNull())
         app.setWindowIcon(appIcon);
 
