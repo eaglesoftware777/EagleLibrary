@@ -132,7 +132,13 @@ jobs:
           if ($hhc) {
             Push-Location "docs\help"
             & $hhc "EagleLibrary.hhp"
+            $hhcExit = $LASTEXITCODE
             Pop-Location
+            if ($hhcExit -ne 0 -and (Test-Path "docs\help\EagleLibrary.chm")) {
+              Write-Host "HTML Help Compiler returned $hhcExit after creating EagleLibrary.chm; continuing."
+            } elseif ($hhcExit -ne 0) {
+              throw "HTML Help Compiler failed with exit code $hhcExit"
+            }
           } else {
             Write-Host "HTML Help Workshop not found on runner; using checked EagleLibrary.chm"
           }
