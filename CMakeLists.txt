@@ -227,7 +227,6 @@ if(BUILD_TESTING)
 endif()
 
 # ── CPack / NSIS installer ───────────────────────────────────────────────────
-include(CPack)
 set(CPACK_GENERATOR "NSIS")
 set(CPACK_PACKAGE_NAME "EagleLibrary")
 set(CPACK_PACKAGE_VENDOR "Eagle Software")
@@ -250,3 +249,4 @@ set(CPACK_NSIS_DELETE_ICONS_EXTRA
     "Delete '$SMPROGRAMS\\\\Eagle Library\\\\Eagle Library.lnk'"
     "Delete '$DESKTOP\\\\Eagle Library.lnk'"
 )
+include(CPack)

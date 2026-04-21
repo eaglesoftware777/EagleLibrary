@@ -41,6 +41,10 @@
         "value": "x64",
         "strategy": "set"
       },
+      "toolset": {
+        "value": "v143",
+        "strategy": "set"
+      },
       "binaryDir": "${sourceDir}/build",
       "cacheVariables": {
         "CMAKE_PREFIX_PATH": "$env{QT_DIR}"

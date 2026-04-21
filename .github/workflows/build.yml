@@ -49,7 +49,7 @@ jobs:
 
       # ── 2. Install Qt 6.7 ──────────────────────────────────────
       - name: Install Qt 6.7
-        uses: jurplel/install-qt-action@v3
+        uses: jurplel/install-qt-action@v4
         with:
           version: '6.7.3'
           host: 'windows'
@@ -60,7 +60,13 @@ jobs:
 
       # ── 3. Expose QT_DIR for the ci-release CMake preset ───────
       - name: Set QT_DIR
-        run: echo "QT_DIR=${{ env.QT_ROOT_DIR }}" >> $env:GITHUB_ENV
+        shell: pwsh
+        run: |
+          if (-not $env:QT_ROOT_DIR) {
+            throw "QT_ROOT_DIR was not set by install-qt-action"
+          }
+          "QT_DIR=$env:QT_ROOT_DIR" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "CMAKE_PREFIX_PATH=$env:QT_ROOT_DIR" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
       # ── 4. Clean any stale build directory ─────────────────────
       - name: Clean build directory
