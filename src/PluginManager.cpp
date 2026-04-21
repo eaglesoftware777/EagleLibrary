@@ -111,7 +111,7 @@ const StarterPluginSeed kStarterPlugins[] = {
     { "metadata_assistant", R"json({
   "id": "com.eaglesoftware.metadata_assistant",
   "name": "Metadata Assistant",
-  "version": "1.1.0",
+  "version": "1.0.0",
   "author": "Eagle Software",
   "description": "Quick metadata and catalog lookups for the current item.",
   "bookActions": [
@@ -123,7 +123,7 @@ const StarterPluginSeed kStarterPlugins[] = {
     { "research_toolbox", R"json({
   "id": "com.eaglesoftware.research_toolbox",
   "name": "Research Toolbox",
-  "version": "1.1.0",
+  "version": "1.0.0",
   "author": "Eagle Software",
   "description": "Reference and academic research lookups for books and documents.",
   "bookActions": [

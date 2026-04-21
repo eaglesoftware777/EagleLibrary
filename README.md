@@ -130,7 +130,7 @@ Current format support includes:
 Typical generated outputs:
 
 - App: `build-release/Release/EagleLibrary.exe`
-- Installer: `installer/EagleLibrary_Setup_2.1.0.exe`
+- Installer: `installer/EagleLibrary_Setup_1.0.0.exe`
 - Portable folder: `\EagleLibrary_Portable`
 - GitHub-style release assets:
   - `release/EagleLibrary-Setup-x64.exe`
@@ -278,7 +278,7 @@ makensis installer\eagle_library.nsi
 
 Or open the `.nsi` file in NSIS and click **Compile**.
 
-Output: `installer\EagleLibrary_Setup_2.1.0.exe`
+Output: `installer\EagleLibrary_Setup_1.0.0.exe`
 
 ---
 

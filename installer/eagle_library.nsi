@@ -16,18 +16,18 @@
 
 ; ── General ──────────────────────────────────────────────────
 Name              "Eagle Library"
-OutFile           "EagleLibrary_Setup_2.1.0.exe"
+OutFile           "EagleLibrary_Setup_1.0.0.exe"
 InstallDir        "$PROGRAMFILES64\Eagle Library"
 InstallDirRegKey  HKLM "Software\Eagle Software\Eagle Library" "InstallDir"
 RequestExecutionLevel admin
 
 ; ── Version info ─────────────────────────────────────────────
-VIProductVersion  "2.1.0.0"
+VIProductVersion  "1.0.0.0"
 VIAddVersionKey   "ProductName"     "Eagle Library"
 VIAddVersionKey   "CompanyName"     "Eagle Software"
 VIAddVersionKey   "LegalCopyright"  "Copyright (C) 2026 Eagle Software"
-VIAddVersionKey   "FileDescription" "Eagle Library 2.1 Installer"
-VIAddVersionKey   "FileVersion"     "2.1.0.0"
+VIAddVersionKey   "FileDescription" "Eagle Library 1.0 Installer"
+VIAddVersionKey   "FileVersion"     "1.0.0.0"
 
 ; ── MUI Settings ─────────────────────────────────────────────
 !define MUI_ABORTWARNING
@@ -35,7 +35,7 @@ VIAddVersionKey   "FileVersion"     "2.1.0.0"
 !define MUI_UNICON            "..\resources\eagle.ico"
 !define MUI_HEADERIMAGE
 
-!define MUI_WELCOMEPAGE_TITLE   "Welcome to Eagle Library 2.1 Setup"
+!define MUI_WELCOMEPAGE_TITLE   "Welcome to Eagle Library 1.0 Setup"
 !define MUI_WELCOMEPAGE_TEXT    "Eagle Library is a professional eBook library manager by Eagle Software.$\r$\n$\r$\nManage thousands of books across any folder structure, fetch metadata from the internet, and build your personal reading collection.$\r$\n$\r$\nClick Next to continue."
 
 !define MUI_FINISHPAGE_RUN         "$INSTDIR\EagleLibrary.exe"
@@ -152,7 +152,7 @@ Section "Eagle Library (required)" SecMain
 
     ; ── Registry ─────────────────────────────────────────────
     WriteRegStr HKLM "Software\Eagle Software\Eagle Library" "InstallDir" "$INSTDIR"
-    WriteRegStr HKLM "Software\Eagle Software\Eagle Library" "Version"    "2.1.0"
+    WriteRegStr HKLM "Software\Eagle Software\Eagle Library" "Version"    "1.0.0"
 
     ; ── Uninstall info (Add/Remove Programs) ─────────────────
     WriteRegStr HKLM \
@@ -169,7 +169,7 @@ Section "Eagle Library (required)" SecMain
         "Publisher"            "Eagle Software"
     WriteRegStr HKLM \
         "Software\Microsoft\Windows\CurrentVersion\Uninstall\EagleLibrary" \
-        "DisplayVersion"       "2.1.0"
+        "DisplayVersion"       "1.0.0"
     WriteRegStr HKLM \
         "Software\Microsoft\Windows\CurrentVersion\Uninstall\EagleLibrary" \
         "URLInfoAbout"         "https://eaglesoftware.biz/"

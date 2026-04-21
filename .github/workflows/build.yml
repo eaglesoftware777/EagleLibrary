@@ -251,7 +251,7 @@ jobs:
           & makensis.exe "eagle_library.nsi"
           if ($LASTEXITCODE -ne 0) { throw "NSIS build failed with exit code $LASTEXITCODE" }
           Pop-Location
-          Copy-Item -Force "installer\EagleLibrary_Setup_2.1.0.exe" "EagleLibrary-Setup-x64.exe"
+          Copy-Item -Force "installer\EagleLibrary_Setup_1.0.0.exe" "EagleLibrary-Setup-x64.exe"
           Write-Host "Installer: EagleLibrary-Setup-x64.exe"
 
       # ── 16. Sign installer when certificate secrets exist ──────
