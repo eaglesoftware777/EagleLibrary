@@ -20,6 +20,7 @@
 #include <QUrl>
 #include <QProcess>
 #include <QStandardPaths>
+#include <QSet>
 
 PluginManager& PluginManager::instance()
 {
@@ -56,6 +57,10 @@ QString fillBookTemplate(QString templ, const Book& book)
 
 void runPythonHook(const QString& eventName, qint64 bookId)
 {
+    const QSettings settings(AppConfig::settingsPath(), QSettings::IniFormat);
+    if (!settings.value(QStringLiteral("plugins/enablePythonHooks"), false).toBool())
+        return;
+
     const QString python = QStandardPaths::findExecutable("python").isEmpty()
         ? QStandardPaths::findExecutable("python3")
         : QStandardPaths::findExecutable("python");
@@ -81,6 +86,25 @@ void runPythonHook(const QString& eventName, qint64 bookId)
     proc->setProcessEnvironment(env);
     QObject::connect(proc, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished), proc, &QObject::deleteLater);
     proc->start();
+}
+
+bool isAllowedPluginUrl(const QUrl& url)
+{
+    if (!url.isValid() || url.scheme() != QStringLiteral("https"))
+        return false;
+
+    static const QSet<QString> allowedHosts = {
+        QStringLiteral("www.google.com"),
+        QStringLiteral("scholar.google.com"),
+        QStringLiteral("books.google.com"),
+        QStringLiteral("openlibrary.org"),
+        QStringLiteral("catalog.loc.gov"),
+        QStringLiteral("www.worldcat.org"),
+        QStringLiteral("en.wikipedia.org"),
+        QStringLiteral("archive.org"),
+        QStringLiteral("www.semanticscholar.org")
+    };
+    return allowedHosts.contains(url.host().toLower());
 }
 
 const StarterPluginSeed kStarterPlugins[] = {
@@ -313,8 +337,12 @@ QList<QAction*> PluginManager::contextActionsForBook(qint64 id)
             action->setToolTip(actionObj.value("description").toString(lp.info.description));
             QObject::connect(action, &QAction::triggered, this, [this, urlTemplate, book, lp, title]() {
                 const QUrl url(fillBookTemplate(urlTemplate, book));
-                QDesktopServices::openUrl(url);
-                emit statusMessage(QString("%1 -> %2").arg(lp.info.name, title));
+                if (isAllowedPluginUrl(url)) {
+                    QDesktopServices::openUrl(url);
+                    emit statusMessage(QString("%1 -> %2").arg(lp.info.name, title));
+                } else {
+                    emit statusMessage(QString("Blocked unsafe plugin URL from %1.").arg(lp.info.name));
+                }
             });
             actions << action;
         }

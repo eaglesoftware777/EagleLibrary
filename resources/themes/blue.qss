@@ -589,6 +589,12 @@ QLabel#workspaceTitle {
     padding: 6px 0px;
 }
 
+QLabel#workspaceLogo {
+    background: rgba(255, 255, 255, 0.94);
+    border: 1px solid rgba(79, 156, 249, 0.55);
+    border-radius: 12px;
+}
+
 QLabel#workspaceMeta {
     font-size: 12px;
     color: #8b95b3;

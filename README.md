@@ -375,6 +375,21 @@ installer, portable package, offline help, and checksums published together.
 - Plugin actions for book and document details
 - CHM documentation bundled with release artifacts
 - Improved company-logo branding in the toolbar and splash screen
+- Improved scan/status progress indicators without modal background dialogs
+- Diagnostic logs are disabled by default and can be enabled from Settings
+- Plugin URL actions are restricted to trusted HTTPS destinations
+- Python hook execution is disabled unless explicitly enabled
+- Release workflow supports Authenticode signing when certificate secrets are configured
+- Release workflow runs unit tests before packaging
+
+#### Windows publisher note
+
+Windows SmartScreen and UAC identify unsigned executables as coming from an unknown
+publisher. The release workflow can sign `EagleLibrary.exe` and the installer when
+the repository has a valid Authenticode certificate configured through
+`WINDOWS_CODESIGN_CERT_BASE64` and `WINDOWS_CODESIGN_CERT_PASSWORD`. Without a
+code-signing certificate, no source-code change can make Windows show a verified
+publisher.
 
 
 #### New features

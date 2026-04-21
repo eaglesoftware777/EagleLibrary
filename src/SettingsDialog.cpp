@@ -170,6 +170,7 @@ void SettingsDialog::setupUi()
     m_showSidebarCheck = new QCheckBox;
     m_showSmartCategoriesCheck = new QCheckBox;
     m_rememberWindowCheck = new QCheckBox;
+    m_diagnosticLogsCheck = new QCheckBox;
     m_languageCombo = new QComboBox;
     m_openLanguageFolderBtn = new QPushButton;
     auto* languageRow = new QWidget;
@@ -184,6 +185,7 @@ void SettingsDialog::setupUi()
     interfaceForm->addRow("", m_showSidebarCheck);
     interfaceForm->addRow("", m_showSmartCategoriesCheck);
     interfaceForm->addRow("", m_rememberWindowCheck);
+    interfaceForm->addRow("", m_diagnosticLogsCheck);
     interfaceForm->addRow(QStringLiteral("__language__"), languageRow);
     optLay->addWidget(m_interfaceBox);
 
@@ -398,6 +400,7 @@ void SettingsDialog::loadSettings()
     m_showSidebarCheck->setChecked(s.value("view/showSidebar", true).toBool());
     m_showSmartCategoriesCheck->setChecked(s.value("view/showSmartCategories", false).toBool());
     m_rememberWindowCheck->setChecked(s.value("view/rememberWindowState", true).toBool());
+    m_diagnosticLogsCheck->setChecked(s.value("diagnostics/loggingEnabled", false).toBool());
 
     const QString configuredLanguage = s.value("ui/language", LanguageManager::instance().currentLanguage()).toString();
     {
@@ -428,6 +431,7 @@ void SettingsDialog::saveSettings()
     s.setValue("view/showSidebar", m_showSidebarCheck->isChecked());
     s.setValue("view/showSmartCategories", m_showSmartCategoriesCheck->isChecked());
     s.setValue("view/rememberWindowState", m_rememberWindowCheck->isChecked());
+    s.setValue("diagnostics/loggingEnabled", m_diagnosticLogsCheck->isChecked());
     s.setValue("ui/language", selectedLanguage());
     m_initialLanguageCode = selectedLanguage();
 }
@@ -462,6 +466,7 @@ bool SettingsDialog::compactMode()       const { return m_compactModeCheck->isCh
 bool SettingsDialog::showSidebar()       const { return m_showSidebarCheck->isChecked(); }
 bool SettingsDialog::showSmartCategories() const { return m_showSmartCategoriesCheck->isChecked(); }
 bool SettingsDialog::rememberWindowState() const { return m_rememberWindowCheck->isChecked(); }
+bool SettingsDialog::diagnosticLogsEnabled() const { return m_diagnosticLogsCheck->isChecked(); }
 QString SettingsDialog::selectedLanguage() const
 {
     return m_languageCombo ? m_languageCombo->currentData().toString() : QStringLiteral("en");
@@ -532,6 +537,10 @@ void SettingsDialog::retranslateUi()
     if (m_showSidebarCheck) m_showSidebarCheck->setText(trl("settings.showSidebar", "Show the browse sidebar on wide screens"));
     if (m_showSmartCategoriesCheck) m_showSmartCategoriesCheck->setText(trl("settings.showSmartCategories", "Show smart category shortcuts in the sidebar"));
     if (m_rememberWindowCheck) m_rememberWindowCheck->setText(trl("settings.rememberWindowState", "Remember window size and position"));
+    if (m_diagnosticLogsCheck) {
+        m_diagnosticLogsCheck->setText(trl("settings.diagnosticLogs", "Enable diagnostic logs"));
+        m_diagnosticLogsCheck->setToolTip(trl("settings.diagnosticLogsTip", "For support and troubleshooting. Logs are written locally under the application data folder and are disabled by default."));
+    }
     if (m_openLanguageFolderBtn) m_openLanguageFolderBtn->setText(trl("settings.openPackFolder", "Open Language Packs Folder"));
     if (m_languageHintLabel) m_languageHintLabel->setText(trl("settings.languageHint", "Language changes apply immediately. Add custom JSON language packs in the application translations folder to extend Eagle Library."));
     if (m_layoutHintLabel) m_layoutHintLabel->setText(trl("settings.layoutHint", "Compact mode and the adaptive layout help Eagle stay usable on smaller laptops, tablets, and high-DPI displays."));

@@ -19,6 +19,9 @@
 #include <QEventLoop>
 #include <QFileInfo>
 #include <QFile>
+#include <QMutex>
+#include <QMutexLocker>
+#include <QDateTime>
 
 #include "SplashScreen.h"
 #include "MainWindow.h"
@@ -28,6 +31,55 @@
 #include "LibraryScanner.h"
 
 namespace {
+
+QMutex g_logMutex;
+QFile* g_logFile = nullptr;
+
+void releaseMessageHandler(QtMsgType type, const QMessageLogContext& context, const QString& message)
+{
+    Q_UNUSED(context)
+
+    if (!g_logFile) {
+        if (type == QtFatalMsg)
+            abort();
+        return;
+    }
+
+    QMutexLocker locker(&g_logMutex);
+    if (!g_logFile->isOpen())
+        return;
+
+    const char* level = "INFO";
+    switch (type) {
+    case QtDebugMsg: level = "DEBUG"; break;
+    case QtInfoMsg: level = "INFO"; break;
+    case QtWarningMsg: level = "WARN"; break;
+    case QtCriticalMsg: level = "ERROR"; break;
+    case QtFatalMsg: level = "FATAL"; break;
+    }
+
+    QTextStream out(g_logFile);
+    out << QDateTime::currentDateTimeUtc().toString(Qt::ISODateWithMs)
+        << " [" << level << "] " << message << '\n';
+    out.flush();
+
+    if (type == QtFatalMsg)
+        abort();
+}
+
+void configureDiagnostics()
+{
+    QSettings settings(AppConfig::settingsPath(), QSettings::IniFormat);
+    if (settings.value("diagnostics/loggingEnabled", false).toBool()) {
+        QDir().mkpath(AppConfig::dataDir() + "/logs");
+        g_logFile = new QFile(AppConfig::dataDir() + "/logs/eagle-library.log");
+        if (!g_logFile->open(QIODevice::WriteOnly | QIODevice::Append | QIODevice::Text)) {
+            delete g_logFile;
+            g_logFile = nullptr;
+        }
+    }
+    qInstallMessageHandler(releaseMessageHandler);
+}
 
 bool copyDirectoryTree(const QString& sourcePath, const QString& targetPath)
 {
@@ -294,6 +346,7 @@ int main(int argc, char* argv[])
     configureSettingsStorage();
     migrateLegacyStorage();
     seedBundledRuntimeAssets();
+    configureDiagnostics();
     LanguageManager::instance().initialize();
     app.setLayoutDirection(LanguageManager::instance().isRightToLeft() ? Qt::RightToLeft : Qt::LeftToRight);
     QObject::connect(&LanguageManager::instance(), &LanguageManager::languageChanged, &app, [&app]() {

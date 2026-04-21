@@ -41,6 +41,9 @@ jobs:
   build-windows:
     name: Windows x64 — Qt6 / MSVC 2022
     runs-on: windows-latest
+    env:
+      WINDOWS_CODESIGN_CERT_BASE64: ${{ secrets.WINDOWS_CODESIGN_CERT_BASE64 }}
+      WINDOWS_CODESIGN_CERT_PASSWORD: ${{ secrets.WINDOWS_CODESIGN_CERT_PASSWORD }}
 
     steps:
       # ── 1. Checkout ────────────────────────────────────────────
@@ -85,7 +88,14 @@ jobs:
       - name: Build
         run: cmake --build --preset ci-release --parallel
 
-      # ── 7. Deploy Qt DLLs (windeployqt safety net) ─────────────
+      # ── 7. Run unit tests ──────────────────────────────────────
+      - name: Run unit tests
+        shell: pwsh
+        run: |
+          $env:PATH = "$env:QT_DIR\bin;build\Release;$env:PATH"
+          ctest --test-dir build -C Release --output-on-failure
+
+      # ── 8. Deploy Qt DLLs (windeployqt safety net) ─────────────
       # CMakeLists.txt already runs windeployqt as a POST_BUILD command.
       # This step re-runs it as a safety net in case the path differed.
       - name: Deploy Qt DLLs
@@ -98,7 +108,7 @@ jobs:
           }
           & $qtBin --no-translations --compiler-runtime "build\Release\EagleLibrary.exe"
 
-      # ── 8. Copy plugins ────────────────────────────────────────
+      # ── 9. Copy plugins ────────────────────────────────────────
       - name: Copy plugins
         shell: pwsh
         run: |
@@ -106,7 +116,7 @@ jobs:
             Copy-Item -Recurse -Force "plugins" "build\Release\plugins"
           }
 
-      # ── 9. Copy runtime assets ─────────────────────────────────
+      # ── 10. Copy runtime assets ─────────────────────────────────
       - name: Copy runtime assets
         shell: pwsh
         run: |
@@ -120,7 +130,25 @@ jobs:
             }
           }
 
-      # ── 10. Build CHM help ────────────────────────────────────
+      # ── 11. Sign application executable when certificate secrets exist ─────
+      - name: Sign application executable
+        if: ${{ env.WINDOWS_CODESIGN_CERT_BASE64 != '' && env.WINDOWS_CODESIGN_CERT_PASSWORD != '' }}
+        shell: pwsh
+        env:
+          WINDOWS_CODESIGN_CERT_BASE64: ${{ secrets.WINDOWS_CODESIGN_CERT_BASE64 }}
+          WINDOWS_CODESIGN_CERT_PASSWORD: ${{ secrets.WINDOWS_CODESIGN_CERT_PASSWORD }}
+        run: |
+          $certPath = Join-Path $env:RUNNER_TEMP "eagle-software-codesign.pfx"
+          [IO.File]::WriteAllBytes($certPath, [Convert]::FromBase64String($env:WINDOWS_CODESIGN_CERT_BASE64))
+          $signtool = Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\bin" -Recurse -Filter signtool.exe |
+            Where-Object { $_.FullName -match "\\x64\\signtool.exe$" } |
+            Sort-Object FullName -Descending |
+            Select-Object -First 1
+          if (-not $signtool) { throw "signtool.exe not found" }
+          & $signtool.FullName sign /fd SHA256 /tr http://timestamp.digicert.com /td SHA256 /f $certPath /p $env:WINDOWS_CODESIGN_CERT_PASSWORD "build\Release\EagleLibrary.exe"
+          & $signtool.FullName verify /pa "build\Release\EagleLibrary.exe"
+
+      # ── 12. Build CHM help ────────────────────────────────────
       - name: Build CHM help
         shell: pwsh
         run: |
@@ -148,7 +176,7 @@ jobs:
           $global:LASTEXITCODE = 0
           exit 0
 
-      # ── 11. Package portable ZIP ───────────────────────────────
+      # ── 13. Package portable ZIP ───────────────────────────────
       - name: Package portable ZIP
         shell: pwsh
         run: |
@@ -193,12 +221,12 @@ jobs:
           Compress-Archive -Path "$portableRoot\*" -DestinationPath $zipPath -CompressionLevel Optimal
           Write-Host "Portable ZIP: $zipPath ($('{0:N2}' -f ((Get-Item $zipPath).Length / 1MB)) MB)"
 
-      # ── 12. Install NSIS ───────────────────────────────────────
+      # ── 14. Install NSIS ───────────────────────────────────────
       - name: Install NSIS
         if: ${{ github.event.inputs.build_installer == 'true' }}
         run: choco install nsis --no-progress -y
 
-      # ── 13. Build NSIS installer ───────────────────────────────
+      # ── 15. Build NSIS installer ───────────────────────────────
       - name: Create NSIS installer
         if: ${{ github.event.inputs.build_installer == 'true' }}
         shell: pwsh
@@ -212,7 +240,27 @@ jobs:
             Write-Host "Installer: $($exe.Name)"
           }
 
-      # ── 14. Generate SHA256 checksums ──────────────────────────
+      # ── 16. Sign installer when certificate secrets exist ──────
+      - name: Sign installer
+        if: ${{ github.event.inputs.build_installer == 'true' && env.WINDOWS_CODESIGN_CERT_BASE64 != '' && env.WINDOWS_CODESIGN_CERT_PASSWORD != '' }}
+        shell: pwsh
+        env:
+          WINDOWS_CODESIGN_CERT_BASE64: ${{ secrets.WINDOWS_CODESIGN_CERT_BASE64 }}
+          WINDOWS_CODESIGN_CERT_PASSWORD: ${{ secrets.WINDOWS_CODESIGN_CERT_PASSWORD }}
+        run: |
+          $certPath = Join-Path $env:RUNNER_TEMP "eagle-software-codesign.pfx"
+          if (-not (Test-Path $certPath)) {
+            [IO.File]::WriteAllBytes($certPath, [Convert]::FromBase64String($env:WINDOWS_CODESIGN_CERT_BASE64))
+          }
+          $signtool = Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\bin" -Recurse -Filter signtool.exe |
+            Where-Object { $_.FullName -match "\\x64\\signtool.exe$" } |
+            Sort-Object FullName -Descending |
+            Select-Object -First 1
+          if (-not $signtool) { throw "signtool.exe not found" }
+          & $signtool.FullName sign /fd SHA256 /tr http://timestamp.digicert.com /td SHA256 /f $certPath /p $env:WINDOWS_CODESIGN_CERT_PASSWORD "EagleLibrary-Setup-x64.exe"
+          & $signtool.FullName verify /pa "EagleLibrary-Setup-x64.exe"
+
+      # ── 17. Generate SHA256 checksums ──────────────────────────
       - name: Generate SHA256 checksums
         shell: pwsh
         run: |
@@ -233,7 +281,7 @@ jobs:
           Write-Host "--- SHA256SUMS.txt ---"
           Get-Content "build\SHA256SUMS.txt"
 
-      # ── 15. Upload installer artifact ─────────────────────────
+      # ── 18. Upload installer artifact ─────────────────────────
       - name: Upload installer artifact
         if: ${{ github.event.inputs.build_installer == 'true' }}
         uses: actions/upload-artifact@v4
@@ -242,7 +290,7 @@ jobs:
           path: EagleLibrary-Setup-x64.exe
           retention-days: 30
 
-      # ── 16. Upload portable artifact ───────────────────────────
+      # ── 19. Upload portable artifact ───────────────────────────
       - name: Upload portable artifact
         uses: actions/upload-artifact@v4
         with:
@@ -250,7 +298,7 @@ jobs:
           path: build/EagleLibrary-Portable-x64.zip
           retention-days: 30
 
-      # ── 17. Upload checksums artifact ──────────────────────────
+      # ── 20. Upload checksums artifact ──────────────────────────
       - name: Upload checksums artifact
         uses: actions/upload-artifact@v4
         with:
@@ -258,7 +306,7 @@ jobs:
           path: build/SHA256SUMS.txt
           retention-days: 30
 
-      # ── 18. Upload CHM help artifact ──────────────────────────
+      # ── 21. Upload CHM help artifact ──────────────────────────
       - name: Upload CHM help artifact
         if: ${{ hashFiles('docs/help/EagleLibrary.chm') != '' }}
         uses: actions/upload-artifact@v4
@@ -267,7 +315,7 @@ jobs:
           path: docs/help/EagleLibrary.chm
           retention-days: 30
 
-      # ── 19. Publish release ────────────────────────────────────
+      # ── 22. Publish release ────────────────────────────────────
       - name: Publish release
         if: ${{ github.event.inputs.publish_release == 'true' }}
         env:

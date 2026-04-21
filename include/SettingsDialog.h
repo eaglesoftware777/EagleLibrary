@@ -38,6 +38,7 @@ public:
     bool        showSidebar() const;
     bool        showSmartCategories() const;
     bool        rememberWindowState() const;
+    bool        diagnosticLogsEnabled() const;
     QString     selectedLanguage() const;
 
 private:
@@ -64,6 +65,7 @@ private:
     QCheckBox*   m_showSidebarCheck;
     QCheckBox*   m_showSmartCategoriesCheck;
     QCheckBox*   m_rememberWindowCheck;
+    QCheckBox*   m_diagnosticLogsCheck;
     QComboBox*   m_languageCombo;
     QPushButton* m_openLanguageFolderBtn;
     QLabel*      m_languageHintLabel;

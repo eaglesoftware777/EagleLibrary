@@ -2142,6 +2142,17 @@ void MainWindow::setupViews()
     auto* headerTopLayout = new QHBoxLayout;
     headerTopLayout->setSpacing(14);
 
+    auto* headerLogo = new QLabel(m_workspaceHeader);
+    headerLogo->setObjectName("workspaceLogo");
+    QPixmap headerLogoPixmap(AppConfig::logoPngPath());
+    if (headerLogoPixmap.isNull())
+        headerLogoPixmap.load(":/eagle_logo.png");
+    if (!headerLogoPixmap.isNull())
+        headerLogo->setPixmap(headerLogoPixmap.scaled(54, 42, Qt::KeepAspectRatio, Qt::SmoothTransformation));
+    headerLogo->setFixedSize(62, 46);
+    headerLogo->setAlignment(Qt::AlignCenter);
+    headerTopLayout->addWidget(headerLogo);
+
     auto* headingLayout = new QVBoxLayout;
     headingLayout->setSpacing(4);
     m_workspaceTitleLabel = new QLabel(trl("workspace.titleDefault", "Library Workspace"), m_workspaceHeader);
@@ -2295,13 +2306,14 @@ void MainWindow::setupStatusBar()
     m_scanLabel->setMinimumWidth(180);
     statusBar()->addWidget(m_scanLabel, 1);
 
-    // Progress bar (compact, only visible during tasks)
+    // Status progress stays in the main thread and avoids modal progress widgets.
     m_progressBar = new QProgressBar;
     m_progressBar->setObjectName("statusProgress");
     m_progressBar->setRange(0, 100);
-    m_progressBar->setFixedWidth(180);
-    m_progressBar->setFixedHeight(5);
-    m_progressBar->setTextVisible(false);
+    m_progressBar->setFixedWidth(260);
+    m_progressBar->setFixedHeight(14);
+    m_progressBar->setTextVisible(true);
+    m_progressBar->setFormat("%p%");
     m_progressBar->setVisible(false);
     statusBar()->addWidget(m_progressBar);
 
@@ -2401,20 +2413,22 @@ void MainWindow::showTaskProgress(const QString& title, const QString& status, i
     if (m_isClosing || !m_statusLabel || !m_scanLabel || !m_progressBar)
         return;
 
-    const QString detailLine = detail.trimmed().isEmpty()
-        ? QString()
-        : QString("\n%1").arg(detail.left(120));
-
-    m_statusLabel->setText(QString("%1  %2").arg(title, status));
-    m_scanLabel->setText(detail.left(50));
+    const QString safeDetail = detail.simplified().left(80);
+    QString statusText = QString("%1  %2").arg(title, status);
     if (total > 0) {
+        const int percent = qBound(0, (current * 100) / qMax(1, total), 100);
+        statusText += QString("  %1%").arg(percent);
         m_progressBar->setRange(0, 100);
         m_progressBar->setVisible(true);
-        m_progressBar->setValue((current * 100) / qMax(1, total));
+        m_progressBar->setFormat(QString("%1%").arg(percent));
+        m_progressBar->setValue(percent);
     } else {
         m_progressBar->setVisible(true);
         m_progressBar->setRange(0, 0);
+        m_progressBar->setFormat(trl("status.working", "Working..."));
     }
+    m_statusLabel->setText(statusText);
+    m_scanLabel->setText(safeDetail.isEmpty() ? trl("status.processing", "Processing") : safeDetail);
 }
 
 void MainWindow::hideTaskProgress(const QString& finalStatus)
@@ -4461,6 +4475,11 @@ QLabel#workspaceTitle {
     font-size: 23px;
     font-weight: 800;
     letter-spacing: 0.5px;
+}
+QLabel#workspaceLogo {
+    background: rgba(255, 255, 255, 0.92);
+    border: 1px solid rgba(240, 216, 142, 0.35);
+    border-radius: 12px;
 }
 QLabel#workspaceMeta {
     color: #b6cbe0;

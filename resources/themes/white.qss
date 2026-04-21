@@ -518,6 +518,12 @@ QLabel#workspaceTitle {
     padding: 6px 0;
 }
 
+QLabel#workspaceLogo {
+    background: #ffffff;
+    border: 1px solid #dbe4ee;
+    border-radius: 12px;
+}
+
 QLabel#workspaceMeta {
     font-size: 12px;
     color: #6b7280;
