@@ -376,9 +376,6 @@ installer, portable package, offline help, and checksums published together.
 - CHM documentation bundled with release artifacts
 - Improved company-logo branding in the toolbar and splash screen
 
-### 1.1
-
-**Eagle Library 1.1.0 — first public release**
 
 #### New features
 
