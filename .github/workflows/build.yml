@@ -145,6 +145,8 @@ jobs:
           if (-not (Test-Path "docs\help\EagleLibrary.chm")) {
             throw "EagleLibrary.chm is missing"
           }
+          $global:LASTEXITCODE = 0
+          exit 0
 
       # ── 11. Package portable ZIP ───────────────────────────────
       - name: Package portable ZIP
