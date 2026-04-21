@@ -391,9 +391,9 @@ jobs:
           # Create or update the release
           $releaseExists = ($null -ne (gh release view $tag 2>$null))
           if (-not $releaseExists) {
-            gh release create $tag --title $title --notes-file $notesPath
+            gh release create $tag --title $title --notes-file $notesPath --prerelease
           } else {
-            gh release edit $tag --title $title --notes-file $notesPath
+            gh release edit $tag --title $title --notes-file $notesPath --prerelease
           }
 
           # Remove existing assets before uploading fresh ones
