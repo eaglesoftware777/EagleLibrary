@@ -780,8 +780,21 @@ QString ScanWorker::detectFormat(const QString& ext) const
         {"pdf","PDF"},{"epub","EPUB"},{"mobi","MOBI"},
         {"azw","AZW"},{"azw3","AZW3"},{"djvu","DjVu"},
         {"fb2","FB2"},{"cbz","CBZ"},{"cbr","CBR"},
-        {"txt","TXT"},{"rtf","RTF"},{"doc","DOC"},
-        {"docx","DOCX"},{"chm","CHM"},{"lit","LIT"},
+        {"txt","TXT"},{"rtf","RTF"},{"md","Markdown"},
+        {"csv","CSV"},{"doc","Word"},{"docx","Word"},
+        {"docm","Word"},{"dot","Word Template"},{"dotx","Word Template"},
+        {"xls","Excel"},{"xlsx","Excel"},{"xlsm","Excel"},
+        {"xlsb","Excel"},{"xlt","Excel Template"},{"xltx","Excel Template"},
+        {"ppt","PowerPoint"},{"pptx","PowerPoint"},{"pptm","PowerPoint"},
+        {"pps","PowerPoint Show"},{"ppsx","PowerPoint Show"},
+        {"odt","OpenDocument Text"},{"ott","OpenDocument Template"},
+        {"ods","OpenDocument Sheet"},{"ots","OpenDocument Sheet Template"},
+        {"odp","OpenDocument Presentation"},{"otp","OpenDocument Presentation Template"},
+        {"odg","OpenDocument Graphic"},{"odf","OpenDocument Formula"},
+        {"pages","Apple Pages"},{"numbers","Apple Numbers"},{"key","Apple Keynote"},
+        {"one","OneNote"},{"xps","XPS"},{"oxps","OpenXPS"},
+        {"html","HTML"},{"htm","HTML"},{"xml","XML"},
+        {"chm","CHM"},{"lit","LIT"},
     };
     return m.value(ext, ext.toUpper());
 }

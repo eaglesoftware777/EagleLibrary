@@ -230,15 +230,29 @@ jobs:
       - name: Create NSIS installer
         if: ${{ github.event.inputs.build_installer == 'true' }}
         shell: pwsh
-        working-directory: build
         run: |
           $env:PATH += ";C:\Program Files (x86)\NSIS"
-          cpack -C Release -G NSIS
-          $exe = Get-ChildItem *.exe | Select-Object -First 1
-          if ($exe) {
-            Copy-Item -Force $exe.FullName "..\EagleLibrary-Setup-x64.exe"
-            Write-Host "Installer: $($exe.Name)"
+          if (Test-Path "installer\EagleLibrary.exe") { Remove-Item -Force "installer\EagleLibrary.exe" }
+          foreach ($dir in @("platforms","styles","imageformats","iconengines","sqldrivers","tls","plugins","translations","themes","resources","help","hooks")) {
+            $target = Join-Path "installer" $dir
+            if (Test-Path $target) { Remove-Item -Recurse -Force $target }
           }
+          Copy-Item -Force "build\Release\EagleLibrary.exe" "installer\EagleLibrary.exe"
+          Copy-Item -Force "build\Release\*.dll" "installer\" -ErrorAction SilentlyContinue
+          foreach ($dir in @("platforms","styles","imageformats","iconengines","sqldrivers","tls","plugins","translations","themes","resources","hooks")) {
+            $source = Join-Path "build\Release" $dir
+            if (Test-Path $source) {
+              Copy-Item -Recurse -Force $source (Join-Path "installer" $dir)
+            }
+          }
+          New-Item -ItemType Directory -Force "installer\help" | Out-Null
+          Copy-Item -Force "docs\help\EagleLibrary.chm" "installer\help\EagleLibrary.chm"
+          Push-Location "installer"
+          & makensis.exe "eagle_library.nsi"
+          if ($LASTEXITCODE -ne 0) { throw "NSIS build failed with exit code $LASTEXITCODE" }
+          Pop-Location
+          Copy-Item -Force "installer\EagleLibrary_Setup_2.1.0.exe" "EagleLibrary-Setup-x64.exe"
+          Write-Host "Installer: EagleLibrary-Setup-x64.exe"
 
       # ── 16. Sign installer when certificate secrets exist ──────
       - name: Sign installer

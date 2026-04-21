@@ -417,6 +417,11 @@ FodyWeavers.xsd
 *.msix
 *.msm
 *.msp
+installer/EagleLibrary_Setup_*.exe
+installer/resources/
+installer/themes/
+installer/translations/*.json
+installer/hooks/
 out/
 build/
 build-release/

@@ -91,6 +91,13 @@ struct Book
 
         if (format.compare("PDF", Qt::CaseInsensitive) == 0 && pages > 0 && pages <= 36)
             ++documentScore;
+        static const QStringList officeFormats = {
+            "Word", "Excel", "PowerPoint", "PowerPoint Show", "OpenDocument Text",
+            "OpenDocument Sheet", "OpenDocument Presentation", "OneNote", "XPS",
+            "OpenXPS", "HTML", "XML", "CSV", "Markdown"
+        };
+        if (officeFormats.contains(format, Qt::CaseInsensitive))
+            documentScore += 2;
         if (author.trimmed().isEmpty() && publisher.trimmed().isEmpty())
             ++documentScore;
         if (filePath.contains("/docs/", Qt::CaseInsensitive) || filePath.contains("\\docs\\", Qt::CaseInsensitive))

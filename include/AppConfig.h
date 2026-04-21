@@ -21,7 +21,14 @@ namespace AppConfig
     inline QStringList supportedFormats() {
         return { "*.pdf", "*.epub", "*.mobi", "*.azw", "*.azw3",
                  "*.djvu", "*.fb2", "*.cbz", "*.cbr", "*.txt",
-                 "*.rtf", "*.doc", "*.docx", "*.chm", "*.lit" };
+                 "*.rtf", "*.md", "*.csv", "*.doc", "*.docx",
+                 "*.docm", "*.dot", "*.dotx", "*.xls", "*.xlsx",
+                 "*.xlsm", "*.xlsb", "*.xlt", "*.xltx", "*.ppt",
+                 "*.pptx", "*.pptm", "*.pps", "*.ppsx", "*.odt",
+                 "*.ott", "*.ods", "*.ots", "*.odp", "*.otp",
+                 "*.odg", "*.odf", "*.pages", "*.numbers", "*.key",
+                 "*.one", "*.xps", "*.oxps", "*.html", "*.htm",
+                 "*.xml", "*.chm", "*.lit" };
     }
 
     inline QString appDir()

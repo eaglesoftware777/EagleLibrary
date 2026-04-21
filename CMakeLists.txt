@@ -183,6 +183,9 @@ if(WIN32)
         COMMAND ${CMAKE_COMMAND} -E copy_directory
                 "${CMAKE_SOURCE_DIR}/resources/themes"
                 "$<TARGET_FILE_DIR:EagleLibrary>/themes"
+        COMMAND ${CMAKE_COMMAND} -E copy_directory
+                "${CMAKE_SOURCE_DIR}/resources/hooks"
+                "$<TARGET_FILE_DIR:EagleLibrary>/hooks"
         COMMENT "Running windeployqt..."
     )
 endif()

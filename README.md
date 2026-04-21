@@ -115,9 +115,13 @@ Current format support includes:
 - DjVu
 - FB2
 - CBZ / CBR
-- TXT
-- RTF
-- DOC / DOCX
+- TXT / RTF / Markdown / CSV
+- Microsoft Word: DOC / DOCX / DOCM / DOT / DOTX
+- Microsoft Excel: XLS / XLSX / XLSM / XLSB / XLT / XLTX
+- Microsoft PowerPoint: PPT / PPTX / PPTM / PPS / PPSX
+- OpenDocument: ODT / OTT / ODS / OTS / ODP / OTP / ODG / ODF
+- Apple iWork: Pages / Numbers / Keynote
+- OneNote, XPS / OpenXPS, HTML, XML
 - CHM
 - LIT
 
@@ -370,6 +374,7 @@ installer, portable package, offline help, and checksums published together.
 
 - Reference-first library management: files remain in their original folders
 - Local database and settings stored beside the executable
+- NSIS setup installs a self-contained Program Files layout with Qt runtime DLLs, plugins, themes, translations, help, and Start Menu shortcuts
 - Metadata enrichment, repair, and diagnosis tools
 - Grid/list views, command palette, themes, and multilingual UI
 - Plugin actions for book and document details

@@ -58,6 +58,7 @@ VIAddVersionKey   "FileVersion"     "2.1.0.0"
 ; ── Installer sections ────────────────────────────────────────
 Section "Eagle Library (required)" SecMain
     SectionIn RO
+    SetShellVarContext all
 
     ; OS check — Windows 7 or later
     ${IfNot} ${AtLeastWin7}
@@ -69,6 +70,15 @@ Section "Eagle Library (required)" SecMain
 
     ; Main executable
     File "EagleLibrary.exe"
+    FileOpen $0 "$INSTDIR\portable.flag" w
+    FileClose $0
+    CreateDirectory "$INSTDIR\data"
+    CreateDirectory "$INSTDIR\settings"
+
+    ; Installed layout is intentionally self-contained like a portable app.
+    ; Grant standard users write access so the local DB, settings and WAL files
+    ; can be created beside EagleLibrary.exe under Program Files.
+    nsExec::ExecToLog 'icacls "$INSTDIR" /grant *S-1-5-32-545:(OI)(CI)M /T /C'
 
     ; Qt runtime DLLs (produced by windeployqt in build dir)
     File "Qt6Core.dll"
@@ -185,11 +195,14 @@ SectionEnd
 
 ; ── Uninstaller ───────────────────────────────────────────────
 Section "Uninstall"
+    SetShellVarContext all
+
     ; Remove files
     Delete "$INSTDIR\EagleLibrary.exe"
     Delete "$INSTDIR\*.dll"
     Delete "$INSTDIR\README.txt"
     Delete "$INSTDIR\LICENSE.txt"
+    Delete "$INSTDIR\portable.flag"
     Delete "$INSTDIR\Uninstall.exe"
     Delete "$INSTDIR\help\EagleLibrary.chm"
     RMDir /r "$INSTDIR\platforms"
