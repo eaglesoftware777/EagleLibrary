@@ -2093,7 +2093,11 @@ void MainWindow::setupSidebar()
 
     sideLayout->addSpacing(8);
     makeHeader(trl("sidebar.format", "FORMAT"));
-    for (const char* fmt : {"PDF","EPUB","MOBI","AZW","CBZ","DjVu","TXT"}) {
+    for (const char* fmt : {
+             "PDF", "EPUB", "MOBI", "AZW", "CBZ", "DjVu", "TXT",
+             "Word", "Excel", "PowerPoint", "Visio", "Publisher",
+             "Project", "Access", "OneNote", "OpenDocument Text"
+         }) {
         QString f = fmt;
         makeBtn(f, [this, f]() {
             m_filterModel->setFilterFormat(f);

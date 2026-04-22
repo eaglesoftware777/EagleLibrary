@@ -92,8 +92,13 @@ struct Book
         if (format.compare("PDF", Qt::CaseInsensitive) == 0 && pages > 0 && pages <= 36)
             ++documentScore;
         static const QStringList officeFormats = {
-            "Word", "Excel", "PowerPoint", "PowerPoint Show", "OpenDocument Text",
-            "OpenDocument Sheet", "OpenDocument Presentation", "OneNote", "XPS",
+            "Word", "Word Template", "Excel", "Excel Template", "PowerPoint",
+            "PowerPoint Template", "PowerPoint Show", "PowerPoint Slide",
+            "Visio", "Visio Stencil", "Visio Template", "Publisher", "Project",
+            "Project Template", "Access", "Outlook Message", "OpenDocument Text",
+            "OpenDocument Template", "OpenDocument Sheet", "OpenDocument Sheet Template",
+            "OpenDocument Presentation", "OpenDocument Presentation Template",
+            "OpenDocument Graphic", "OpenDocument Formula", "OneNote", "XPS",
             "OpenXPS", "HTML", "XML", "CSV", "Markdown"
         };
         if (officeFormats.contains(format, Qt::CaseInsensitive))

@@ -116,9 +116,10 @@ Current format support includes:
 - FB2
 - CBZ / CBR
 - TXT / RTF / Markdown / CSV
-- Microsoft Word: DOC / DOCX / DOCM / DOT / DOTX
-- Microsoft Excel: XLS / XLSX / XLSM / XLSB / XLT / XLTX
-- Microsoft PowerPoint: PPT / PPTX / PPTM / PPS / PPSX
+- Microsoft Word: DOC / DOCX / DOCM / DOCB / DOT / DOTX / DOTM
+- Microsoft Excel: XLS / XLSX / XLSM / XLSB / XLT / XLTX / XLTM
+- Microsoft PowerPoint: PPT / PPTX / PPTM / POT / POTX / POTM / PPS / PPSX / PPSM / SLDX / SLDM
+- Microsoft Visio / Publisher / Project / Access / Outlook: VSD / VSDX / VSDM / VSS / VSSX / VSSM / VST / VSTX / VSTM / VDX / PUB / MPP / MPT / MDB / ACCDB / MSG
 - OpenDocument: ODT / OTT / ODS / OTS / ODP / OTP / ODG / ODF
 - Apple iWork: Pages / Numbers / Keynote
 - OneNote, XPS / OpenXPS, HTML, XML
@@ -362,6 +363,8 @@ At minimum, Eagle Library currently provides:
 
 This release prepares the first GitHub-ready distribution of Eagle Library with
 installer, portable package, offline help, and checksums published together.
+It also refreshes document-library support so ebook collections can include
+Microsoft Office and other mixed document archives in the same catalog.
 
 #### Included downloads
 
@@ -374,6 +377,16 @@ installer, portable package, offline help, and checksums published together.
 
 - Reference-first library management: files remain in their original folders
 - Local database and settings stored beside the executable
+- Mixed ebook and document indexing for PDF, EPUB, MOBI, AZW/AZW3, DjVu, FB2,
+  CBZ/CBR, CHM, LIT, plain text, Markdown, CSV, HTML/XML, OpenDocument,
+  Apple iWork, OneNote, XPS/OpenXPS, and Microsoft Office files
+- Microsoft Office scan support now includes Word, Excel, PowerPoint, Visio,
+  Publisher, Project, Access, and Outlook message formats
+- Browse sidebar format shortcuts now include Office document families so Word,
+  Excel, PowerPoint, Visio, Publisher, Project, Access, and OneNote files are
+  easy to filter after scanning
+- Smart categorization treats Office and OpenDocument families as documents,
+  while still allowing long-form PDFs and ebooks to remain in book workflows
 - NSIS setup installs a self-contained Program Files layout with Qt runtime DLLs, plugins, themes, translations, help, and Start Menu shortcuts
 - Metadata enrichment, repair, and diagnosis tools
 - Grid/list views, command palette, themes, and multilingual UI
