@@ -224,14 +224,48 @@ jobs:
       # ── 14. Install NSIS ───────────────────────────────────────
       - name: Install NSIS
         if: ${{ github.event.inputs.build_installer == 'true' }}
-        run: choco install nsis --no-progress -y
+        shell: pwsh
+        run: |
+          $candidates = @(
+            "C:\Program Files (x86)\NSIS\makensis.exe",
+            "C:\Program Files\NSIS\makensis.exe"
+          )
+          if ($candidates | Where-Object { Test-Path $_ } | Select-Object -First 1) {
+            Write-Host "NSIS is already installed."
+            exit 0
+          }
+
+          for ($attempt = 1; $attempt -le 3; $attempt++) {
+            Write-Host "Installing NSIS with Chocolatey (attempt $attempt/3)..."
+            choco install nsis --no-progress -y
+            $installed = $candidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+            if ($LASTEXITCODE -eq 0 -and $installed) {
+              Write-Host "NSIS installed at $installed"
+              exit 0
+            }
+            if ($attempt -lt 3) {
+              Start-Sleep -Seconds (15 * $attempt)
+            }
+          }
+
+          throw "NSIS installation failed after 3 attempts"
 
       # ── 15. Build NSIS installer ───────────────────────────────
       - name: Create NSIS installer
         if: ${{ github.event.inputs.build_installer == 'true' }}
         shell: pwsh
         run: |
-          $env:PATH += ";C:\Program Files (x86)\NSIS"
+          $makensis = @(
+            "C:\Program Files (x86)\NSIS\makensis.exe",
+            "C:\Program Files\NSIS\makensis.exe"
+          ) | Where-Object { Test-Path $_ } | Select-Object -First 1
+          if (-not $makensis) {
+            $cmd = Get-Command makensis.exe -ErrorAction SilentlyContinue
+            if ($cmd) { $makensis = $cmd.Source }
+          }
+          if (-not $makensis) {
+            throw "makensis.exe was not found after NSIS installation"
+          }
           if (Test-Path "installer\EagleLibrary.exe") { Remove-Item -Force "installer\EagleLibrary.exe" }
           foreach ($dir in @("platforms","styles","imageformats","iconengines","sqldrivers","tls","plugins","translations","themes","resources","help","hooks")) {
             $target = Join-Path "installer" $dir
@@ -248,7 +282,7 @@ jobs:
           New-Item -ItemType Directory -Force "installer\help" | Out-Null
           Copy-Item -Force "docs\help\EagleLibrary.chm" "installer\help\EagleLibrary.chm"
           Push-Location "installer"
-          & makensis.exe "eagle_library.nsi"
+          & $makensis "eagle_library.nsi"
           if ($LASTEXITCODE -ne 0) { throw "NSIS build failed with exit code $LASTEXITCODE" }
           Pop-Location
           Copy-Item -Force "installer\EagleLibrary_Setup_1.0.0.exe" "EagleLibrary-Setup-x64.exe"
