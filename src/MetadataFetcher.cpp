@@ -392,13 +392,24 @@ MetadataFetcher::MetadataFetcher(QObject* parent)
 void MetadataFetcher::enqueue(const FetchRequest& req)
 {
     m_cancelling = false;
+    if (m_pendingBookIds.contains(req.bookId)) {
+        qDebug().noquote()
+            << "[Metadata] Duplicate queue request ignored bookId=" << req.bookId
+            << "title=" << req.title;
+        return;
+    }
+
+    m_pendingBookIds.insert(req.bookId);
     m_queue.enqueue(req);
     ++m_totalQueued;
     if (!m_processTimer->isActive())
         m_processTimer->start();
-    qDebug().noquote()
-        << "[Metadata] Queue bookId=" << req.bookId
-        << "title=" << req.title << "isbn=" << req.isbn;
+    if (m_totalQueued <= 5 || (m_totalQueued % 50) == 0) {
+        qInfo().noquote()
+            << "[Metadata] Queue total=" << m_totalQueued
+            << "latestBookId=" << req.bookId
+            << "title=" << req.title;
+    }
     emit fetchProgress(m_totalDone, m_totalQueued, QFileInfo(req.filePath).fileName(), "Queued");
 }
 
@@ -417,9 +428,16 @@ void MetadataFetcher::cancelAll()
     m_requests.clear();
     m_candidates.clear();
     m_pendingReplies.clear();
+    m_pendingBookIds.clear();
     m_active      = 0;
     m_totalQueued = 0;
     m_totalDone   = 0;
+    emit fetchFinished();
+}
+
+bool MetadataFetcher::isRunning() const
+{
+    return !m_queue.isEmpty() || m_active > 0 || !m_activeReplies.isEmpty();
 }
 
 void MetadataFetcher::processQueue()
@@ -717,10 +735,12 @@ void MetadataFetcher::finalize(qint64 bookId)
     m_requests.remove(bookId);
     m_candidates.remove(bookId);
     m_pendingReplies.remove(bookId);
+    m_pendingBookIds.remove(bookId);
     --m_active;
     if (m_active == 0 && m_queue.isEmpty() && m_totalDone >= m_totalQueued) {
         m_totalDone   = 0;
         m_totalQueued = 0;
+        emit fetchFinished();
     }
 }
 

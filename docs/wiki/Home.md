@@ -1,6 +1,6 @@
 # Eagle Library Wiki
 
-Eagle Library is a Windows desktop catalog for books, papers, manuals, and mixed-format document archives. It keeps files in their original folders, indexes metadata into a local database, and provides shelves, search, repair tools, exports, plugins, and offline help.
+Eagle Library is a Windows desktop catalog for books, papers, manuals, and mixed-format document archives. It keeps files in their original folders, indexes metadata into a local database, and provides shelves, search, maintenance tools, exports, plugins, and offline help.
 
 ## Release 1.0
 
@@ -30,7 +30,7 @@ Office and OpenDocument families are treated as documents by default. They can b
 2. Add the folders that contain books and documents.
 3. Keep Fast Scan Mode enabled for large libraries.
 4. Run Scan to index paths, hashes, sizes, titles, and formats.
-5. Use Smart Categorize, Fetch Metadata, Repair Text Problems, and Smart Rename after indexing.
+5. Use Smart Categorize, Fetch Metadata, Extract ISBNs, and Smart Rename after indexing.
 
 ## Sidebar And Shelves
 

@@ -54,6 +54,12 @@ void CoverDownloader::cancelAll()
     m_active = 0;
     m_totalQueued = 0;
     m_totalDone = 0;
+    emit downloadsFinished();
+}
+
+bool CoverDownloader::isRunning() const
+{
+    return !m_queue.isEmpty() || m_active > 0 || !m_activeReplies.isEmpty();
 }
 
 void CoverDownloader::processNext()
@@ -79,6 +85,7 @@ void CoverDownloader::processNext()
                 if (m_active == 0 && m_queue.isEmpty() && m_totalDone >= m_totalQueued) {
                     m_totalDone = 0;
                     m_totalQueued = 0;
+                    emit downloadsFinished();
                 }
                 processNext();
                 return;
@@ -130,6 +137,7 @@ void CoverDownloader::processNext()
                         if (m_active == 0 && m_queue.isEmpty() && m_totalDone >= m_totalQueued) {
                             m_totalDone = 0;
                             m_totalQueued = 0;
+                            emit downloadsFinished();
                         }
                         processNext();
                         return;

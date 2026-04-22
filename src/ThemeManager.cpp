@@ -9,6 +9,8 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QSettings>
+#include <QStyle>
+#include <QWidget>
 #include <QDebug>
 
 ThemeManager& ThemeManager::instance()
@@ -48,6 +50,13 @@ void ThemeManager::applyTheme(Theme t)
     if (f.open(QIODevice::ReadOnly | QIODevice::Text)) {
         qApp->setStyleSheet(QString());
         qApp->setStyleSheet(QString::fromUtf8(f.readAll()));
+        for (QWidget* widget : qApp->allWidgets()) {
+            if (!widget)
+                continue;
+            widget->style()->unpolish(widget);
+            widget->style()->polish(widget);
+            widget->update();
+        }
         f.close();
     } else {
         qWarning() << "ThemeManager: could not load theme" << themePath;

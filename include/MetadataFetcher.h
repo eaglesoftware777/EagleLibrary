@@ -45,12 +45,14 @@ public:
     void enqueue(const FetchRequest& req);
     void setMaxConcurrent(int n) { m_maxConcurrent = n; }
     void cancelAll();
+    bool isRunning() const;
 
 signals:
     void metadataReady(qint64 bookId, Book updatedBook);
     void coverUrlsReady(qint64 bookId, const QStringList& urls);
     void fetchError(qint64 bookId, const QString& msg);
     void fetchProgress(int completed, int total, const QString& currentFile, const QString& stage);
+    void fetchFinished();
 
 private slots:
     void processQueue();
@@ -68,6 +70,7 @@ private:
     QHash<qint64, FetchRequest>     m_requests;
     QHash<qint64, QVector<Candidate>> m_candidates;
     QHash<qint64, int>              m_pendingReplies;
+    QSet<qint64>                    m_pendingBookIds;
     QSet<QNetworkReply*>            m_activeReplies;
     bool                            m_cancelling = false;
     quint64                         m_generation = 0;

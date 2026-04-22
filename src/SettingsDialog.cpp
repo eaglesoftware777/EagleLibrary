@@ -23,6 +23,7 @@
 #include <QSignalBlocker>
 #include <QDesktopServices>
 #include <QUrl>
+#include <QPixmap>
 
 namespace {
 
@@ -219,8 +220,15 @@ void SettingsDialog::setupUi()
     auto* aboutLay = new QVBoxLayout(aboutTab);
     aboutLay->setAlignment(Qt::AlignCenter);
 
-    auto* logoLbl = new QLabel("EAGLE");
-    logoLbl->setStyleSheet("font-size: 28px; font-weight: 700; letter-spacing: 3px; color: #efdb9d;");
+    auto* logoLbl = new QLabel;
+    QPixmap companyLogo(AppConfig::logoPngPath());
+    if (companyLogo.isNull())
+        companyLogo.load(":/eagle_logo.png");
+    if (!companyLogo.isNull())
+        logoLbl->setPixmap(companyLogo.scaled(140, 90, Qt::KeepAspectRatio, Qt::SmoothTransformation));
+    else
+        logoLbl->setText("EAGLE");
+    logoLbl->setStyleSheet("font-size: 28px; font-weight: 700; color: #efdb9d;");
     logoLbl->setAlignment(Qt::AlignCenter);
 
     m_aboutNameLabel = new QLabel;

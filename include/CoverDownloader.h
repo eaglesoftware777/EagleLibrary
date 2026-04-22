@@ -25,11 +25,13 @@ public:
     explicit CoverDownloader(const QString& saveDir, QObject* parent = nullptr);
     void enqueue(qint64 bookId, const QStringList& urls, const QString& label = {});
     void cancelAll();
+    bool isRunning() const;
 
 signals:
     void coverReady(qint64 bookId, QString localPath);
     void coverFailed(qint64 bookId, QString reason);
     void downloadProgress(int completed, int total, const QString& currentLabel);
+    void downloadsFinished();
 
 private:
     QNetworkAccessManager* m_nam;

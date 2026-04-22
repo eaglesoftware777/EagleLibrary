@@ -16,6 +16,9 @@
 #include <QThread>
 #include <QSet>
 #include <QJsonObject>
+#include <QQueue>
+#include <QFutureWatcher>
+#include <functional>
 
 #include "Book.h"
 #include "BookModel.h"
@@ -207,6 +210,21 @@ private:
     QFileSystemWatcher* m_libraryWatcher = nullptr;
     QTimer*      m_libraryChangeTimer = nullptr;
     bool         m_incrementalScanPending = false;
+    struct QueuedMenuTask {
+        QString name;
+        std::function<void()> run;
+    };
+    QQueue<QueuedMenuTask> m_menuTaskQueue;
+    bool        m_menuTaskActive = false;
+    QString     m_activeMenuTaskName;
+    bool        m_metadataTaskWaitingForCovers = false;
+    struct IsbnExtractionResult {
+        Book book;
+        QString isbn;
+        bool invalidExisting = false;
+        bool invalidCandidate = false;
+    };
+    QFutureWatcher<IsbnExtractionResult>* m_isbnExtractionWatcher = nullptr;
 
     void setupMenuBar();
     void setupToolBar();
@@ -233,6 +251,13 @@ private:
     void enrichIncompleteBooks(const QVector<Book>& books, const QString& title);
     void showTaskProgress(const QString& title, const QString& status, int current, int total, const QString& detail = QString());
     void hideTaskProgress(const QString& finalStatus = QString());
+    bool backgroundWorkRunning() const;
+    void queueOrRunMenuTask(const QString& name, std::function<void()> task);
+    void startMenuTask(const QString& name, std::function<void()> task);
+    void finishMenuTask(const QString& finalStatus = QString());
+    void runNextQueuedMenuTask();
+    void maybeFinishMetadataMenuTask();
+    void startScanNow();
     void scheduleMetadataFetch(const Book& book,
                                bool forceCover = false,
                                bool useEmbedded = true,

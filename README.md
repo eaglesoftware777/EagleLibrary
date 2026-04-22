@@ -1,6 +1,6 @@
 # Eagle Library
 
-Professional Windows desktop software for indexing, organizing, repairing, and researching large collections of books, papers, manuals, and mixed-format document archives.
+Professional Windows desktop software for indexing, organizing, maintaining, and researching large collections of books, papers, manuals, and mixed-format document archives.
 
 ## Overview
 
@@ -25,7 +25,7 @@ It is aimed at users who manage mixed collections such as:
 - Fast library scanning with incremental re-index support
 - Virtual organization through shelves, tags, collections, and saved searches
 - Metadata enrichment from embedded metadata, Open Library, and Google Books
-- Built-in database editor, diagnosis tools, and metadata repair workflows
+- Built-in database editor, metadata enrichment, and maintenance workflows
 - Portable mode with local data and settings
 - CHM offline help and HTML documentation
 - Plugin-ready architecture for extra book/document actions
@@ -79,11 +79,9 @@ Eagle Library is built around these principles:
 - Tags, collections, and smart grouping
 - Books vs documents categorization
 
-### Database and Repair Tools
+### Database and Maintenance Tools
 
 - Built-in database editor
-- Text diagnosis for mojibake, binary noise, and broken PDF metadata
-- Repair tools for suspicious records
 - Duplicate analysis
 - Search-index rebuild
 - SQLite optimize / maintenance tools
@@ -337,7 +335,7 @@ The help currently covers:
 - menus and toolbar
 - settings reference
 - metadata and scanning tools
-- database tools and repair
+- database tools and maintenance
 - portable deployment
 
 ## Minimal Feature Summary
@@ -388,7 +386,7 @@ Microsoft Office and other mixed document archives in the same catalog.
 - Smart categorization treats Office and OpenDocument families as documents,
   while still allowing long-form PDFs and ebooks to remain in book workflows
 - NSIS setup installs a self-contained Program Files layout with Qt runtime DLLs, plugins, themes, translations, help, and Start Menu shortcuts
-- Metadata enrichment, repair, and diagnosis tools
+- Metadata enrichment, cover tools, and database maintenance
 - Grid/list views, command palette, themes, and multilingual UI
 - Plugin actions for book and document details
 - CHM documentation bundled with release artifacts
@@ -424,8 +422,8 @@ publisher.
 - Advanced search with field-aware query tokens (`author:`, `title:`, `isbn:`, `tag:`, etc.)
 - Saved searches and smart category sidebar
 - Built-in database editor with direct SQLite record editing
-- Text diagnosis tools for mojibake, binary noise, and broken PDF metadata
-- Repair tools for suspicious, duplicate, and malformed records
+- Nonblocking ISBN extraction and metadata lookup so slow PDF/OCR probing no longer freezes the app
+- Duplicate analysis and database maintenance tools for large catalogs
 - Full-text search index with rebuild and optimize controls
 - Blue, white, and mac-style themes with runtime switching
 - Command palette for keyboard-driven access to all actions
@@ -451,6 +449,11 @@ publisher.
 - PDF `/Creator` field (authoring tool name) is no longer used as publisher source;
   only the `/Publisher` field is accepted
 - Theme switching applies correctly; per-widget stylesheet clear that broke the QSS cascade removed
+- Runtime theme switching now repolishes open widgets so the selected theme applies immediately and reliably
+- Language switching now refreshes more menu, submenu, toolbar, status, and release-facing labels
+- About dialogs now show the Eagle Software company logo, and the bundled SVG mark matches the company logo
+- Database text diagnosis/repair actions were removed from the visible menu and help surface
+- ISBN extraction runs in a capped background worker pool to keep the UI responsive during slow file/PDF/OCR reads
 - Scanner thread waits up to 3 seconds after cancel before the window closes; Qt events flushed
   before plugin unload to prevent stale signal delivery
 - Metadata timer restarts correctly on subsequent fetches

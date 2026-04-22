@@ -22,6 +22,7 @@
 #include <QMutex>
 #include <QMutexLocker>
 #include <QDateTime>
+#include <QSysInfo>
 
 #include "SplashScreen.h"
 #include "MainWindow.h"
@@ -34,20 +35,40 @@ namespace {
 
 QMutex g_logMutex;
 QFile* g_logFile = nullptr;
+QString g_logPath;
+
+void writeDiagnosticLine(const QString& level, const QString& message)
+{
+    if (!g_logFile || !g_logFile->isOpen())
+        return;
+
+    QMutexLocker locker(&g_logMutex);
+    QTextStream out(g_logFile);
+    out << QDateTime::currentDateTimeUtc().toString(Qt::ISODateWithMs)
+        << " [" << level << "] " << message << '\n';
+    out.flush();
+    g_logFile->flush();
+}
+
+void writeDiagnosticLineUnlocked(const QString& level, const QString& message)
+{
+    if (!g_logFile || !g_logFile->isOpen())
+        return;
+
+    QTextStream out(g_logFile);
+    out << QDateTime::currentDateTimeUtc().toString(Qt::ISODateWithMs)
+        << " [" << level << "] " << message << '\n';
+    out.flush();
+    g_logFile->flush();
+}
 
 void releaseMessageHandler(QtMsgType type, const QMessageLogContext& context, const QString& message)
 {
-    Q_UNUSED(context)
-
     if (!g_logFile) {
         if (type == QtFatalMsg)
             abort();
         return;
     }
-
-    QMutexLocker locker(&g_logMutex);
-    if (!g_logFile->isOpen())
-        return;
 
     const char* level = "INFO";
     switch (type) {
@@ -58,10 +79,11 @@ void releaseMessageHandler(QtMsgType type, const QMessageLogContext& context, co
     case QtFatalMsg: level = "FATAL"; break;
     }
 
-    QTextStream out(g_logFile);
-    out << QDateTime::currentDateTimeUtc().toString(Qt::ISODateWithMs)
-        << " [" << level << "] " << message << '\n';
-    out.flush();
+    QString location;
+    if (context.file)
+        location = QStringLiteral(" (%1:%2 %3)").arg(context.file).arg(context.line).arg(context.function ? context.function : "");
+
+    writeDiagnosticLine(QString::fromLatin1(level), message + location);
 
     if (type == QtFatalMsg)
         abort();
@@ -69,16 +91,35 @@ void releaseMessageHandler(QtMsgType type, const QMessageLogContext& context, co
 
 void configureDiagnostics()
 {
-    QSettings settings(AppConfig::settingsPath(), QSettings::IniFormat);
-    if (settings.value("diagnostics/loggingEnabled", false).toBool()) {
-        QDir().mkpath(AppConfig::dataDir() + "/logs");
-        g_logFile = new QFile(AppConfig::dataDir() + "/logs/eagle-library.log");
-        if (!g_logFile->open(QIODevice::WriteOnly | QIODevice::Append | QIODevice::Text)) {
-            delete g_logFile;
-            g_logFile = nullptr;
-        }
+    const QString logDir = QDir(AppConfig::appDir()).absoluteFilePath(QStringLiteral("diagnostic-logs"));
+    QDir().mkpath(logDir);
+    const QString stamp = QDateTime::currentDateTime().toString(QStringLiteral("yyyyMMdd-HHmmss-zzz"));
+    g_logPath = QDir(logDir).absoluteFilePath(QStringLiteral("eagle-library-%1-p%2.log")
+                                                  .arg(stamp)
+                                                  .arg(QCoreApplication::applicationPid()));
+    g_logFile = new QFile(g_logPath);
+    if (!g_logFile->open(QIODevice::WriteOnly | QIODevice::Append | QIODevice::Text)) {
+        delete g_logFile;
+        g_logFile = nullptr;
     }
+
+    writeDiagnosticLineUnlocked(QStringLiteral("INFO"), QStringLiteral("[Diagnostics] Log file opened"));
+    writeDiagnosticLineUnlocked(QStringLiteral("INFO"), QStringLiteral("[Diagnostics] Log file: %1").arg(QDir::toNativeSeparators(g_logPath)));
+    writeDiagnosticLineUnlocked(QStringLiteral("INFO"), QStringLiteral("[Diagnostics] App dir: %1").arg(QDir::toNativeSeparators(AppConfig::appDir())));
+    writeDiagnosticLineUnlocked(QStringLiteral("INFO"), QStringLiteral("[Diagnostics] Portable mode: %1").arg(AppConfig::isPortableMode()));
+    writeDiagnosticLineUnlocked(QStringLiteral("INFO"), QStringLiteral("[Diagnostics] App version: %1").arg(AppConfig::version()));
+    writeDiagnosticLineUnlocked(QStringLiteral("INFO"), QStringLiteral("[Diagnostics] Qt: %1").arg(qVersion()));
+    writeDiagnosticLineUnlocked(QStringLiteral("INFO"), QStringLiteral("[Diagnostics] OS: %1").arg(QSysInfo::prettyProductName()));
+
     qInstallMessageHandler(releaseMessageHandler);
+
+    qInfo().noquote() << "[Diagnostics] Temporary portable test logging enabled";
+    qInfo().noquote() << "[Diagnostics] Log file:" << QDir::toNativeSeparators(g_logPath);
+    qInfo().noquote() << "[Diagnostics] App dir:" << QDir::toNativeSeparators(AppConfig::appDir());
+    qInfo().noquote() << "[Diagnostics] Portable mode:" << AppConfig::isPortableMode();
+    qInfo().noquote() << "[Diagnostics] App version:" << AppConfig::version();
+    qInfo().noquote() << "[Diagnostics] Qt:" << qVersion();
+    qInfo().noquote() << "[Diagnostics] OS:" << QSysInfo::prettyProductName();
 }
 
 bool copyDirectoryTree(const QString& sourcePath, const QString& targetPath)
@@ -344,16 +385,21 @@ int main(int argc, char* argv[])
     app.setFont(buildUiFont());
 
     configureSettingsStorage();
-    migrateLegacyStorage();
-    seedBundledRuntimeAssets();
     configureDiagnostics();
+    qInfo().noquote() << "[Startup] Settings storage configured";
+    migrateLegacyStorage();
+    qInfo().noquote() << "[Startup] Legacy storage migration checked";
+    seedBundledRuntimeAssets();
+    qInfo().noquote() << "[Startup] Bundled runtime assets checked";
     LanguageManager::instance().initialize();
+    qInfo().noquote() << "[Startup] Language initialized:" << LanguageManager::instance().currentLanguage();
     app.setLayoutDirection(LanguageManager::instance().isRightToLeft() ? Qt::RightToLeft : Qt::LeftToRight);
     QObject::connect(&LanguageManager::instance(), &LanguageManager::languageChanged, &app, [&app]() {
         app.setLayoutDirection(LanguageManager::instance().isRightToLeft() ? Qt::RightToLeft : Qt::LeftToRight);
     });
 
     if (app.arguments().size() > 1) {
+        qInfo().noquote() << "[CLI] Arguments:" << app.arguments().join(' ');
         const int cliResult = runCliCommand(app);
         if (cliResult >= 0)
             return cliResult;
@@ -362,10 +408,6 @@ int main(int argc, char* argv[])
     QIcon appIcon(AppConfig::logoPngPath());
     if (appIcon.isNull())
         appIcon = QIcon(":/eagle_logo.png");
-    if (appIcon.isNull())
-        appIcon = QIcon(AppConfig::markSvgPath());
-    if (appIcon.isNull())
-        appIcon = QIcon(":/eagle_mark.svg");
     if (!appIcon.isNull())
         app.setWindowIcon(appIcon);
 
@@ -395,12 +437,15 @@ int main(int argc, char* argv[])
     QDir().mkpath(AppConfig::resourcesDir());
 
     step(35, LanguageManager::instance().text("splash.database", "Opening library database..."));
+    qInfo().noquote() << "[Startup] Opening database:" << QDir::toNativeSeparators(AppConfig::dbPath());
     Database::instance().open(AppConfig::dbPath());
 
     step(60, LanguageManager::instance().text("splash.catalogue", "Loading book catalogue..."));
     step(80, LanguageManager::instance().text("splash.interface", "Building user interface..."));
 
+    qInfo().noquote() << "[Startup] Creating main window";
     MainWindow* mainWin = new MainWindow;
+    qInfo().noquote() << "[Startup] Main window created";
 
     step(95, LanguageManager::instance().text("splash.finalizing", "Finalizing..."));
     app.processEvents();
@@ -420,6 +465,7 @@ int main(int argc, char* argv[])
     // First-run welcome
     QSettings s(AppConfig::settingsPath(), QSettings::IniFormat);
     if (!s.contains("library/folders")) {
+        qInfo().noquote() << "[Startup] First-run welcome scheduled";
         QTimer::singleShot(500, mainWin, [mainWin]() {
             QMessageBox::information(mainWin,
                 LanguageManager::instance().text("message.welcome.title", "Welcome to Eagle Library"),
@@ -428,5 +474,14 @@ int main(int argc, char* argv[])
         });
     }
 
-    return app.exec();
+    QObject::connect(&app, &QCoreApplication::aboutToQuit, &app, []() {
+        qInfo().noquote() << "[Shutdown] QApplication aboutToQuit";
+        writeDiagnosticLine(QStringLiteral("INFO"), QStringLiteral("[Shutdown] Final log flush"));
+    });
+
+    qInfo().noquote() << "[Startup] Entering event loop";
+    const int result = app.exec();
+    qInfo().noquote() << "[Shutdown] Event loop exited with code" << result;
+    writeDiagnosticLine(QStringLiteral("INFO"), QStringLiteral("[Shutdown] Process returning %1").arg(result));
+    return result;
 }

@@ -71,10 +71,13 @@
 #include <QJsonDocument>
 #include <QPushButton>
 #include <QResizeEvent>
+#include <QPixmap>
 #include <QItemSelectionModel>
 #include <QDateTime>
 #include <QEventLoop>
 #include <QProcess>
+#include <QThread>
+#include <QThreadPool>
 #include <QNetworkAccessManager>
 #include <QNetworkReply>
 #include <QNetworkRequest>
@@ -86,6 +89,8 @@
 #include <QUrlQuery>
 #include <QFileSystemWatcher>
 #include <QJsonDocument>
+#include <QSharedPointer>
+#include <QtConcurrent>
 #include <algorithm>
 
 namespace {
@@ -1284,6 +1289,7 @@ public:
 MainWindow::MainWindow(QWidget* parent)
     : QMainWindow(parent)
 {
+    qInfo().noquote() << "[MainWindow] Constructing";
     setWindowTitle(trl("app.windowTitle", "Eagle Library | Professional Workspace"));
     setMinimumSize(1100, 680);
 
@@ -1291,8 +1297,6 @@ MainWindow::MainWindow(QWidget* parent)
     QIcon appIcon;
     appIcon.addFile(AppConfig::logoPngPath());
     appIcon.addFile(":/eagle_logo.png");
-    appIcon.addFile(AppConfig::markSvgPath());
-    appIcon.addFile(":/eagle_mark.svg");
     if (!appIcon.isNull()) {
         setWindowIcon(appIcon);
         qApp->setWindowIcon(appIcon);
@@ -1361,9 +1365,11 @@ MainWindow::MainWindow(QWidget* parent)
     connect(m_metaFetcher,     &MetadataFetcher::coverUrlsReady, this, &MainWindow::onCoverUrlsReady);
     connect(m_metaFetcher,     &MetadataFetcher::fetchProgress, this, &MainWindow::onMetadataFetchProgress);
     connect(m_metaFetcher,     &MetadataFetcher::fetchError, this, &MainWindow::onMetadataFetchError);
+    connect(m_metaFetcher,     &MetadataFetcher::fetchFinished, this, &MainWindow::maybeFinishMetadataMenuTask);
     connect(m_coverDownloader, &CoverDownloader::coverReady,    this, &MainWindow::onCoverReady);
     connect(m_coverDownloader, &CoverDownloader::downloadProgress, this, &MainWindow::onCoverDownloadProgress);
     connect(m_coverDownloader, &CoverDownloader::coverFailed, this, &MainWindow::onCoverDownloadFailed);
+    connect(m_coverDownloader, &CoverDownloader::downloadsFinished, this, &MainWindow::maybeFinishMetadataMenuTask);
     connect(m_libraryWatcher, &QFileSystemWatcher::directoryChanged, this, [this](const QString& path) {
         scheduleIncrementalScan(path);
     });
@@ -1378,7 +1384,14 @@ MainWindow::MainWindow(QWidget* parent)
         }
         m_incrementalScanPending = false;
         m_statusLabel->setText("Folder changes detected. Running incremental scan...");
-        m_scanner->startScan(m_watchFolders, m_scanThreads, true);
+        queueOrRunMenuTask("Incremental Scan", [this]() {
+            m_recentlyAddedBooks.clear();
+            qInfo().noquote() << "[Scan] Starting incremental folders="
+                              << m_watchFolders.join(QStringLiteral(" | "))
+                              << "threads=" << m_scanThreads;
+            showTaskProgress("Scanning Library", "Scanning changed library folders...", 0, 0, "Fast incremental scan");
+            m_scanner->startScan(m_watchFolders, m_scanThreads, true);
+        });
     });
 
     // Ctrl+F -> search
@@ -1407,9 +1420,14 @@ MainWindow::MainWindow(QWidget* parent)
             }
         }
     });
+    qInfo().noquote() << "[MainWindow] Ready";
 }
 
-MainWindow::~MainWindow() { saveSettings(); }
+MainWindow::~MainWindow()
+{
+    qInfo().noquote() << "[MainWindow] Destroying";
+    saveSettings();
+}
 
 // ── Menu bar ─────────────────────────────────────────────────
 void MainWindow::setupMenuBar()
@@ -1427,19 +1445,19 @@ void MainWindow::setupMenuBar()
 
     fileMenu->addSeparator();
 
-    QAction* exportAct = new QAction("Export Library Snapshot...", this);
+    QAction* exportAct = new QAction(trl("action.exportSnapshot", "Export Library Snapshot..."), this);
     exportAct->setStatusTip("Export library metadata to JSON");
     connect(exportAct, &QAction::triggered, this, &MainWindow::exportLibrarySnapshot);
     fileMenu->addAction(exportAct);
 
-    QAction* importAct = new QAction("Import Library Snapshot...", this);
+    QAction* importAct = new QAction(trl("action.importSnapshot", "Import Library Snapshot..."), this);
     importAct->setStatusTip("Import library metadata from JSON");
     connect(importAct, &QAction::triggered, this, &MainWindow::importLibrarySnapshot);
     fileMenu->addAction(importAct);
 
     fileMenu->addSeparator();
 
-    QAction* stopTasksAct = new QAction("Stop All Tasks", this);
+    QAction* stopTasksAct = new QAction(trl("action.stopAllTasks", "Stop All Tasks"), this);
     stopTasksAct->setShortcut(QKeySequence("Ctrl+."));
     stopTasksAct->setStatusTip("Cancel all running background tasks");
     connect(stopTasksAct, &QAction::triggered, this, &MainWindow::stopAllTasks);
@@ -1447,21 +1465,23 @@ void MainWindow::setupMenuBar()
 
     fileMenu->addSeparator();
 
-    QAction* quitAct = new QAction("Quit Eagle Library", this);
+    QAction* quitAct = new QAction(trl("action.quit", "Quit Eagle Library"), this);
     quitAct->setShortcut(QKeySequence::Quit);
     connect(quitAct, &QAction::triggered, this, &QWidget::close);
     fileMenu->addAction(quitAct);
 
     // ── Library ───────────────────────────────────────────────
-    QMenu* libMenu = menuBar()->addMenu("&Library");
+    QMenu* libMenu = menuBar()->addMenu(trl("menu.library", "&Library"));
 
-    QAction* scanAct = new QAction("Scan Folders", this);
+    QAction* scanAct = new QAction(trl("action.scanFolders", "Scan Folders"), this);
     scanAct->setShortcut(QKeySequence("F5"));
     scanAct->setStatusTip("Scan watched folders for new files");
-    connect(scanAct, &QAction::triggered, this, &MainWindow::onScanStart);
+    connect(scanAct, &QAction::triggered, this, [this]() {
+        queueOrRunMenuTask("Scan Folders", [this]() { startScanNow(); });
+    });
     libMenu->addAction(scanAct);
 
-    QAction* refreshAct2 = new QAction("Refresh View", this);
+    QAction* refreshAct2 = new QAction(trl("action.refreshView", "Refresh View"), this);
     refreshAct2->setShortcut(QKeySequence("F5"));
     connect(refreshAct2, &QAction::triggered, this, &MainWindow::refreshLibrary);
     // (scan already has F5, so we just connect refresh without shortcut duplicate)
@@ -1470,19 +1490,19 @@ void MainWindow::setupMenuBar()
     libMenu->addSeparator();
 
     // Search submenu
-    QMenu* searchMenu = libMenu->addMenu("Search");
-    QAction* advancedSearchAct = new QAction("Advanced Search...", this);
+    QMenu* searchMenu = libMenu->addMenu(trl("menu.search", "Search"));
+    QAction* advancedSearchAct = new QAction(trl("action.advancedSearch", "Advanced Search..."), this);
     advancedSearchAct->setShortcut(QKeySequence("Ctrl+Shift+F"));
     advancedSearchAct->setStatusTip("Open powerful multi-field search dialog");
     connect(advancedSearchAct, &QAction::triggered, this, &MainWindow::openAdvancedSearch);
     searchMenu->addAction(advancedSearchAct);
 
-    QAction* saveSearchAct = new QAction("Save Current Search...", this);
+    QAction* saveSearchAct = new QAction(trl("action.saveCurrentSearch", "Save Current Search..."), this);
     saveSearchAct->setStatusTip("Save the current search query for quick access");
     connect(saveSearchAct, &QAction::triggered, this, &MainWindow::saveCurrentSearch);
     searchMenu->addAction(saveSearchAct);
 
-    QAction* openSavedSearchAct = new QAction("Open Saved Search...", this);
+    QAction* openSavedSearchAct = new QAction(trl("action.openSavedSearch", "Open Saved Search..."), this);
     openSavedSearchAct->setStatusTip("Open and apply a previously saved search");
     connect(openSavedSearchAct, &QAction::triggered, this, [this]() {
         const QVector<SavedSearch> searches = Database::instance().savedSearches();
@@ -1509,85 +1529,109 @@ void MainWindow::setupMenuBar()
     libMenu->addSeparator();
 
     // Metadata submenu
-    QMenu* metaMenu = libMenu->addMenu("Metadata");
+    QMenu* metaMenu = libMenu->addMenu(trl("menu.metadata", "Metadata"));
 
-    QAction* fetchAct = new QAction("Fetch All Metadata", this);
+    QAction* fetchAct = new QAction(trl("action.fetchAllMetadata", "Fetch All Metadata"), this);
     fetchAct->setStatusTip("Download metadata for all books from Google Books and OpenLibrary");
-    connect(fetchAct, &QAction::triggered, this, &MainWindow::fetchAllMetadata);
+    connect(fetchAct, &QAction::triggered, this, [this]() {
+        queueOrRunMenuTask("Fetch All Metadata", [this]() { fetchAllMetadata(); });
+    });
     metaMenu->addAction(fetchAct);
 
-    QAction* metaManagerAct = new QAction("Metadata Manager...", this);
+    QAction* metaManagerAct = new QAction(trl("action.metadataManager", "Metadata Manager..."), this);
     metaManagerAct->setStatusTip("Choose metadata scope, overwrite mode, and source providers");
-    connect(metaManagerAct, &QAction::triggered, this, &MainWindow::openMetadataManager);
+    connect(metaManagerAct, &QAction::triggered, this, [this]() {
+        queueOrRunMenuTask("Metadata Manager", [this]() { openMetadataManager(); });
+    });
     metaMenu->addAction(metaManagerAct);
 
-    QAction* enrichIncompleteAct = new QAction("Enrich Incomplete Books", this);
+    QAction* enrichIncompleteAct = new QAction(trl("action.enrichIncompleteBooks", "Enrich Incomplete Books"), this);
     enrichIncompleteAct->setStatusTip("Fetch metadata only for books with incomplete information");
-    connect(enrichIncompleteAct, &QAction::triggered, this, &MainWindow::enrichIncompleteBooksAction);
+    connect(enrichIncompleteAct, &QAction::triggered, this, [this]() {
+        queueOrRunMenuTask("Enrich Incomplete Books", [this]() { enrichIncompleteBooksAction(); });
+    });
     metaMenu->addAction(enrichIncompleteAct);
 
-    QAction* isbnAct = new QAction("Extract ISBNs \u2192 Fetch Metadata", this);
+    QAction* isbnAct = new QAction(trl("action.extractIsbn", "Extract ISBNs + Fetch Metadata"), this);
     isbnAct->setStatusTip("Extract ISBN numbers from file content and fetch metadata");
-    connect(isbnAct, &QAction::triggered, this, &MainWindow::extractMissingIsbns);
+    connect(isbnAct, &QAction::triggered, this, [this]() {
+        queueOrRunMenuTask("Extract ISBNs / Fetch Metadata", [this]() { extractMissingIsbns(); });
+    });
     metaMenu->addAction(isbnAct);
 
     metaMenu->addSeparator();
 
-    QAction* genCoversAct = new QAction("Generate Missing Covers", this);
-    connect(genCoversAct, &QAction::triggered, this, &MainWindow::generateMissingCovers);
+    QAction* genCoversAct = new QAction(trl("action.generateMissingCovers", "Generate Missing Covers"), this);
+    connect(genCoversAct, &QAction::triggered, this, [this]() {
+        queueOrRunMenuTask("Generate Missing Covers", [this]() { generateMissingCovers(); });
+    });
     metaMenu->addAction(genCoversAct);
 
-    QAction* normCoversAct = new QAction("Normalize Covers", this);
-    connect(normCoversAct, &QAction::triggered, this, &MainWindow::normalizeCovers);
+    QAction* normCoversAct = new QAction(trl("action.normalizeCovers", "Normalize Covers"), this);
+    connect(normCoversAct, &QAction::triggered, this, [this]() {
+        queueOrRunMenuTask("Normalize Covers", [this]() { normalizeCovers(); });
+    });
     metaMenu->addAction(normCoversAct);
 
-    QAction* pagesAct = new QAction("Count Pages", this);
-    connect(pagesAct, &QAction::triggered, this, &MainWindow::countPagesForLibrary);
+    QAction* pagesAct = new QAction(trl("action.countPages", "Count Pages"), this);
+    connect(pagesAct, &QAction::triggered, this, [this]() {
+        queueOrRunMenuTask("Count Pages", [this]() { countPagesForLibrary(); });
+    });
     metaMenu->addAction(pagesAct);
 
     // Tools submenu
-    QMenu* toolsMenu = libMenu->addMenu("Tools");
+    QMenu* toolsMenu = libMenu->addMenu(trl("menu.tools", "Tools"));
 
-    QAction* qualityAct = new QAction("Quality Check", this);
+    QAction* qualityAct = new QAction(trl("action.qualityCheck", "Quality Check"), this);
     qualityAct->setStatusTip("Detect encoding issues and suspicious metadata");
-    connect(qualityAct, &QAction::triggered, this, &MainWindow::runQualityCheck);
+    connect(qualityAct, &QAction::triggered, this, [this]() {
+        queueOrRunMenuTask("Quality Check", [this]() { runQualityCheck(); });
+    });
     toolsMenu->addAction(qualityAct);
 
-    QAction* dupesAct = new QAction("Find Duplicates", this);
+    QAction* dupesAct = new QAction(trl("action.findDuplicates", "Find Duplicates"), this);
     dupesAct->setStatusTip("Detect duplicate files by hash");
-    connect(dupesAct, &QAction::triggered, this, &MainWindow::findDuplicates);
+    connect(dupesAct, &QAction::triggered, this, [this]() {
+        queueOrRunMenuTask("Find Duplicates", [this]() { findDuplicates(); });
+    });
     toolsMenu->addAction(dupesAct);
 
-    QAction* categorizeAct = new QAction("Smart Categorize", this);
+    QAction* categorizeAct = new QAction(trl("action.smartCategorize", "Smart Categorize"), this);
     categorizeAct->setStatusTip("Auto-classify books vs documents");
-    connect(categorizeAct, &QAction::triggered, this, &MainWindow::smartCategorizeLibrary);
+    connect(categorizeAct, &QAction::triggered, this, [this]() {
+        queueOrRunMenuTask("Smart Categorize", [this]() { smartCategorizeLibrary(); });
+    });
     toolsMenu->addAction(categorizeAct);
 
     toolsMenu->addSeparator();
 
-    QAction* renameMenuAct = new QAction("Smart Rename All...", this);
+    QAction* renameMenuAct = new QAction(trl("action.smartRenameAll", "Smart Rename All..."), this);
     renameMenuAct->setShortcut(QKeySequence("Ctrl+R"));
-    connect(renameMenuAct, &QAction::triggered, this, &MainWindow::onSmartRenameAll);
+    connect(renameMenuAct, &QAction::triggered, this, [this]() {
+        queueOrRunMenuTask("Smart Rename All", [this]() { onSmartRenameAll(); });
+    });
     toolsMenu->addAction(renameMenuAct);
 
-    QAction* renameSelectedAct2 = new QAction("Smart Rename Selected...", this);
+    QAction* renameSelectedAct2 = new QAction(trl("action.smartRenameSelected", "Smart Rename Selected..."), this);
     renameSelectedAct2->setShortcut(QKeySequence("Ctrl+Shift+R"));
-    connect(renameSelectedAct2, &QAction::triggered, this, &MainWindow::onSmartRenameSelected);
+    connect(renameSelectedAct2, &QAction::triggered, this, [this]() {
+        queueOrRunMenuTask("Smart Rename Selected", [this]() { onSmartRenameSelected(); });
+    });
     toolsMenu->addAction(renameSelectedAct2);
 
     // Collections
     libMenu->addSeparator();
-    QAction* collectionsAct = new QAction("Manage Collections...", this);
+    QAction* collectionsAct = new QAction(trl("action.manageCollections", "Manage Collections..."), this);
     collectionsAct->setStatusTip("Create and manage virtual book collections");
     connect(collectionsAct, &QAction::triggered, this, &MainWindow::manageCollections);
     libMenu->addAction(collectionsAct);
 
     // Web Research
     libMenu->addSeparator();
-    QMenu* researchMenu = libMenu->addMenu("Research");
+    QMenu* researchMenu = libMenu->addMenu(trl("menu.research", "Research"));
 
-    QMenu* referenceMenu = researchMenu->addMenu("Reference Lookup");
-    QAction* referenceDialogAct = new QAction("Current Selection...", this);
+    QMenu* referenceMenu = researchMenu->addMenu(trl("menu.referenceLookup", "Reference Lookup"));
+    QAction* referenceDialogAct = new QAction(trl("action.currentSelection", "Current Selection..."), this);
     connect(referenceDialogAct, &QAction::triggered, this, [this]() {
         QListView* view = currentView();
         const QModelIndexList selected = view && view->selectionModel() ? view->selectionModel()->selectedIndexes() : QModelIndexList{};
@@ -1601,7 +1645,7 @@ void MainWindow::setupMenuBar()
     });
     referenceMenu->addAction(referenceDialogAct);
 
-    QAction* googleAct = new QAction("Search on Google...", this);
+    QAction* googleAct = new QAction(trl("action.searchGoogle", "Search on Google..."), this);
     googleAct->setShortcut(QKeySequence("Ctrl+Shift+G"));
     googleAct->setStatusTip("Search selected book on Google");
     connect(googleAct, &QAction::triggered, this, &MainWindow::searchSelectedOnGoogle);
@@ -1609,27 +1653,27 @@ void MainWindow::setupMenuBar()
 
     libMenu->addSeparator();
 
-    QAction* cleanAct = new QAction("Remove Missing Files", this);
+    QAction* cleanAct = new QAction(trl("action.removeMissingFiles", "Remove Missing Files"), this);
     cleanAct->setStatusTip("Clean up records for files that no longer exist");
     connect(cleanAct, &QAction::triggered, this, &MainWindow::cleanMissingFiles);
     libMenu->addAction(cleanAct);
 
-    QAction* removeAct = new QAction("Remove Selected from Library", this);
+    QAction* removeAct = new QAction(trl("action.removeSelected", "Remove Selected from Library"), this);
     removeAct->setShortcut(QKeySequence::Delete);
     connect(removeAct, &QAction::triggered, this, &MainWindow::removeSelectedBook);
     libMenu->addAction(removeAct);
 
     // ── View ──────────────────────────────────────────────────
-    QMenu* viewMenu = menuBar()->addMenu("&View");
+    QMenu* viewMenu = menuBar()->addMenu(trl("menu.view", "&View"));
 
-    QAction* gridAct = new QAction("Grid View", this);
+    QAction* gridAct = new QAction(trl("action.gridView", "Grid View"), this);
     gridAct->setShortcut(QKeySequence("Ctrl+G"));
     gridAct->setCheckable(true);
     gridAct->setChecked(true);
     connect(gridAct, &QAction::triggered, this, &MainWindow::setGridView);
     viewMenu->addAction(gridAct);
 
-    QAction* listAct = new QAction("List View", this);
+    QAction* listAct = new QAction(trl("action.listView", "List View"), this);
     listAct->setShortcut(QKeySequence("Ctrl+L"));
     listAct->setCheckable(true);
     connect(listAct, &QAction::triggered, this, &MainWindow::setListView);
@@ -1637,7 +1681,7 @@ void MainWindow::setupMenuBar()
 
     viewMenu->addSeparator();
 
-    QAction* cmdPaletteAct = new QAction("Command Palette", this);
+    QAction* cmdPaletteAct = new QAction(trl("action.commandPalette", "Command Palette"), this);
     cmdPaletteAct->setShortcut(QKeySequence("Ctrl+P"));
     cmdPaletteAct->setStatusTip("Open VS Code-style command launcher");
     connect(cmdPaletteAct, &QAction::triggered, this, &MainWindow::openCommandPalette);
@@ -1646,30 +1690,30 @@ void MainWindow::setupMenuBar()
     viewMenu->addSeparator();
 
     // Theme submenu
-    QMenu* themeMenu = viewMenu->addMenu("Appearance");
+    QMenu* themeMenu = viewMenu->addMenu(trl("menu.appearance", "Appearance"));
 
     auto* themeGroup = new QActionGroup(this);
     themeGroup->setExclusive(true);
 
-    m_themeBlueAct = new QAction("Blue Pro (Dark)", themeGroup);
+    m_themeBlueAct = new QAction(trl("theme.blue", "Blue Pro (Dark)"), themeGroup);
     m_themeBlueAct->setCheckable(true);
     m_themeBlueAct->setChecked(true);
     connect(m_themeBlueAct, &QAction::triggered, this, [this]() { switchTheme("Blue Pro"); });
     themeMenu->addAction(m_themeBlueAct);
 
-    m_themeWhiteAct = new QAction("Pure White (Light)", themeGroup);
+    m_themeWhiteAct = new QAction(trl("theme.white", "Pure White (Light)"), themeGroup);
     m_themeWhiteAct->setCheckable(true);
     connect(m_themeWhiteAct, &QAction::triggered, this, [this]() { switchTheme("Pure White"); });
     themeMenu->addAction(m_themeWhiteAct);
 
-    m_themeMacAct = new QAction("macOS Style", themeGroup);
+    m_themeMacAct = new QAction(trl("theme.mac", "macOS Style"), themeGroup);
     m_themeMacAct->setCheckable(true);
     connect(m_themeMacAct, &QAction::triggered, this, [this]() { switchTheme("macOS"); });
     themeMenu->addAction(m_themeMacAct);
 
     viewMenu->addSeparator();
 
-    QMenu* languageMenu = viewMenu->addMenu("Language");
+    QMenu* languageMenu = viewMenu->addMenu(trl("menu.language", "Language"));
     m_languageActionGroup = new QActionGroup(this);
     m_languageActionGroup->setExclusive(true);
     const QVector<LanguageInfo> languages = LanguageManager::instance().availableLanguages();
@@ -1691,20 +1735,20 @@ void MainWindow::setupMenuBar()
 
     viewMenu->addSeparator();
 
-    QAction* refreshAct = new QAction("Refresh", this);
+    QAction* refreshAct = new QAction(trl("action.refresh", "Refresh"), this);
     refreshAct->setShortcut(QKeySequence("F5"));
     connect(refreshAct, &QAction::triggered, this, &MainWindow::refreshLibrary);
     viewMenu->addAction(refreshAct);
 
     // ── Plugins ───────────────────────────────────────────────
-    m_pluginMenu = menuBar()->addMenu("&Plugins");
+    m_pluginMenu = menuBar()->addMenu(trl("menu.plugins", "&Plugins"));
 
-    QAction* pluginManagerAct = new QAction("Manage Plugins...", this);
+    QAction* pluginManagerAct = new QAction(trl("action.managePlugins", "Manage Plugins..."), this);
     pluginManagerAct->setStatusTip("View, enable, and disable installed plugins");
     connect(pluginManagerAct, &QAction::triggered, this, &MainWindow::openPluginManager);
     m_pluginMenu->addAction(pluginManagerAct);
 
-    QAction* pluginFolderAct = new QAction("Open Plugins Folder", this);
+    QAction* pluginFolderAct = new QAction(trl("action.openPluginsFolder", "Open Plugins Folder"), this);
     connect(pluginFolderAct, &QAction::triggered, this, [this]() {
         const QString dir = AppConfig::pluginsDir();
         QDir().mkpath(dir);
@@ -1716,78 +1760,80 @@ void MainWindow::setupMenuBar()
     // Plugin-contributed items will appear below this separator
 
     // ── Database ──────────────────────────────────────────────
-    QMenu* dbMenu = menuBar()->addMenu("&Database");
+    QMenu* dbMenu = menuBar()->addMenu(trl("menu.database", "&Database"));
 
-    QAction* dbSummaryAct = new QAction("Database Summary", this);
+    QAction* dbSummaryAct = new QAction(trl("action.databaseSummary", "Database Summary"), this);
     connect(dbSummaryAct, &QAction::triggered, this, &MainWindow::consultDatabaseSummary);
     dbMenu->addAction(dbSummaryAct);
 
     dbMenu->addSeparator();
 
-    QAction* dbDiagnoseAct = new QAction("Diagnose Text Issues", this);
-    connect(dbDiagnoseAct, &QAction::triggered, this, &MainWindow::diagnoseDatabaseText);
-    dbMenu->addAction(dbDiagnoseAct);
-
-    QAction* dbRepairAct = new QAction("Repair Text Issues...", this);
-    connect(dbRepairAct, &QAction::triggered, this, &MainWindow::repairDatabaseText);
-    dbMenu->addAction(dbRepairAct);
-
-    QAction* rebuildSearchAct = new QAction("Rebuild Search Index", this);
+    QAction* rebuildSearchAct = new QAction(trl("action.rebuildSearchIndex", "Rebuild Search Index"), this);
     connect(rebuildSearchAct, &QAction::triggered, this, [this]() {
-        showTaskProgress("Search Index", "Rebuilding the metadata search index...", 0, 0);
-        Database::instance().rebuildSearchIndex();
-        hideTaskProgress("Search index rebuilt.");
+        queueOrRunMenuTask("Rebuild Search Index", [this]() {
+            showTaskProgress("Search Index", "Rebuilding the metadata search index...", 0, 0);
+            Database::instance().rebuildSearchIndex();
+            hideTaskProgress("Search index rebuilt.");
+        });
     });
     dbMenu->addAction(rebuildSearchAct);
 
     dbMenu->addSeparator();
 
-    QAction* dbFolderAct = new QAction("Open Database Folder", this);
+    QAction* dbFolderAct = new QAction(trl("action.openDatabaseFolder", "Open Database Folder"), this);
     connect(dbFolderAct, &QAction::triggered, this, &MainWindow::openDatabaseFolder);
     dbMenu->addAction(dbFolderAct);
 
-    QAction* dbEditorAct = new QAction("Database Editor...", this);
+    QAction* dbEditorAct = new QAction(trl("action.databaseEditor", "Database Editor..."), this);
     connect(dbEditorAct, &QAction::triggered, this, &MainWindow::openDatabaseEditor);
     dbMenu->addAction(dbEditorAct);
 
-    QAction* remapPathsAct = new QAction("Remap Drive / Folder Paths...", this);
-    connect(remapPathsAct, &QAction::triggered, this, &MainWindow::remapLibraryPaths);
+    QAction* remapPathsAct = new QAction(trl("action.remapPaths", "Remap Drive / Folder Paths..."), this);
+    connect(remapPathsAct, &QAction::triggered, this, [this]() {
+        queueOrRunMenuTask("Remap Paths", [this]() { remapLibraryPaths(); });
+    });
     dbMenu->addAction(remapPathsAct);
 
     dbMenu->addSeparator();
 
-    QAction* optimizeAct = new QAction("Optimize", this);
+    QAction* optimizeAct = new QAction(trl("action.optimizeDatabase", "Optimize"), this);
     connect(optimizeAct, &QAction::triggered, this, [this]() {
-        showTaskProgress("Optimizing Database", "Running SQLite optimize...", 0, 0);
-        Database::instance().optimize();
-        hideTaskProgress("Optimization complete.");
+        queueOrRunMenuTask("Optimize Database", [this]() {
+            showTaskProgress("Optimizing Database", "Running SQLite optimize...", 0, 0);
+            Database::instance().optimize();
+            hideTaskProgress("Optimization complete.");
+        });
     });
     dbMenu->addAction(optimizeAct);
 
-    QAction* vacuumAct = new QAction("Vacuum", this);
+    QAction* vacuumAct = new QAction(trl("action.vacuumDatabase", "Vacuum"), this);
     connect(vacuumAct, &QAction::triggered, this, [this]() {
-        Database::instance().vacuum();
-        m_statusLabel->setText("Vacuum complete.");
+        queueOrRunMenuTask("Vacuum Database", [this]() {
+            Database::instance().vacuum();
+            m_statusLabel->setText("Vacuum complete.");
+        });
     });
     dbMenu->addAction(vacuumAct);
 
-    QAction* reindexAct = new QAction("Reindex", this);
+    QAction* reindexAct = new QAction(trl("action.reindexDatabase", "Reindex"), this);
     connect(reindexAct, &QAction::triggered, this, [this]() {
-        Database::instance().reindex();
-        m_statusLabel->setText("Reindex complete.");
+        queueOrRunMenuTask("Reindex Database", [this]() {
+            Database::instance().reindex();
+            m_statusLabel->setText("Reindex complete.");
+        });
     });
     dbMenu->addAction(reindexAct);
 
     // ── Help ──────────────────────────────────────────────────
-    QMenu* helpMenu = menuBar()->addMenu("&Help");
+    QMenu* helpMenu = menuBar()->addMenu(trl("menu.help", "&Help"));
 
-    QAction* aboutAct = new QAction("About Eagle Library", this);
+    QAction* aboutAct = new QAction(trl("action.about", "About Eagle Library"), this);
     connect(aboutAct, &QAction::triggered, this, &MainWindow::showAbout);
     helpMenu->addAction(aboutAct);
 
     helpMenu->addSeparator();
 
-    QAction* guideAct = new QAction("User Guide", this);
+    QAction* guideAct = new QAction(trl("action.userGuide", "User Guide"), this);
     guideAct->setShortcut(QKeySequence::HelpContents);
     connect(guideAct, &QAction::triggered, this, [this]() {
         const QDir appDir(QCoreApplication::applicationDirPath());
@@ -1808,13 +1854,13 @@ void MainWindow::setupMenuBar()
     });
     helpMenu->addAction(guideAct);
 
-    QAction* toolsAct = new QAction("Install PDF/OCR Tools...", this);
+    QAction* toolsAct = new QAction(trl("action.installTools", "Install PDF/OCR Tools..."), this);
     connect(toolsAct, &QAction::triggered, this, &MainWindow::openExternalToolsDialog);
     helpMenu->addAction(toolsAct);
 
     helpMenu->addSeparator();
 
-    QAction* webAct = new QAction("Eagle Software Website", this);
+    QAction* webAct = new QAction(trl("action.visitWebsite", "Eagle Software Website"), this);
     connect(webAct, &QAction::triggered, this, []() {
         QDesktopServices::openUrl(QUrl("https://eaglesoftware.biz/"));
     });
@@ -1824,7 +1870,7 @@ void MainWindow::setupMenuBar()
 // ── Toolbar ──────────────────────────────────────────────────
 void MainWindow::setupToolBar()
 {
-    m_mainToolBar = addToolBar("Main Toolbar");
+    m_mainToolBar = addToolBar(trl("toolbar.main", "Main Toolbar"));
     QToolBar* tb = m_mainToolBar;
     tb->setObjectName("mainToolBar");
     tb->setMovable(false);
@@ -1843,7 +1889,7 @@ void MainWindow::setupToolBar()
         brandLogo.load(":/eagle_logo.png");
     if (!brandLogo.isNull())
         brandIcon->setPixmap(brandLogo.scaled(30, 24, Qt::KeepAspectRatio, Qt::SmoothTransformation));
-    auto* brandText = new QLabel("Eagle Library", brand);
+    auto* brandText = new QLabel(AppConfig::appName(), brand);
     brandText->setObjectName("toolbarBrandText");
     brandLayout->addWidget(brandIcon);
     brandLayout->addWidget(brandText);
@@ -1854,22 +1900,24 @@ void MainWindow::setupToolBar()
     m_libraryCombo = new QComboBox(tb);
     m_libraryCombo->setMinimumWidth(160);
     m_libraryCombo->setMaximumWidth(200);
-    m_libraryCombo->setToolTip("Active library profile");
+    m_libraryCombo->setToolTip(trl("toolbar.libraryTip", "Active library profile"));
     connect(m_libraryCombo, &QComboBox::currentTextChanged, this, &MainWindow::switchLibrary);
     tb->addWidget(m_libraryCombo);
     tb->addSeparator();
 
     // Scan
-    QAction* scanAct = new QAction("Scan", this);
+    QAction* scanAct = new QAction(trl("toolbar.scan", "Scan"), this);
     scanAct->setIcon(style()->standardIcon(QStyle::SP_BrowserReload));
     scanAct->setToolTip("Scan folders for new files  (F5)");
-    connect(scanAct, &QAction::triggered, this, &MainWindow::onScanStart);
+    connect(scanAct, &QAction::triggered, this, [this]() {
+        queueOrRunMenuTask("Scan Folders", [this]() { startScanNow(); });
+    });
     tb->addAction(scanAct);
 
     tb->addSeparator();
 
     // View toggle
-    m_gridAction = new QAction("Grid", this);
+    m_gridAction = new QAction(trl("toolbar.grid", "Grid"), this);
     m_gridAction->setIcon(style()->standardIcon(QStyle::SP_FileDialogContentsView));
     m_gridAction->setCheckable(true);
     m_gridAction->setChecked(true);
@@ -1877,7 +1925,7 @@ void MainWindow::setupToolBar()
     connect(m_gridAction, &QAction::triggered, this, &MainWindow::setGridView);
     tb->addAction(m_gridAction);
 
-    m_listAction = new QAction("List", this);
+    m_listAction = new QAction(trl("toolbar.list", "List"), this);
     m_listAction->setIcon(style()->standardIcon(QStyle::SP_FileDialogListView));
     m_listAction->setCheckable(true);
     m_listAction->setToolTip("Compact list view  (Ctrl+L)");
@@ -1888,7 +1936,7 @@ void MainWindow::setupToolBar()
 
     // Favourites
     m_favAction = new QAction(this);
-    m_favAction->setText("\u2665  Favourites");
+    m_favAction->setText(QStringLiteral("\u2665  ") + trl("toolbar.favourites", "Favourites"));
     m_favAction->setCheckable(true);
     m_favAction->setToolTip("Show only favourites");
     connect(m_favAction, &QAction::triggered, this, &MainWindow::showFavourites);
@@ -1898,7 +1946,7 @@ void MainWindow::setupToolBar()
 
     // Search box (prominent)
     m_searchBox = new QLineEdit;
-    m_searchBox->setPlaceholderText("Search title, author, ISBN, tags...");
+    m_searchBox->setPlaceholderText(trl("toolbar.searchPlaceholder", "Search title, author, ISBN, tags..."));
     m_searchBox->setMinimumWidth(240);
     m_searchBox->setMaximumWidth(360);
     m_searchBox->setClearButtonEnabled(true);
@@ -1912,7 +1960,7 @@ void MainWindow::setupToolBar()
     m_shelfCombo = new QComboBox(tb);
     m_shelfCombo->setMinimumWidth(150);
     m_shelfCombo->setMaximumWidth(180);
-    m_shelfCombo->setToolTip("Virtual shelf / filter view");
+    m_shelfCombo->setToolTip(trl("toolbar.shelfTip", "Virtual shelf / filter view"));
     connect(m_shelfCombo, qOverload<int>(&QComboBox::currentIndexChanged), this, [this](int index) {
         if (index >= 0)
             applyShelf(m_shelfCombo->itemData(index).toString());
@@ -1925,8 +1973,8 @@ void MainWindow::setupToolBar()
     m_formatCombo = new QComboBox;
     m_formatCombo->setMinimumWidth(80);
     m_formatCombo->setMaximumWidth(100);
-    m_formatCombo->setToolTip("Filter by format");
-    m_formatCombo->addItem("All Formats");
+    m_formatCombo->setToolTip(trl("toolbar.formatTip", "Filter by format"));
+    m_formatCombo->addItem(trl("toolbar.allFormats", "All Formats"));
     for (const char* fmt : {"PDF","EPUB","MOBI","AZW","AZW3","DjVu","CBZ","CBR","FB2","TXT","DOCX"})
         m_formatCombo->addItem(fmt);
     connect(m_formatCombo, &QComboBox::currentTextChanged, this, &MainWindow::filterByFormat);
@@ -1936,7 +1984,7 @@ void MainWindow::setupToolBar()
     m_categoryCombo = new QComboBox;
     m_categoryCombo->setMinimumWidth(130);
     m_categoryCombo->setMaximumWidth(160);
-    m_categoryCombo->setToolTip("Filter by category or tag");
+    m_categoryCombo->setToolTip(trl("toolbar.categoryTip", "Filter by category or tag"));
     connect(m_categoryCombo, &QComboBox::currentTextChanged, this, &MainWindow::filterByCategory);
     tb->addWidget(m_categoryCombo);
 
@@ -1946,25 +1994,27 @@ void MainWindow::setupToolBar()
     m_sortCombo = new QComboBox;
     m_sortCombo->setMinimumWidth(100);
     m_sortCombo->setMaximumWidth(130);
-    m_sortCombo->setToolTip("Sort order");
-    m_sortCombo->addItem("Title",      (int)SortField::Title);
-    m_sortCombo->addItem("Author",     (int)SortField::Author);
-    m_sortCombo->addItem("Year",       (int)SortField::Year);
-    m_sortCombo->addItem("Format",     (int)SortField::Format);
-    m_sortCombo->addItem("Date Added", (int)SortField::DateAdded);
-    m_sortCombo->addItem("Rating",     (int)SortField::Rating);
-    m_sortCombo->addItem("File Size",  (int)SortField::FileSize);
-    m_sortCombo->addItem("Series",     (int)SortField::Series);
+    m_sortCombo->setToolTip(trl("toolbar.sortTip", "Sort order"));
+    m_sortCombo->addItem(trl("sort.title", "Title"),           (int)SortField::Title);
+    m_sortCombo->addItem(trl("sort.author", "Author"),         (int)SortField::Author);
+    m_sortCombo->addItem(trl("sort.year", "Year"),             (int)SortField::Year);
+    m_sortCombo->addItem(trl("sort.format", "Format"),         (int)SortField::Format);
+    m_sortCombo->addItem(trl("sort.dateAdded", "Date Added"),  (int)SortField::DateAdded);
+    m_sortCombo->addItem(trl("sort.rating", "Rating"),         (int)SortField::Rating);
+    m_sortCombo->addItem(trl("sort.fileSize", "File Size"),    (int)SortField::FileSize);
+    m_sortCombo->addItem(trl("sort.series", "Series"),         (int)SortField::Series);
     connect(m_sortCombo, qOverload<int>(&QComboBox::currentIndexChanged), this, &MainWindow::sortChanged);
     tb->addWidget(m_sortCombo);
 
-    m_sortAscAct = new QAction("\u2191 Asc", this);
+    m_sortAscAct = new QAction(QStringLiteral("\u2191 ") + trl("toolbar.sortAsc", "Asc"), this);
     m_sortAscAct->setCheckable(true);
     m_sortAscAct->setChecked(true);
     m_sortAscAct->setToolTip("Toggle sort direction");
     connect(m_sortAscAct, &QAction::triggered, this, [this](bool checked){
         m_sortOrder = checked ? SortOrder::Asc : SortOrder::Desc;
-        m_sortAscAct->setText(checked ? "\u2191 Asc" : "\u2193 Desc");
+        m_sortAscAct->setText(checked
+            ? QStringLiteral("\u2191 ") + trl("toolbar.sortAsc", "Asc")
+            : QStringLiteral("\u2193 ") + trl("toolbar.sortDesc", "Desc"));
         sortChanged(m_sortCombo->currentIndex());
     });
     tb->addAction(m_sortAscAct);
@@ -1975,7 +2025,7 @@ void MainWindow::setupToolBar()
     tb->addWidget(spacer);
 
     // Command Palette button
-    QAction* cpAct = new QAction("\u2318  Commands", this);
+    QAction* cpAct = new QAction(QStringLiteral("\u2318  ") + trl("toolbar.commands", "Commands"), this);
     cpAct->setToolTip("Open command palette  (Ctrl+P)");
     connect(cpAct, &QAction::triggered, this, &MainWindow::openCommandPalette);
     tb->addAction(cpAct);
@@ -2272,12 +2322,16 @@ void MainWindow::setupViews()
                 connect(editAct, &QAction::triggered, this, [this, idx]() { openBookDetail(idx); });
                 menu.addSeparator();
                 QAction* renameSelectedAct = menu.addAction("Smart Rename Selected");
-                connect(renameSelectedAct, &QAction::triggered, this, &MainWindow::onSmartRenameSelected);
+                connect(renameSelectedAct, &QAction::triggered, this, [this]() {
+                    queueOrRunMenuTask("Smart Rename Selected", [this]() { onSmartRenameSelected(); });
+                });
                 QAction* fetchAct = menu.addAction("Fetch Metadata");
                 connect(fetchAct, &QAction::triggered, this, [this, idx]() {
                     QModelIndex src = m_filterModel->mapToSource(idx);
+                    if (!src.isValid())
+                        return;
                     const Book& b = m_model->bookAt(src.row());
-                    scheduleMetadataFetch(b);
+                    queueOrRunMenuTask("Fetch Metadata", [this, b]() { scheduleMetadataFetch(b); });
                 });
                 QAction* refsAct = menu.addAction("Related References...");
                 connect(refsAct, &QAction::triggered, this, [this, idx]() {
@@ -2448,12 +2502,114 @@ void MainWindow::hideTaskProgress(const QString& finalStatus)
         m_statusLabel->setText(finalStatus);
 }
 
+bool MainWindow::backgroundWorkRunning() const
+{
+    const bool scanRunning = m_scanner && m_scanner->isRunning();
+    const bool metadataRunning = m_metaFetcher && m_metaFetcher->isRunning();
+    const bool coverRunning = m_coverDownloader && m_coverDownloader->isRunning();
+    const bool renameRunning = m_renameThread && m_renameThread->isRunning();
+    const bool isbnRunning = m_isbnExtractionWatcher && m_isbnExtractionWatcher->isRunning();
+    return scanRunning || metadataRunning || coverRunning || renameRunning || isbnRunning;
+}
+
+void MainWindow::queueOrRunMenuTask(const QString& name, std::function<void()> task)
+{
+    if (m_isClosing)
+        return;
+
+    if (m_menuTaskActive || backgroundWorkRunning() || !m_menuTaskQueue.isEmpty()) {
+        m_menuTaskQueue.enqueue({name, std::move(task)});
+        const QString message = QString("Queued %1. %2 task(s) waiting.").arg(name).arg(m_menuTaskQueue.size());
+        qInfo().noquote() << "[TaskQueue]" << message;
+        if (m_statusLabel)
+            m_statusLabel->setText(message);
+        return;
+    }
+
+    startMenuTask(name, std::move(task));
+}
+
+void MainWindow::startMenuTask(const QString& name, std::function<void()> task)
+{
+    if (m_isClosing)
+        return;
+
+    m_menuTaskActive = true;
+    m_activeMenuTaskName = name;
+    m_metadataTaskWaitingForCovers = false;
+    qInfo().noquote() << "[TaskQueue] Starting" << name;
+    if (m_statusLabel)
+        m_statusLabel->setText(QString("Running %1...").arg(name));
+
+    task();
+
+    if (!backgroundWorkRunning())
+        finishMenuTask();
+}
+
+void MainWindow::finishMenuTask(const QString& finalStatus)
+{
+    if (!m_menuTaskActive && m_activeMenuTaskName.isEmpty())
+        return;
+
+    const QString finishedName = m_activeMenuTaskName;
+    qInfo().noquote() << "[TaskQueue] Finished" << finishedName;
+    m_menuTaskActive = false;
+    m_activeMenuTaskName.clear();
+    m_metadataTaskWaitingForCovers = false;
+
+    if (!finalStatus.isEmpty() && m_statusLabel)
+        m_statusLabel->setText(finalStatus);
+
+    QTimer::singleShot(0, this, &MainWindow::runNextQueuedMenuTask);
+}
+
+void MainWindow::runNextQueuedMenuTask()
+{
+    if (m_isClosing || m_menuTaskActive || backgroundWorkRunning() || m_menuTaskQueue.isEmpty())
+        return;
+
+    QueuedMenuTask next = m_menuTaskQueue.dequeue();
+    startMenuTask(next.name, std::move(next.run));
+}
+
+void MainWindow::maybeFinishMetadataMenuTask()
+{
+    if (m_isClosing)
+        return;
+
+    if (m_menuTaskActive) {
+        if (m_coverDownloader && m_coverDownloader->isRunning())
+            m_metadataTaskWaitingForCovers = true;
+        if (backgroundWorkRunning())
+            return;
+        finishMenuTask(m_metadataTaskWaitingForCovers
+                       ? QStringLiteral("Background task and cover downloads complete.")
+                       : QStringLiteral("Background task complete."));
+        return;
+    }
+
+    runNextQueuedMenuTask();
+}
+
 // ── Slots ─────────────────────────────────────────────────────
 void MainWindow::onScanStart()
 {
-    if (m_watchFolders.isEmpty()) { openSettings(); return; }
+    queueOrRunMenuTask("Scan Folders", [this]() { startScanNow(); });
+}
+
+void MainWindow::startScanNow()
+{
+    if (m_watchFolders.isEmpty()) {
+        qWarning().noquote() << "[Scan] Requested with no watched folders";
+        openSettings();
+        return;
+    }
     m_recentlyAddedBooks.clear();
     const QString modeLabel = m_fastScanMode ? "Fast scan mode enabled" : "Deep metadata scan enabled";
+    qInfo().noquote() << "[Scan] Starting folders=" << m_watchFolders.join(QStringLiteral(" | "))
+                      << "threads=" << m_scanThreads
+                      << "fast=" << m_fastScanMode;
     showTaskProgress("Scanning Library", "Scanning library folders...", 0, 0, modeLabel);
     m_scanner->startScan(m_watchFolders, m_scanThreads, m_fastScanMode); // 0 = auto-detect CPU count
 }
@@ -2471,6 +2627,11 @@ void MainWindow::onBookFound(Book book)
 {
     m_model->addBook(book);
     m_recentlyAddedBooks << book;
+    if (m_recentlyAddedBooks.size() <= 5 || (m_recentlyAddedBooks.size() % 50) == 0) {
+        qInfo().noquote() << "[Scan] Found item count=" << m_recentlyAddedBooks.size()
+                          << "latestId=" << book.id
+                          << "format=" << book.format;
+    }
     PluginManager::instance().notifyBookAdded(book.id);
     QSettings s(AppConfig::settingsPath(), QSettings::IniFormat);
     if (!m_autoEnrichAfterScan && s.value("options/autoMeta", true).toBool())
@@ -2479,17 +2640,32 @@ void MainWindow::onBookFound(Book book)
 
 void MainWindow::onScanFinished(int added, int skipped)
 {
+    qInfo().noquote() << "[Scan] Finished added=" << added << "skipped=" << skipped;
     hideTaskProgress(QString("Scan complete -- %1 new, %2 already indexed").arg(added).arg(skipped));
     refreshLibraryWatcher();
     updateStatusCount();
-    if (m_autoEnrichAfterScan && !m_recentlyAddedBooks.isEmpty())
-        enrichIncompleteBooks(m_recentlyAddedBooks, "Post-Scan Enrichment");
+    if (m_autoEnrichAfterScan && !m_recentlyAddedBooks.isEmpty()) {
+        const QVector<Book> postScanBooks = m_recentlyAddedBooks;
+        QTimer::singleShot(750, this, [this, postScanBooks]() {
+            if (m_isClosing)
+                return;
+            m_menuTaskQueue.enqueue({
+                QStringLiteral("Post-Scan Enrichment"),
+                [this, postScanBooks]() { enrichIncompleteBooks(postScanBooks, "Post-Scan Enrichment"); }
+            });
+            qInfo().noquote() << "[TaskQueue] Queued automatic Post-Scan Enrichment. queueSize="
+                              << m_menuTaskQueue.size();
+            runNextQueuedMenuTask();
+        });
+    }
     if (m_incrementalScanPending)
         m_libraryChangeTimer->start();
+    QTimer::singleShot(1000, this, &MainWindow::maybeFinishMetadataMenuTask);
 }
 
 void MainWindow::onMetadataReady(qint64 id, Book updated)
 {
+    qInfo().noquote() << "[Metadata] Ready id=" << id << "title=" << updated.title;
     if (m_isClosing || !m_model)
         return;
     const Book* current = m_model->bookById(id);
@@ -2915,6 +3091,7 @@ void MainWindow::onRenameFinished(int changed)
     m_activeRenamer = nullptr;
     hideTaskProgress(QString("Smart rename complete - %1 books updated.").arg(changed));
     if (changed > 0) reloadCurrentLibrary();
+    maybeFinishMetadataMenuTask();
 }
 
 void MainWindow::cleanMissingFiles()
@@ -3169,53 +3346,99 @@ void MainWindow::extractMissingIsbns()
     QVector<Book> books = chooseBooksScope("Extract Missing ISBNs");
     if (books.isEmpty())
         return;
-    int updated = 0;
-    int queuedMetadata = 0;
-    int invalidDetected = 0;
-    QJsonArray updates;
-    int index = 0;
-    for (Book book : books) {
-        ++index;
-        showTaskProgress("Extracting ISBNs",
-                         QString("Scanning %1/%2 books").arg(index).arg(books.size()),
-                         index,
-                         books.size(),
-                         book.displayTitle());
-        const QString existingIsbn = sanitizeIsbn(book.isbn);
-        if (!existingIsbn.isEmpty()) {
-            if (!(isValidIsbn10(existingIsbn) || isValidIsbn13(existingIsbn)))
-                ++invalidDetected;
-            continue;
+
+    if (m_isbnExtractionWatcher && m_isbnExtractionWatcher->isRunning()) {
+        if (m_statusLabel)
+            m_statusLabel->setText(trl("status.isbnAlreadyRunning", "ISBN extraction is already running."));
+        return;
+    }
+
+    auto* watcher = new QFutureWatcher<IsbnExtractionResult>(this);
+    m_isbnExtractionWatcher = watcher;
+    auto state = QSharedPointer<QJsonObject>::create();
+    (*state)["feature"] = "extract_missing_isbns";
+    (*state)["updated_books"] = 0;
+    (*state)["queued_metadata_fetches"] = 0;
+    (*state)["invalid_isbn_candidates"] = 0;
+    (*state)["items"] = QJsonArray();
+
+    connect(watcher, &QFutureWatcher<IsbnExtractionResult>::progressValueChanged, this, [this, watcher](int value) {
+        showTaskProgress(trl("task.extractIsbns", "Extracting ISBNs"),
+                         trl("task.scanningBooks", "Scanning %1/%2 books").arg(value).arg(watcher->progressMaximum()),
+                         value,
+                         watcher->progressMaximum());
+    });
+
+    connect(watcher, &QFutureWatcher<IsbnExtractionResult>::resultReadyAt, this, [this, watcher, state](int index) {
+        const IsbnExtractionResult result = watcher->resultAt(index);
+        int invalidDetected = state->value("invalid_isbn_candidates").toInt();
+        if (result.invalidExisting || result.invalidCandidate) {
+            (*state)["invalid_isbn_candidates"] = invalidDetected + 1;
+            return;
         }
-        const QString isbn = extractIsbnFromBookContent(book);
-        if (isbn.isEmpty())
-            continue;
-        const QString cleanIsbn = sanitizeIsbn(isbn);
-        if (!(isValidIsbn10(cleanIsbn) || isValidIsbn13(cleanIsbn))) {
-            ++invalidDetected;
-            continue;
-        }
-        book.isbn = cleanIsbn;
+        if (result.isbn.isEmpty())
+            return;
+
+        Book book = result.book;
+        book.isbn = result.isbn;
         Database::instance().updateBook(book);
-        m_model->updateBook(book);
+        if (m_model)
+            m_model->updateBook(book);
         scheduleMetadataFetch(book, true);
-        ++queuedMetadata;
+
+        QJsonArray updates = state->value("items").toArray();
         QJsonObject item;
         item["title"] = book.displayTitle();
         item["file_path"] = book.filePath;
-        item["isbn"] = cleanIsbn;
+        item["isbn"] = result.isbn;
         item["metadata_queued"] = true;
         updates.append(item);
-        ++updated;
-    }
-    QJsonObject report;
-    report["feature"] = "extract_missing_isbns";
-    report["updated_books"] = updated;
-    report["queued_metadata_fetches"] = queuedMetadata;
-    report["invalid_isbn_candidates"] = invalidDetected;
-    report["items"] = updates;
-    saveJsonArtifact("isbn-extraction", report);
-    hideTaskProgress(QString("ISBN extraction complete. Updated %1 books and queued %2 metadata lookups.").arg(updated).arg(queuedMetadata));
+        (*state)["items"] = updates;
+        (*state)["updated_books"] = state->value("updated_books").toInt() + 1;
+        (*state)["queued_metadata_fetches"] = state->value("queued_metadata_fetches").toInt() + 1;
+    });
+
+    connect(watcher, &QFutureWatcher<IsbnExtractionResult>::finished, this, [this, watcher, state]() {
+        saveJsonArtifact("isbn-extraction", *state);
+        const int updated = state->value("updated_books").toInt();
+        const int queuedMetadata = state->value("queued_metadata_fetches").toInt();
+        hideTaskProgress(trl("status.isbnExtractionComplete",
+                             "ISBN extraction complete. Updated %1 books and queued %2 metadata lookups.")
+                             .arg(updated).arg(queuedMetadata));
+        if (m_isbnExtractionWatcher == watcher)
+            m_isbnExtractionWatcher = nullptr;
+        watcher->deleteLater();
+        if (!backgroundWorkRunning())
+            finishMenuTask(m_statusLabel ? m_statusLabel->text() : QString());
+    });
+
+    showTaskProgress(trl("task.extractIsbns", "Extracting ISBNs"),
+                     trl("task.starting", "Starting..."),
+                     0,
+                     books.size());
+
+    static QThreadPool isbnExtractionPool;
+    isbnExtractionPool.setMaxThreadCount(qMin(2, qMax(1, QThread::idealThreadCount() / 2)));
+    watcher->setFuture(QtConcurrent::mapped(&isbnExtractionPool, books, [](Book book) {
+        IsbnExtractionResult result;
+        result.book = book;
+        const QString existingIsbn = sanitizeIsbn(book.isbn);
+        if (!existingIsbn.isEmpty()) {
+            if (!(isValidIsbn10(existingIsbn) || isValidIsbn13(existingIsbn)))
+                result.invalidExisting = true;
+            return result;
+        }
+        const QString isbn = extractIsbnFromBookContent(book);
+        if (isbn.isEmpty())
+            return result;
+        const QString cleanIsbn = sanitizeIsbn(isbn);
+        if (!(isValidIsbn10(cleanIsbn) || isValidIsbn13(cleanIsbn))) {
+            result.invalidCandidate = true;
+            return result;
+        }
+        result.isbn = cleanIsbn;
+        return result;
+    }));
 }
 
 void MainWindow::countPagesForLibrary()
@@ -3473,6 +3696,13 @@ void MainWindow::importLibrarySnapshot()
 
 void MainWindow::stopAllTasks()
 {
+    const int queuedTasks = m_menuTaskQueue.size();
+    m_menuTaskQueue.clear();
+    m_menuTaskActive = false;
+    m_activeMenuTaskName.clear();
+    m_metadataTaskWaitingForCovers = false;
+    qInfo().noquote() << "[TaskQueue] Stop requested, cleared queued tasks=" << queuedTasks;
+
     m_recentlyAddedBooks.clear();
     m_forceCoverFetchIds.clear();
 
@@ -3841,13 +4071,17 @@ void MainWindow::showAbout()
 {
     QMessageBox box(this);
     box.setWindowTitle(trl("action.about", "About Eagle Library"));
+    QPixmap logo(AppConfig::logoPngPath());
+    if (logo.isNull())
+        logo.load(":/eagle_logo.png");
+    if (!logo.isNull())
+        box.setIconPixmap(logo.scaled(96, 96, Qt::KeepAspectRatio, Qt::SmoothTransformation));
     box.setText(
         "<h2 style='color:#c8aa50;'>Eagle Library</h2>"
-        "<p style='color:#aaa;'>Version " + AppConfig::version() + "</p>"
-        "<p>Copyright &copy; 2026 Eagle Software. All rights reserved.</p>"
-        "<p>Professional eBook library manager. Manage thousands of books "
-        "across any folder structure, fetch metadata from the internet, "
-        "auto-download cover art, and build your personal reading collection.</p>"
+        "<p style='color:#aaa;'>" + trl("settings.about.version", "Version %1").arg(AppConfig::version()) + "</p>"
+        "<p>" + trl("settings.about.copyright", "Copyright (C) 2026 Eagle Software. All rights reserved.") + "</p>"
+        "<p>" + trl("about.description",
+                    "Professional eBook library manager. Manage thousands of books across any folder structure, fetch metadata from the internet, auto-download cover art, and build your personal reading collection.") + "</p>"
         "<p><a href='https://eaglesoftware.biz/' style='color:#4a90d0;'>"
         "https://eaglesoftware.biz/</a></p>");
     box.setStyleSheet(styleSheet());
@@ -3869,6 +4103,7 @@ void MainWindow::updateStatusCount()
 
 void MainWindow::closeEvent(QCloseEvent* event)
 {
+    qInfo().noquote() << "[MainWindow] closeEvent";
     m_isClosing = true;
     if (m_libraryChangeTimer)
         m_libraryChangeTimer->stop();
@@ -4368,7 +4603,6 @@ void MainWindow::enrichIncompleteBooks(const QVector<Book>& books, const QString
         return;
     }
 
-    int isbnUpdated = 0;
     int categorized = 0;
     int metadataQueued = 0;
 
@@ -4382,14 +4616,6 @@ void MainWindow::enrichIncompleteBooks(const QVector<Book>& books, const QString
                          book.displayTitle());
 
         bool changed = false;
-        if (book.isbn.trimmed().isEmpty()) {
-            const QString extracted = sanitizeIsbn(extractIsbnFromBookContent(book));
-            if (!extracted.isEmpty() && (isValidIsbn10(extracted) || isValidIsbn13(extracted))) {
-                book.isbn = extracted;
-                ++isbnUpdated;
-                changed = true;
-            }
-        }
 
         if (book.tags.isEmpty()) {
             const QStringList inferredTags = inferSmartTags(book);
@@ -4416,9 +4642,8 @@ void MainWindow::enrichIncompleteBooks(const QVector<Book>& books, const QString
     }
 
     rebuildSmartCategorySidebar();
-    hideTaskProgress(QString("%1 complete. ISBN updated: %2, categorized: %3, metadata queued: %4.")
+    hideTaskProgress(QString("%1 complete. Categorized: %2, metadata queued: %3. Use Extract ISBNs for deep file probing.")
                          .arg(title)
-                         .arg(isbnUpdated)
                          .arg(categorized)
                          .arg(metadataQueued));
 }
@@ -4638,12 +4863,12 @@ void MainWindow::setupCommandPalette()
     const QList<Command> cmds = {
         { "scan",         "Scan Folders",              "Scan watched folders for new files", "F5",       "Library",  [this]{ onScanStart(); } },
         { "refresh",      "Refresh View",              "Reload the current view",            "",         "Library",  [this]{ refreshLibrary(); } },
-        { "fetch_meta",   "Fetch All Metadata",        "Download metadata for all books",    "",         "Library",  [this]{ fetchAllMetadata(); } },
-        { "enrich",       "Enrich Incomplete Books",   "Fill in missing metadata",           "",         "Library",  [this]{ enrichIncompleteBooksAction(); } },
-        { "find_dupes",   "Find Duplicates",           "Detect duplicate files by hash",     "",         "Library",  [this]{ findDuplicates(); } },
-        { "quality",      "Quality Check",             "Scan for encoding and meta issues",  "",         "Library",  [this]{ runQualityCheck(); } },
-        { "smart_cat",    "Smart Categorize",          "Auto-classify books vs documents",   "",         "Library",  [this]{ smartCategorizeLibrary(); } },
-        { "smart_rename", "Smart Rename All",          "Auto-rename from filename patterns", "Ctrl+R",   "Library",  [this]{ onSmartRenameAll(); } },
+        { "fetch_meta",   "Fetch All Metadata",        "Download metadata for all books",    "",         "Library",  [this]{ queueOrRunMenuTask("Fetch All Metadata", [this]{ fetchAllMetadata(); }); } },
+        { "enrich",       "Enrich Incomplete Books",   "Fill in missing metadata",           "",         "Library",  [this]{ queueOrRunMenuTask("Enrich Incomplete Books", [this]{ enrichIncompleteBooksAction(); }); } },
+        { "find_dupes",   "Find Duplicates",           "Detect duplicate files by hash",     "",         "Library",  [this]{ queueOrRunMenuTask("Find Duplicates", [this]{ findDuplicates(); }); } },
+        { "quality",      "Quality Check",             "Scan for encoding and meta issues",  "",         "Library",  [this]{ queueOrRunMenuTask("Quality Check", [this]{ runQualityCheck(); }); } },
+        { "smart_cat",    "Smart Categorize",          "Auto-classify books vs documents",   "",         "Library",  [this]{ queueOrRunMenuTask("Smart Categorize", [this]{ smartCategorizeLibrary(); }); } },
+        { "smart_rename", "Smart Rename All",          "Auto-rename from filename patterns", "Ctrl+R",   "Library",  [this]{ queueOrRunMenuTask("Smart Rename All", [this]{ onSmartRenameAll(); }); } },
         { "collections",  "Manage Collections",        "Create virtual book collections",    "",         "Library",  [this]{ manageCollections(); } },
         { "google",       "Search on Google",          "Search selected book on Google",     "Ctrl+Shift+G", "Research", [this]{ searchSelectedOnGoogle(); } },
         { "adv_search",   "Advanced Search",           "Multi-field search dialog",          "Ctrl+Shift+F", "Search", [this]{ openAdvancedSearch(); } },
