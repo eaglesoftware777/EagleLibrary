@@ -70,6 +70,7 @@
 #include <QSaveFile>
 #include <QJsonDocument>
 #include <QPushButton>
+#include <QToolButton>
 #include <QResizeEvent>
 #include <QPixmap>
 #include <QItemSelectionModel>
@@ -92,6 +93,7 @@
 #include <QSharedPointer>
 #include <QtConcurrent>
 #include <algorithm>
+#include <utility>
 
 namespace {
 
@@ -1455,6 +1457,11 @@ void MainWindow::setupMenuBar()
     connect(importAct, &QAction::triggered, this, &MainWindow::importLibrarySnapshot);
     fileMenu->addAction(importAct);
 
+    QAction* importPreviousDbAct = new QAction(trl("action.importPreviousDatabase", "Import Previous Database Backup..."), this);
+    importPreviousDbAct->setStatusTip("Import records from a backed-up SQLite library database");
+    connect(importPreviousDbAct, &QAction::triggered, this, &MainWindow::importPreviousDatabaseBackup);
+    fileMenu->addAction(importPreviousDbAct);
+
     fileMenu->addSeparator();
 
     QAction* stopTasksAct = new QAction(trl("action.stopAllTasks", "Stop All Tasks"), this);
@@ -1788,6 +1795,10 @@ void MainWindow::setupMenuBar()
     connect(dbEditorAct, &QAction::triggered, this, &MainWindow::openDatabaseEditor);
     dbMenu->addAction(dbEditorAct);
 
+    QAction* importDbBackupAct = new QAction(trl("action.importPreviousDatabase", "Import Previous Database Backup..."), this);
+    connect(importDbBackupAct, &QAction::triggered, this, &MainWindow::importPreviousDatabaseBackup);
+    dbMenu->addAction(importDbBackupAct);
+
     QAction* remapPathsAct = new QAction(trl("action.remapPaths", "Remap Drive / Folder Paths..."), this);
     connect(remapPathsAct, &QAction::triggered, this, [this]() {
         queueOrRunMenuTask("Remap Paths", [this]() { remapLibraryPaths(); });
@@ -1823,6 +1834,34 @@ void MainWindow::setupMenuBar()
         });
     });
     dbMenu->addAction(reindexAct);
+
+    // ── Tasks ────────────────────────────────────────────────
+    QMenu* tasksMenu = menuBar()->addMenu(trl("menu.tasks", "&Tasks"));
+
+    QAction* taskCenterAct = new QAction(trl("action.taskCenter", "Task Center..."), this);
+    taskCenterAct->setShortcut(QKeySequence("Ctrl+Shift+T"));
+    connect(taskCenterAct, &QAction::triggered, this, &MainWindow::openTaskCenter);
+    tasksMenu->addAction(taskCenterAct);
+
+    QAction* batchAct = new QAction(trl("action.batchTasks", "Run Batch Tasks..."), this);
+    connect(batchAct, &QAction::triggered, this, &MainWindow::runBatchTasks);
+    tasksMenu->addAction(batchAct);
+
+    QAction* popupAct = new QAction(trl("action.popupTaskNotifications", "Popup Task Notifications"), this);
+    popupAct->setCheckable(true);
+    popupAct->setChecked(m_taskPopupsEnabled);
+    connect(popupAct, &QAction::toggled, this, [this](bool checked) {
+        m_taskPopupsEnabled = checked;
+        if (!checked)
+            hideTaskToast();
+        else
+            showNextTaskToast();
+        updateTaskQueueIndicators();
+    });
+    tasksMenu->addAction(popupAct);
+
+    tasksMenu->addSeparator();
+    tasksMenu->addAction(stopTasksAct);
 
     // ── Help ──────────────────────────────────────────────────
     QMenu* helpMenu = menuBar()->addMenu(trl("menu.help", "&Help"));
@@ -2375,6 +2414,17 @@ void MainWindow::setupStatusBar()
     m_progressBar->setVisible(false);
     statusBar()->addWidget(m_progressBar);
 
+    m_taskQueueLabel = new QLabel(trl("status.tasksIdle", "No queued tasks"));
+    m_taskQueueLabel->setObjectName("statusPill");
+    statusBar()->addWidget(m_taskQueueLabel);
+
+    m_taskCenterButton = new QToolButton(statusBar());
+    m_taskCenterButton->setObjectName("taskCenterButton");
+    m_taskCenterButton->setText(trl("status.taskCenter", "Tasks"));
+    m_taskCenterButton->setToolButtonStyle(Qt::ToolButtonTextOnly);
+    connect(m_taskCenterButton, &QToolButton::clicked, this, &MainWindow::openTaskCenter);
+    statusBar()->addPermanentWidget(m_taskCenterButton);
+
     // Permanent: library stats pill
     m_libraryStatsLabel = new QLabel;
     m_libraryStatsLabel->setObjectName("infoChip");
@@ -2387,6 +2437,29 @@ void MainWindow::setupStatusBar()
     statusBar()->addPermanentWidget(versionLabel);
 
     statusBar()->setSizeGripEnabled(false);
+    updateTaskQueueIndicators();
+
+    m_taskToastFrame = new QFrame(this);
+    m_taskToastFrame->setObjectName("taskToast");
+    m_taskToastFrame->setFrameShape(QFrame::StyledPanel);
+    auto* toastLayout = new QVBoxLayout(m_taskToastFrame);
+    toastLayout->setContentsMargins(14, 12, 14, 12);
+    toastLayout->setSpacing(4);
+    m_taskToastTitleLabel = new QLabel(m_taskToastFrame);
+    m_taskToastTitleLabel->setObjectName("taskToastTitle");
+    m_taskToastBodyLabel = new QLabel(m_taskToastFrame);
+    m_taskToastBodyLabel->setObjectName("taskToastBody");
+    m_taskToastBodyLabel->setWordWrap(true);
+    m_taskToastMetaLabel = new QLabel(m_taskToastFrame);
+    m_taskToastMetaLabel->setObjectName("taskToastMeta");
+    toastLayout->addWidget(m_taskToastTitleLabel);
+    toastLayout->addWidget(m_taskToastBodyLabel);
+    toastLayout->addWidget(m_taskToastMetaLabel);
+    m_taskToastFrame->hide();
+
+    m_taskToastTimer = new QTimer(this);
+    m_taskToastTimer->setSingleShot(true);
+    connect(m_taskToastTimer, &QTimer::timeout, this, &MainWindow::hideTaskToast);
 }
 
 void MainWindow::retranslateUi()
@@ -2487,6 +2560,7 @@ void MainWindow::showTaskProgress(const QString& title, const QString& status, i
     }
     m_statusLabel->setText(statusText);
     m_scanLabel->setText(safeDetail.isEmpty() ? trl("status.processing", "Processing") : safeDetail);
+    updateTaskQueueIndicators();
 }
 
 void MainWindow::hideTaskProgress(const QString& finalStatus)
@@ -2500,6 +2574,95 @@ void MainWindow::hideTaskProgress(const QString& finalStatus)
     m_scanLabel->setText(trl("status.idle", "Idle"));
     if (!finalStatus.isEmpty())
         m_statusLabel->setText(finalStatus);
+    updateTaskQueueIndicators();
+}
+
+void MainWindow::pushTaskNotice(const QString& title, const QString& message, const QString& detail, const QString& kind)
+{
+    TaskNotice notice;
+    notice.title = title.trimmed();
+    notice.message = message.trimmed();
+    notice.detail = detail.trimmed();
+    notice.kind = kind.trimmed().isEmpty() ? QStringLiteral("info") : kind.trimmed().toLower();
+    notice.createdAt = QDateTime::currentDateTime();
+    m_taskNotices.push_back(notice);
+    m_pendingTaskToastIndexes.enqueue(m_taskNotices.size() - 1);
+    updateTaskQueueIndicators();
+    showNextTaskToast();
+}
+
+void MainWindow::updateTaskQueueIndicators()
+{
+    const int queuedTasks = m_menuTaskQueue.size();
+    const int activeUnits = (m_menuTaskActive ? 1 : 0)
+        + (backgroundWorkRunning() ? 1 : 0);
+
+    if (m_taskQueueLabel) {
+        if (queuedTasks > 0)
+            m_taskQueueLabel->setText(QString("Queued %1 task(s)").arg(queuedTasks));
+        else if (activeUnits > 0)
+            m_taskQueueLabel->setText(QString("Running %1 task group(s)").arg(activeUnits));
+        else
+            m_taskQueueLabel->setText(trl("status.tasksIdle", "No queued tasks"));
+    }
+
+    if (m_taskCenterButton) {
+        const int count = m_taskNotices.size();
+        m_taskCenterButton->setText(count > 0
+            ? QString("Tasks (%1)").arg(count)
+            : trl("status.taskCenter", "Tasks"));
+        m_taskCenterButton->setToolTip(queuedTasks > 0
+            ? QString("Open Task Center. %1 task(s) queued.").arg(queuedTasks)
+            : QString("Open Task Center. %1 notice(s) saved.").arg(count));
+    }
+}
+
+void MainWindow::positionTaskToast()
+{
+    if (!m_taskToastFrame || !m_taskToastFrame->isVisible())
+        return;
+
+    const QSize size = m_taskToastFrame->sizeHint().expandedTo(QSize(320, 116));
+    const QRect area = centralWidget() ? centralWidget()->geometry() : rect();
+    const int x = area.right() - size.width() - 26;
+    const int y = qMax(area.top() + 20, statusBar()->geometry().top() - size.height() - 18);
+    m_taskToastFrame->setGeometry(x, y, size.width(), size.height());
+    m_taskToastFrame->raise();
+}
+
+void MainWindow::showNextTaskToast()
+{
+    if (!m_taskPopupsEnabled || !m_taskToastFrame || m_pendingTaskToastIndexes.isEmpty())
+        return;
+    if (m_taskToastFrame->isVisible())
+        return;
+
+    const int index = m_pendingTaskToastIndexes.dequeue();
+    if (index < 0 || index >= m_taskNotices.size())
+        return;
+
+    const TaskNotice& notice = m_taskNotices.at(index);
+    m_taskToastFrame->setProperty("noticeKind", notice.kind);
+    m_taskToastTitleLabel->setText(notice.title);
+    m_taskToastBodyLabel->setText(notice.message);
+    const QString metaText = notice.detail.isEmpty()
+        ? notice.createdAt.toString("yyyy-MM-dd HH:mm:ss")
+        : QString("%1  |  %2").arg(notice.detail, notice.createdAt.toString("yyyy-MM-dd HH:mm:ss"));
+    m_taskToastMetaLabel->setText(metaText);
+    style()->unpolish(m_taskToastFrame);
+    style()->polish(m_taskToastFrame);
+    m_taskToastFrame->adjustSize();
+    m_taskToastFrame->show();
+    positionTaskToast();
+    m_taskToastTimer->start(5200);
+}
+
+void MainWindow::hideTaskToast()
+{
+    if (m_taskToastFrame)
+        m_taskToastFrame->hide();
+    if (!m_pendingTaskToastIndexes.isEmpty())
+        QTimer::singleShot(120, this, &MainWindow::showNextTaskToast);
 }
 
 bool MainWindow::backgroundWorkRunning() const
@@ -2523,6 +2686,7 @@ void MainWindow::queueOrRunMenuTask(const QString& name, std::function<void()> t
         qInfo().noquote() << "[TaskQueue]" << message;
         if (m_statusLabel)
             m_statusLabel->setText(message);
+        pushTaskNotice(QStringLiteral("Task Queued"), message, name, QStringLiteral("info"));
         return;
     }
 
@@ -2540,6 +2704,10 @@ void MainWindow::startMenuTask(const QString& name, std::function<void()> task)
     qInfo().noquote() << "[TaskQueue] Starting" << name;
     if (m_statusLabel)
         m_statusLabel->setText(QString("Running %1...").arg(name));
+    pushTaskNotice(QStringLiteral("Task Started"),
+                   QString("Running %1.").arg(name),
+                   QString("Queue depth: %1").arg(m_menuTaskQueue.size()),
+                   QStringLiteral("success"));
 
     task();
 
@@ -2560,6 +2728,11 @@ void MainWindow::finishMenuTask(const QString& finalStatus)
 
     if (!finalStatus.isEmpty() && m_statusLabel)
         m_statusLabel->setText(finalStatus);
+    if (!finishedName.isEmpty())
+        pushTaskNotice(QStringLiteral("Task Complete"),
+                       finalStatus.isEmpty() ? QString("%1 finished.").arg(finishedName) : finalStatus,
+                       finishedName,
+                       QStringLiteral("success"));
 
     QTimer::singleShot(0, this, &MainWindow::runNextQueuedMenuTask);
 }
@@ -2720,6 +2893,10 @@ void MainWindow::onMetadataFetchError(qint64 id, const QString& msg)
     const Book* book = m_model->bookById(id);
     m_statusLabel->setText(QString("Metadata skipped for %1: %2")
                            .arg(book ? book->displayTitle() : QString::number(id), msg));
+    pushTaskNotice(QStringLiteral("Metadata Warning"),
+                   m_statusLabel->text(),
+                   QStringLiteral("Book ID %1").arg(id),
+                   QStringLiteral("warning"));
 }
 
 void MainWindow::onCoverDownloadProgress(int completed, int total, const QString& currentLabel)
@@ -2744,6 +2921,10 @@ void MainWindow::onCoverDownloadFailed(qint64 id, const QString& reason)
     const Book* book = m_model->bookById(id);
     m_statusLabel->setText(QString("No cover found for %1: %2")
                            .arg(book ? book->displayTitle() : QString::number(id), reason));
+    pushTaskNotice(QStringLiteral("Cover Warning"),
+                   m_statusLabel->text(),
+                   QStringLiteral("Book ID %1").arg(id),
+                   QStringLiteral("warning"));
 }
 
 void MainWindow::openSettings()
@@ -3692,6 +3873,188 @@ void MainWindow::importLibrarySnapshot()
     reloadCurrentLibrary();
     updateStatusCount();
     m_statusLabel->setText(QString("Imported %1 books from %2").arg(imported).arg(QFileInfo(path).fileName()));
+    pushTaskNotice(QStringLiteral("Library Imported"),
+                   m_statusLabel->text(),
+                   QFileInfo(path).fileName(),
+                   QStringLiteral("success"));
+}
+
+void MainWindow::importPreviousDatabaseBackup()
+{
+    QDir().mkpath(AppConfig::backupsDir());
+    const QString path = QFileDialog::getOpenFileName(
+        this,
+        trl("action.importPreviousDatabase", "Import Previous Database Backup"),
+        AppConfig::backupsDir(),
+        "SQLite Database (*.db *.sqlite *.sqlite3)");
+    if (path.isEmpty())
+        return;
+
+    const int imported = Database::instance().importFromDatabase(path);
+    if (imported <= 0) {
+        QMessageBox::warning(this, trl("action.importPreviousDatabase", "Import Previous Database Backup"),
+                             "No records were imported from the selected database backup.");
+        pushTaskNotice(QStringLiteral("Database Import Failed"),
+                       QString("No records imported from %1.").arg(QFileInfo(path).fileName()),
+                       path,
+                       QStringLiteral("warning"));
+        return;
+    }
+
+    reloadCurrentLibrary();
+    rebuildSmartCategorySidebar();
+    refreshCategoryOptions();
+    updateStatusCount();
+    const QString message = QString("Imported %1 records from %2.").arg(imported).arg(QFileInfo(path).fileName());
+    m_statusLabel->setText(message);
+    pushTaskNotice(QStringLiteral("Database Imported"), message, path, QStringLiteral("success"));
+}
+
+void MainWindow::openTaskCenter()
+{
+    QDialog dlg(this);
+    dlg.setWindowTitle(trl("status.taskCenter", "Task Center"));
+    dlg.resize(760, 460);
+    dlg.setStyleSheet(styleSheet());
+
+    auto* layout = new QVBoxLayout(&dlg);
+    auto* summary = new QLabel(
+        QString("Active task: %1\nQueued menu tasks: %2\nSaved notices: %3")
+            .arg(m_menuTaskActive ? m_activeMenuTaskName : QStringLiteral("Idle"))
+            .arg(m_menuTaskQueue.size())
+            .arg(m_taskNotices.size()),
+        &dlg);
+    summary->setWordWrap(true);
+    layout->addWidget(summary);
+
+    auto* popupCheck = new QCheckBox(trl("task.popupNotifications", "Show popup task notifications"), &dlg);
+    popupCheck->setChecked(m_taskPopupsEnabled);
+    layout->addWidget(popupCheck);
+
+    auto* queuedLabel = new QLabel(trl("task.queuedTasks", "Queued Tasks"), &dlg);
+    layout->addWidget(queuedLabel);
+    auto* queuedList = new QListWidget(&dlg);
+    for (const QueuedMenuTask& task : std::as_const(m_menuTaskQueue))
+        queuedList->addItem(task.name);
+    if (queuedList->count() == 0)
+        queuedList->addItem(trl("task.noQueuedTasks", "No queued tasks"));
+    layout->addWidget(queuedList, 1);
+
+    auto* historyLabel = new QLabel(trl("task.noticeHistory", "Task History"), &dlg);
+    layout->addWidget(historyLabel);
+    auto* historyList = new QListWidget(&dlg);
+    for (int i = m_taskNotices.size() - 1; i >= 0; --i) {
+        const TaskNotice& notice = m_taskNotices.at(i);
+        historyList->addItem(QString("[%1] %2\n%3")
+                                 .arg(notice.createdAt.toString("yyyy-MM-dd HH:mm:ss"),
+                                      notice.title,
+                                      notice.message));
+    }
+    if (historyList->count() == 0)
+        historyList->addItem(trl("task.noHistory", "No task history yet"));
+    layout->addWidget(historyList, 2);
+
+    auto* buttons = new QDialogButtonBox(QDialogButtonBox::Close, &dlg);
+    auto* clearBtn = buttons->addButton(trl("task.clearHistory", "Clear History"), QDialogButtonBox::ActionRole);
+    connect(clearBtn, &QPushButton::clicked, &dlg, [this, historyList, summary]() {
+        m_taskNotices.clear();
+        m_pendingTaskToastIndexes.clear();
+        hideTaskToast();
+        historyList->clear();
+        historyList->addItem(trl("task.noHistory", "No task history yet"));
+        summary->setText(QString("Active task: %1\nQueued menu tasks: %2\nSaved notices: %3")
+                             .arg(m_menuTaskActive ? m_activeMenuTaskName : QStringLiteral("Idle"))
+                             .arg(m_menuTaskQueue.size())
+                             .arg(m_taskNotices.size()));
+        updateTaskQueueIndicators();
+    });
+    connect(popupCheck, &QCheckBox::toggled, &dlg, [this](bool checked) {
+        m_taskPopupsEnabled = checked;
+        if (!checked)
+            hideTaskToast();
+        else
+            showNextTaskToast();
+        updateTaskQueueIndicators();
+    });
+    connect(buttons, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
+    layout->addWidget(buttons);
+    dlg.exec();
+}
+
+void MainWindow::runBatchTasks()
+{
+    QDialog dlg(this);
+    dlg.setWindowTitle(trl("task.batchRunner", "Batch Task Runner"));
+    dlg.resize(480, 420);
+    dlg.setStyleSheet(styleSheet());
+
+    auto* layout = new QVBoxLayout(&dlg);
+    auto* intro = new QLabel(trl("task.batchRunnerIntro",
+                                 "Choose the tasks to run in order. They will be queued and executed one after another."), &dlg);
+    intro->setWordWrap(true);
+    layout->addWidget(intro);
+
+    struct BatchTaskOption {
+        QString label;
+        std::function<void()> run;
+    };
+    const QVector<BatchTaskOption> options = {
+        { trl("action.scanFolders", "Scan Folders"), [this]() { startScanNow(); } },
+        { trl("action.enrichIncompleteBooks", "Enrich Incomplete Books"), [this]() { enrichIncompleteBooksAction(); } },
+        { trl("action.extractIsbn", "Extract ISBNs + Fetch Metadata"), [this]() { extractMissingIsbns(); } },
+        { trl("action.generateMissingCovers", "Generate Missing Covers"), [this]() { generateMissingCovers(); } },
+        { trl("action.normalizeCovers", "Normalize Covers"), [this]() { normalizeCovers(); } },
+        { trl("action.qualityCheck", "Quality Check"), [this]() { runQualityCheck(); } },
+        { trl("action.findDuplicates", "Find Duplicates"), [this]() { findDuplicates(); } },
+        { trl("action.smartCategorize", "Smart Categorize"), [this]() { smartCategorizeLibrary(); } },
+        { trl("action.optimizeDatabase", "Optimize"), [this]() {
+            showTaskProgress("Optimizing Database", "Running SQLite optimize...", 0, 0);
+            Database::instance().optimize();
+            hideTaskProgress("Optimization complete.");
+        } },
+        { trl("action.rebuildSearchIndex", "Rebuild Search Index"), [this]() {
+            showTaskProgress("Search Index", "Rebuilding the metadata search index...", 0, 0);
+            Database::instance().rebuildSearchIndex();
+            hideTaskProgress("Search index rebuilt.");
+        } }
+    };
+
+    QVector<QCheckBox*> checks;
+    checks.reserve(options.size());
+    for (const BatchTaskOption& option : options) {
+        auto* check = new QCheckBox(option.label, &dlg);
+        layout->addWidget(check);
+        checks.push_back(check);
+    }
+    layout->addStretch();
+
+    auto* buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dlg);
+    buttons->button(QDialogButtonBox::Ok)->setText(trl("task.queueBatch", "Queue Batch"));
+    layout->addWidget(buttons);
+    connect(buttons, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
+    connect(buttons, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
+
+    if (dlg.exec() != QDialog::Accepted)
+        return;
+
+    int selected = 0;
+    for (int i = 0; i < options.size(); ++i) {
+        if (!checks.at(i)->isChecked())
+            continue;
+        ++selected;
+        queueOrRunMenuTask(options.at(i).label, options.at(i).run);
+    }
+
+    if (selected == 0) {
+        QMessageBox::information(this, trl("task.batchRunner", "Batch Task Runner"),
+                                 trl("task.noBatchTasks", "Select at least one task to queue a batch."));
+        return;
+    }
+
+    pushTaskNotice(QStringLiteral("Batch Queued"),
+                   QString("Queued %1 task(s) for sequential execution.").arg(selected),
+                   trl("task.batchRunner", "Batch Task Runner"),
+                   QStringLiteral("success"));
 }
 
 void MainWindow::stopAllTasks()
@@ -3725,6 +4088,10 @@ void MainWindow::stopAllTasks()
         m_coverDownloader->cancelAll();
 
     hideTaskProgress(m_isClosing ? QString() : "All running tasks were stopped safely.");
+    pushTaskNotice(QStringLiteral("Tasks Stopped"),
+                   QString("Stopped active work and cleared %1 queued task(s).").arg(queuedTasks),
+                   QStringLiteral("Manual stop"),
+                   QStringLiteral("warning"));
 }
 
 void MainWindow::consultDatabaseSummary()
@@ -4128,6 +4495,7 @@ void MainWindow::resizeEvent(QResizeEvent* event)
 {
     QMainWindow::resizeEvent(event);
     applyResponsiveLayout();
+    positionTaskToast();
 }
 
 void MainWindow::loadSettings()
@@ -4148,6 +4516,7 @@ void MainWindow::loadSettings()
     m_rememberWindowState = s.value("view/rememberWindowState", true).toBool();
     m_scanThreads = s.value("options/scanThreads", 0).toInt();
     m_startViewMode = s.value("view/startMode", "remember").toString();
+    m_taskPopupsEnabled = s.value("tasks/popupNotifications", true).toBool();
     m_isGridView = (m_startViewMode == "grid")
         ? true
         : (m_startViewMode == "list" ? false : s.value("view/isGrid", true).toBool());
@@ -4171,6 +4540,7 @@ void MainWindow::saveSettings()
     s.setValue("library/folders", m_watchFolders);
     s.setValue("view/showSidebar", m_showSidebarPreference);
     s.setValue("view/showSmartCategories", m_showSmartCategories);
+    s.setValue("tasks/popupNotifications", m_taskPopupsEnabled);
     s.setValue("options/autoEnrichAfterScan", m_autoEnrichAfterScan);
     s.setValue("options/fastScanMode", m_fastScanMode);
     s.setValue("view/compactMode", m_compactMode);
@@ -4215,13 +4585,13 @@ void MainWindow::updateWorkspaceHeader()
     m_workspaceViewChip->setText(trl("workspace.viewChip", "View  %1 | %2 | %3").arg(viewName, density, shelfLabel(m_activeShelfName.isEmpty() ? QStringLiteral("all") : m_activeShelfName)));
     m_workspaceActionChip->setText(selected > 0
         ? trl("workspace.selectionChip", "Selection  %1 items").arg(selected)
-        : trl("workspace.tipChip", "Tip  Double-click opens the file"));
+        : trl("workspace.tipChip", "Tip  Double-click opens the file and right-click opens actions"));
 
     const QString contextualHint = selected > 0
-        ? trl("workspace.tipSelection", "Run tools on the current selection, or choose All Books at the next prompt to process the whole library.")
+        ? trl("workspace.tipSelection", "Run tools on the current selection, queue follow-up work in Task Center, or choose All Books when you want a full-library batch.")
         : (!m_watchFolders.isEmpty()
-            ? trl("workspace.tipCatalog", "Use search, filters, sorting, and the right-click menu to focus the catalog quickly.")
-            : trl("workspace.tipSettings", "Open Settings and add one or more watched folders before scanning the library."));
+            ? trl("workspace.tipCatalog", "Use search, shelves, filters, and saved searches to focus the catalog quickly while Task Center keeps background work visible.")
+            : trl("workspace.tipSettings", "Open Settings, add watched folders, then run Scan. Eagle Library keeps your original files in place and builds the library virtually."));
 
     m_workspaceHeader->setToolTip(contextualHint);
     m_workspaceTitleLabel->setToolTip(contextualHint);
@@ -4821,6 +5191,16 @@ QLabel#statusPill {
     padding: 4px 10px;
     font-weight: 700;
 }
+QToolButton#taskCenterButton {
+    color: #fff1bf;
+    background: qlineargradient(x1:0,y1:0,x2:1,y2:0, stop:0 rgba(40, 92, 137, 0.92), stop:1 rgba(24, 57, 86, 0.94));
+    border: 1px solid rgba(135, 188, 235, 0.42);
+    border-radius: 10px;
+    padding: 6px 12px;
+    font-weight: 800;
+}
+QToolButton#taskCenterButton:hover { background: qlineargradient(x1:0,y1:0,x2:1,y2:0, stop:0 #356c9c, stop:1 #20486f); }
+QToolButton#taskCenterButton:pressed { background: #17344f; }
 QProgressBar#statusProgress {
     background: #122134;
     border: 1px solid #2b5379;
@@ -4842,15 +5222,31 @@ QToolTip {
 QMessageBox { background: #0e1b2c; color: #e7dcc0; }
 QMessageBox QLabel { color: #e7dcc0; }
 QPushButton {
-    background-color: #1b4062;
-    color: #ecd48d;
-    border: 1px solid #2f628d;
-    border-radius: 8px;
-    padding: 8px 16px;
-    font-weight: 600;
+    background: qlineargradient(x1:0,y1:0,x2:0,y2:1, stop:0 #2a628f, stop:1 #193d5c);
+    color: #f7edc8;
+    border: 1px solid #3b78ab;
+    border-radius: 10px;
+    padding: 9px 18px;
+    font-weight: 700;
+    min-height: 16px;
 }
-QPushButton:hover { background-color: #25557f; }
-QPushButton:pressed { background-color: #16364f; }
+QPushButton:hover {
+    background: qlineargradient(x1:0,y1:0,x2:0,y2:1, stop:0 #3477ab, stop:1 #204d73);
+    border-color: #7db4e2;
+}
+QPushButton:pressed { background: #16364f; border-color: #244f74; }
+QPushButton:disabled { background: #172638; color: #7c90a6; border-color: #22384e; }
+QFrame#taskToast {
+    background: rgba(10, 22, 38, 0.97);
+    border: 1px solid rgba(125, 180, 226, 0.42);
+    border-radius: 14px;
+}
+QFrame#taskToast[noticeKind="success"] { border-color: rgba(94, 194, 132, 0.68); }
+QFrame#taskToast[noticeKind="warning"] { border-color: rgba(230, 180, 84, 0.72); }
+QFrame#taskToast[noticeKind="error"] { border-color: rgba(222, 95, 95, 0.82); }
+QLabel#taskToastTitle { color: #fff2c7; font-weight: 800; font-size: 13px; }
+QLabel#taskToastBody { color: #d7e3f0; font-size: 12px; }
+QLabel#taskToastMeta { color: #88a7c5; font-size: 11px; }
 )");
 }
 
@@ -4882,9 +5278,12 @@ void MainWindow::setupCommandPalette()
         { "plugins",      "Manage Plugins",            "View and manage installed plugins",  "",         "App",      [this]{ openPluginManager(); } },
         { "export",       "Export Library",            "Export library metadata snapshot",   "",         "App",      [this]{ exportLibrarySnapshot(); } },
         { "import",       "Import Library",            "Import library metadata snapshot",   "",         "App",      [this]{ importLibrarySnapshot(); } },
+        { "import_prev",  "Import Previous Database Backup", "Import records from a previous installed database backup", "", "Database", [this]{ importPreviousDatabaseBackup(); } },
         { "db_summary",   "Database Summary",          "View database statistics",           "",         "Database", [this]{ consultDatabaseSummary(); } },
         { "db_remap",     "Remap Drive / Folder Paths","Update stored file paths after a drive-letter or root-folder change", "", "Database", [this]{ remapLibraryPaths(); } },
         { "db_optimize",  "Optimize Database",         "Run SQLite ANALYZE and optimize",    "",         "Database", [this]{ Database::instance().optimize(); m_statusLabel->setText("Optimization complete."); } },
+        { "task_center",  "Task Center",               "Review queued tasks and recent notices", "Ctrl+Shift+T", "Tasks", [this]{ openTaskCenter(); } },
+        { "batch_tasks",  "Run Batch Tasks",           "Queue a sequence of maintenance tasks", "", "Tasks", [this]{ runBatchTasks(); } },
         { "stop_tasks",   "Stop All Tasks",            "Cancel all running tasks",           "Ctrl+.",   "App",      [this]{ stopAllTasks(); } },
         { "about",        "About Eagle Library",       "Show version and credits",           "",         "Help",     [this]{ showAbout(); } },
         { "open_book",    "Open Selected Book",        "Open the selected book file",        "Return",   "Library",  [this]{ openBookFile(); } },

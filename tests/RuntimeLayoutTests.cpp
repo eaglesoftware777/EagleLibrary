@@ -16,7 +16,8 @@ class RuntimeLayoutTests : public QObject
 
 private slots:
     void pathsStayInsideAppFolder();
-    void settingsWriteToSingleAppIni();
+    void settingsWriteToManagedSettingsFolder();
+    void databaseAndBackupsUseManagedDataFolder();
     void languagePacksResolveToAppFolder();
     void externalThemeOverridesBundledTheme();
 };
@@ -31,22 +32,32 @@ void RuntimeLayoutTests::pathsStayInsideAppFolder()
     QVERIFY(AppConfig::themesDir().startsWith(appDir));
     QVERIFY(AppConfig::hooksDir().startsWith(appDir));
     QVERIFY(AppConfig::resourcesDir().startsWith(appDir));
+    QVERIFY(AppConfig::settingsDir().startsWith(appDir));
+    QVERIFY(AppConfig::dataDir().startsWith(appDir));
+    QVERIFY(AppConfig::backupsDir().startsWith(appDir));
 }
 
-void RuntimeLayoutTests::settingsWriteToSingleAppIni()
+void RuntimeLayoutTests::settingsWriteToManagedSettingsFolder()
 {
-    QDir().mkpath(AppConfig::appDir());
+    QDir().mkpath(AppConfig::settingsDir());
 
     QSettings settings(AppConfig::settingsPath(), QSettings::IniFormat);
     settings.setValue("tests/runtimeLayout", "ok");
     settings.sync();
 
     QVERIFY(QFileInfo::exists(AppConfig::settingsPath()));
-    QCOMPARE(QFileInfo(AppConfig::settingsPath()).absolutePath(), AppConfig::appDir());
-    QVERIFY(!AppConfig::settingsPath().startsWith(AppConfig::settingsDir() + "/"));
+    QCOMPARE(QFileInfo(AppConfig::settingsPath()).absolutePath(), AppConfig::settingsDir());
+    QVERIFY(AppConfig::settingsPath().startsWith(AppConfig::settingsDir() + "/"));
 
     settings.remove("tests/runtimeLayout");
     settings.sync();
+}
+
+void RuntimeLayoutTests::databaseAndBackupsUseManagedDataFolder()
+{
+    QCOMPARE(QFileInfo(AppConfig::dbPath()).absolutePath(), AppConfig::dataDir());
+    QCOMPARE(QFileInfo(AppConfig::backupsDir()).absolutePath(), AppConfig::dataDir());
+    QVERIFY(AppConfig::backupsDir().startsWith(AppConfig::dataDir() + "/"));
 }
 
 void RuntimeLayoutTests::languagePacksResolveToAppFolder()

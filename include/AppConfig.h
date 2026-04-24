@@ -100,13 +100,14 @@ namespace AppConfig
 
     inline QString settingsPath()
     {
-        return appDir() + "/EagleLibrary.ini";
+        return settingsDir() + "/EagleLibrary.ini";
     }
 
-    inline QString dbPath()      { return appDir() + "/library.db"; }
+    inline QString dbPath()      { return dataDir() + "/library.db"; }
     inline QString coversDir()   { return dataDir() + "/covers"; }
     inline QString thumbsDir()   { return dataDir() + "/thumbs"; }
     inline QString jsonDir()     { return dataDir() + "/json"; }
+    inline QString backupsDir()  { return dataDir() + "/backups"; }
     inline QString pluginsDir()  { return appDir()  + "/plugins"; }
     inline QString sidecarsDir() { return dataDir() + "/sidecars"; }
     inline QString logoPngPath() { return resourcesDir() + "/eagle_logo.png"; }

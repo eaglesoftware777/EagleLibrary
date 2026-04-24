@@ -19,6 +19,7 @@
 #include <QJsonObject>
 #include <QSaveFile>
 #include <QSet>
+#include <QSqlRecord>
 
 namespace {
 
@@ -336,6 +337,46 @@ qint64 bookIdForPath(const QSqlDatabase& db, const QString& filePath)
     q.bindValue(":fp", filePath);
     q.exec();
     return q.next() ? q.value(0).toLongLong() : 0;
+}
+
+QString queryValue(const QSqlQuery& query, const QString& fieldName)
+{
+    const int index = query.record().indexOf(fieldName);
+    return index >= 0 ? query.value(index).toString() : QString();
+}
+
+int queryIntValue(const QSqlQuery& query, const QString& fieldName)
+{
+    const int index = query.record().indexOf(fieldName);
+    return index >= 0 ? query.value(index).toInt() : 0;
+}
+
+qint64 queryInt64Value(const QSqlQuery& query, const QString& fieldName)
+{
+    const int index = query.record().indexOf(fieldName);
+    return index >= 0 ? query.value(index).toLongLong() : 0;
+}
+
+double queryDoubleValue(const QSqlQuery& query, const QString& fieldName)
+{
+    const int index = query.record().indexOf(fieldName);
+    return index >= 0 ? query.value(index).toDouble() : 0.0;
+}
+
+bool queryBoolValue(const QSqlQuery& query, const QString& fieldName)
+{
+    const int index = query.record().indexOf(fieldName);
+    return index >= 0 ? query.value(index).toBool() : false;
+}
+
+QStringList splitStoredList(const QString& stored)
+{
+    QStringList out = stored.split(',', Qt::SkipEmptyParts);
+    for (QString& item : out)
+        item = item.trimmed();
+    out.removeAll(QString());
+    out.removeDuplicates();
+    return out;
 }
 
 void syncBookFileRecord(const QSqlDatabase& db, qint64 bookId, const Book& book)
@@ -1808,6 +1849,107 @@ int Database::importLibrary(const QString& filePath, QStringList* watchedFolders
             }
         }
     }
+    return imported;
+}
+
+int Database::importFromDatabase(const QString& filePath)
+{
+    const QFileInfo sourceInfo(filePath);
+    if (!sourceInfo.exists() || !sourceInfo.isFile()) {
+        qWarning() << "importFromDatabase missing file:" << filePath;
+        return 0;
+    }
+
+    const QString connectionName = QStringLiteral("eagle_import_%1")
+                                       .arg(QDateTime::currentMSecsSinceEpoch());
+    int imported = 0;
+    {
+        QSqlDatabase sourceDb = QSqlDatabase::addDatabase(QStringLiteral("QSQLITE"), connectionName);
+        sourceDb.setDatabaseName(sourceInfo.absoluteFilePath());
+        if (!sourceDb.open()) {
+            qWarning() << "importFromDatabase open failed:" << sourceDb.lastError().text();
+            return 0;
+        }
+
+        QSqlQuery select(sourceDb);
+        if (!select.exec(QStringLiteral("SELECT * FROM books ORDER BY id"))) {
+            qWarning() << "importFromDatabase select failed:" << select.lastError().text();
+            sourceDb.close();
+            return 0;
+        }
+
+        while (select.next()) {
+            Book book;
+            book.filePath = queryValue(select, QStringLiteral("file_path"));
+            if (book.filePath.trimmed().isEmpty())
+                continue;
+
+            book.fileHash = queryValue(select, QStringLiteral("file_hash"));
+            book.format = queryValue(select, QStringLiteral("format"));
+            book.fileSize = queryInt64Value(select, QStringLiteral("file_size"));
+            book.title = queryValue(select, QStringLiteral("title"));
+            book.author = queryValue(select, QStringLiteral("author"));
+            book.publisher = queryValue(select, QStringLiteral("publisher"));
+            book.isbn = queryValue(select, QStringLiteral("isbn"));
+            book.language = queryValue(select, QStringLiteral("language"));
+            book.year = queryIntValue(select, QStringLiteral("year"));
+            book.pages = queryIntValue(select, QStringLiteral("pages"));
+            book.rating = queryDoubleValue(select, QStringLiteral("rating"));
+            book.description = queryValue(select, QStringLiteral("description"));
+            book.tags = splitStoredList(queryValue(select, QStringLiteral("tags")));
+            book.subjects = splitStoredList(queryValue(select, QStringLiteral("subjects")));
+            book.coverPath = queryValue(select, QStringLiteral("cover_path"));
+            book.hasCover = queryBoolValue(select, QStringLiteral("has_cover"));
+            book.openCount = queryIntValue(select, QStringLiteral("open_count"));
+            book.isFavourite = queryBoolValue(select, QStringLiteral("is_favourite"));
+            book.notes = queryValue(select, QStringLiteral("notes"));
+            book.series = queryValue(select, QStringLiteral("series"));
+            book.seriesIndex = queryIntValue(select, QStringLiteral("series_index"));
+            book.edition = queryValue(select, QStringLiteral("edition"));
+
+            const QString dateAdded = queryValue(select, QStringLiteral("date_added"));
+            if (!dateAdded.isEmpty())
+                book.dateAdded = QDateTime::fromString(dateAdded, Qt::ISODate);
+            const QString dateModified = queryValue(select, QStringLiteral("date_modified"));
+            if (!dateModified.isEmpty())
+                book.dateModified = QDateTime::fromString(dateModified, Qt::ISODate);
+            const QString lastOpened = queryValue(select, QStringLiteral("last_opened"));
+            if (!lastOpened.isEmpty())
+                book.lastOpened = QDateTime::fromString(lastOpened, Qt::ISODate);
+
+            if (!upsertBook(book))
+                continue;
+
+            ++imported;
+            qint64 newBookId = book.fileHash.isEmpty() ? 0 : bookIdByHash(book.fileHash);
+            if (newBookId <= 0)
+                newBookId = bookIdForPath(QSqlDatabase::database(QStringLiteral("eagle_lib")), book.filePath);
+            const qint64 sourceBookId = queryInt64Value(select, QStringLiteral("id"));
+            if (newBookId <= 0 || sourceBookId <= 0)
+                continue;
+
+            QSqlQuery locations(sourceDb);
+            locations.prepare(QStringLiteral("SELECT file_path, file_hash, file_size, is_primary "
+                                             "FROM book_files WHERE book_id=:id"));
+            locations.bindValue(QStringLiteral(":id"), sourceBookId);
+            if (!locations.exec())
+                continue;
+
+            while (locations.next()) {
+                const QString location = locations.value(0).toString();
+                if (location.trimmed().isEmpty())
+                    continue;
+                registerFileLocation(newBookId,
+                                     location,
+                                     locations.value(1).toString(),
+                                     locations.value(2).toLongLong(),
+                                     locations.value(3).toBool());
+            }
+        }
+
+        sourceDb.close();
+    }
+    QSqlDatabase::removeDatabase(connectionName);
     return imported;
 }
 

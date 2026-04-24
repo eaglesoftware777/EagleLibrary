@@ -191,12 +191,18 @@ void migrateLegacyStorage()
     QDir().mkpath(AppConfig::themesDir());
     QDir().mkpath(AppConfig::hooksDir());
     QDir().mkpath(AppConfig::resourcesDir());
+    QDir().mkpath(AppConfig::backupsDir());
 
     const QString newDbPath = AppConfig::dbPath();
-    const QString legacyDbPath = AppConfig::legacyDataDir() + "/library.db";
-    if (!QFileInfo::exists(newDbPath) && QFileInfo::exists(legacyDbPath)) {
-        QDir().mkpath(QFileInfo(newDbPath).absolutePath());
-        QFile::copy(legacyDbPath, newDbPath);
+    const QStringList legacyDbPaths = {
+        AppConfig::appDir() + "/library.db",
+        AppConfig::legacyDataDir() + "/library.db"
+    };
+    for (const QString& legacyDbPath : legacyDbPaths) {
+        if (!QFileInfo::exists(newDbPath) && QFileInfo::exists(legacyDbPath)) {
+            QDir().mkpath(QFileInfo(newDbPath).absolutePath());
+            QFile::copy(legacyDbPath, newDbPath);
+        }
     }
 
     const QStringList dataSubdirs = { "covers", "thumbs", "json", "sidecars" };
@@ -206,6 +212,7 @@ void migrateLegacyStorage()
     }
 
     const QStringList legacyIniPaths = {
+        AppConfig::appDir() + "/EagleLibrary.ini",
         AppConfig::legacySettingsDir() + "/EagleLibrary.ini",
         AppConfig::localSettingsDir() + "/EagleLibrary.ini"
     };

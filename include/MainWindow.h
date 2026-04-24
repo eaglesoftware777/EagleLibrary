@@ -37,6 +37,9 @@ class QVBoxLayout;
 class QFileSystemWatcher;
 class QTimer;
 class QScrollArea;
+class QToolButton;
+class QListWidget;
+class QFrame;
 
 class MainWindow : public QMainWindow
 {
@@ -96,6 +99,7 @@ private slots:
     void refreshLibrary();
     void exportLibrarySnapshot();
     void importLibrarySnapshot();
+    void importPreviousDatabaseBackup();
     void stopAllTasks();
     void consultDatabaseSummary();
     void diagnoseDatabaseText();
@@ -121,6 +125,8 @@ private slots:
     void createCollection();
     // Plugins
     void openPluginManager();
+    void openTaskCenter();
+    void runBatchTasks();
     // Advanced Search
     void openAdvancedSearchDialog();
     // Saved searches
@@ -165,6 +171,7 @@ private:
     QLabel*       m_libraryStatsLabel = nullptr;
     QProgressBar* m_progressBar = nullptr;
     QLabel*       m_scanLabel   = nullptr;
+    QLabel*       m_taskQueueLabel = nullptr;
     QLabel*       m_sidebarStatsLabel = nullptr;
     QWidget*      m_workspaceHeader = nullptr;
     QLabel*       m_workspaceTitleLabel = nullptr;
@@ -173,6 +180,12 @@ private:
     QLabel*       m_workspaceLibraryChip = nullptr;
     QLabel*       m_workspaceViewChip = nullptr;
     QLabel*       m_workspaceActionChip = nullptr;
+    QToolButton*  m_taskCenterButton = nullptr;
+    QFrame*       m_taskToastFrame = nullptr;
+    QLabel*       m_taskToastTitleLabel = nullptr;
+    QLabel*       m_taskToastBodyLabel = nullptr;
+    QLabel*       m_taskToastMetaLabel = nullptr;
+    QTimer*       m_taskToastTimer = nullptr;
     // Backend
     LibraryScanner*  m_scanner          = nullptr;
     MetadataFetcher* m_metaFetcher      = nullptr;
@@ -214,10 +227,20 @@ private:
         QString name;
         std::function<void()> run;
     };
+    struct TaskNotice {
+        QString title;
+        QString message;
+        QString detail;
+        QString kind;
+        QDateTime createdAt;
+    };
     QQueue<QueuedMenuTask> m_menuTaskQueue;
+    QQueue<int>  m_pendingTaskToastIndexes;
+    QVector<TaskNotice> m_taskNotices;
     bool        m_menuTaskActive = false;
     QString     m_activeMenuTaskName;
     bool        m_metadataTaskWaitingForCovers = false;
+    bool        m_taskPopupsEnabled = true;
     struct IsbnExtractionResult {
         Book book;
         QString isbn;
@@ -251,6 +274,11 @@ private:
     void enrichIncompleteBooks(const QVector<Book>& books, const QString& title);
     void showTaskProgress(const QString& title, const QString& status, int current, int total, const QString& detail = QString());
     void hideTaskProgress(const QString& finalStatus = QString());
+    void pushTaskNotice(const QString& title, const QString& message, const QString& detail = QString(), const QString& kind = QStringLiteral("info"));
+    void updateTaskQueueIndicators();
+    void positionTaskToast();
+    void showNextTaskToast();
+    void hideTaskToast();
     bool backgroundWorkRunning() const;
     void queueOrRunMenuTask(const QString& name, std::function<void()> task);
     void startMenuTask(const QString& name, std::function<void()> task);

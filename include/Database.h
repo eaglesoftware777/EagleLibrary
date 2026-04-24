@@ -160,6 +160,7 @@ public:
     int  remapPathPrefix(const QString& fromPrefix, const QString& toPrefix);
     bool exportLibrary(const QString& filePath, const QStringList& watchedFolders) const;
     int  importLibrary(const QString& filePath, QStringList* watchedFolders = nullptr);
+    int  importFromDatabase(const QString& filePath);
     QStringList fileLocationsForBook(qint64 bookId) const;
 
 private:

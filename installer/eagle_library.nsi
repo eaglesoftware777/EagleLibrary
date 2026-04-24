@@ -68,17 +68,36 @@ Section "Eagle Library (required)" SecMain
 
     SetOutPath "$INSTDIR"
 
+    CreateDirectory "$INSTDIR\data"
+    CreateDirectory "$INSTDIR\data\backups"
+    CreateDirectory "$INSTDIR\settings"
+
+    ; Preserve the previous database before installing over an existing copy,
+    ; then clear active DB files so the new version starts with a fresh library.
+    IfFileExists "$INSTDIR\library.db" 0 +4
+        CopyFiles /SILENT "$INSTDIR\library.db" "$INSTDIR\data\backups\library-preupgrade-root.db"
+        Delete "$INSTDIR\library.db"
+        Delete "$INSTDIR\library.db-wal"
+    Delete "$INSTDIR\library.db-shm"
+    IfFileExists "$INSTDIR\data\library.db" 0 +4
+        CopyFiles /SILENT "$INSTDIR\data\library.db" "$INSTDIR\data\backups\library-preupgrade-data.db"
+        Delete "$INSTDIR\data\library.db"
+        Delete "$INSTDIR\data\library.db-wal"
+    Delete "$INSTDIR\data\library.db-shm"
+    IfFileExists "$INSTDIR\EagleLibrary.ini" 0 +1
+        CopyFiles /SILENT "$INSTDIR\EagleLibrary.ini" "$INSTDIR\data\backups\EagleLibrary-preupgrade-root.ini"
+    IfFileExists "$INSTDIR\settings\EagleLibrary.ini" 0 +1
+        CopyFiles /SILENT "$INSTDIR\settings\EagleLibrary.ini" "$INSTDIR\data\backups\EagleLibrary-preupgrade-settings.ini"
+
     ; Main executable
     File "EagleLibrary.exe"
     FileOpen $0 "$INSTDIR\portable.flag" w
     FileClose $0
-    CreateDirectory "$INSTDIR\data"
-    CreateDirectory "$INSTDIR\settings"
 
     ; Installed layout is intentionally self-contained like a portable app.
-    ; Grant standard users write access so the local DB, settings and WAL files
-    ; can be created beside EagleLibrary.exe under Program Files.
-    nsExec::ExecToLog 'icacls "$INSTDIR" /grant *S-1-5-32-545:(OI)(CI)M /T /C'
+    ; Grant standard users write access only to runtime-state folders.
+    nsExec::ExecToLog 'icacls "$INSTDIR\data" /grant *S-1-5-32-545:(OI)(CI)M /T /C'
+    nsExec::ExecToLog 'icacls "$INSTDIR\settings" /grant *S-1-5-32-545:(OI)(CI)M /T /C'
 
     ; Qt runtime DLLs (produced by windeployqt in build dir)
     File "Qt6Core.dll"
@@ -203,6 +222,9 @@ Section "Uninstall"
     Delete "$INSTDIR\README.txt"
     Delete "$INSTDIR\LICENSE.txt"
     Delete "$INSTDIR\portable.flag"
+    Delete "$INSTDIR\library.db"
+    Delete "$INSTDIR\library.db-wal"
+    Delete "$INSTDIR\library.db-shm"
     Delete "$INSTDIR\Uninstall.exe"
     Delete "$INSTDIR\help\EagleLibrary.chm"
     RMDir /r "$INSTDIR\platforms"
@@ -217,7 +239,6 @@ Section "Uninstall"
     RMDir /r "$INSTDIR\resources"
     RMDir /r "$INSTDIR\hooks"
     RMDir /r "$INSTDIR\plugins"
-    RMDir  "$INSTDIR"
 
     ; Remove shortcuts
     Delete "$SMPROGRAMS\Eagle Library\Eagle Library.lnk"
@@ -231,11 +252,14 @@ Section "Uninstall"
 
     ; Optional: remove local runtime data
     MessageBox MB_YESNO|MB_ICONQUESTION \
-        "Do you want to remove the local Eagle Library database, settings, and cached data from the install folder?$\r$\n(This deletes EagleLibrary.ini, library.db, and the data folder.)" \
+        "Do you want to remove the local Eagle Library database, settings, and cached data from the install folder?$\r$\n(This deletes the settings folder, the data folder, and any backup copies.)" \
         IDNO skip_userdata
         Delete "$INSTDIR\EagleLibrary.ini"
-        Delete "$INSTDIR\library.db"
+        Delete "$INSTDIR\settings\EagleLibrary.ini"
         RMDir /r "$INSTDIR\data"
+        RMDir /r "$INSTDIR\settings"
     skip_userdata:
+
+    RMDir "$INSTDIR"
 
 SectionEnd

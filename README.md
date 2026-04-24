@@ -266,7 +266,7 @@ Portable mode activates when `portable.flag` (or `portable.ini`) exists next
 to the `.exe`. All data and settings are then stored locally:
 
 ```
-EagleLibrary.ini   library.db   data\   plugins\   translations\   themes\   hooks\   resources\   help\
+settings\EagleLibrary.ini   data\library.db   data\backups\   plugins\   translations\   themes\   hooks\   resources\   help\
 ```
 
 ### Build the NSIS installer

@@ -100,4 +100,4 @@ Notes
 - The portable package does not need a VC++ redistributable installer.
 - Portable mode is activated by portable.flag.
 - User data for the portable build stays beside the executable:
-  EagleLibrary.ini, library.db, data\, translations\, themes\, hooks\, and plugins\.
+  settings\EagleLibrary.ini, data\library.db, data\backups\, translations\, themes\, hooks\, and plugins\.

@@ -68,8 +68,13 @@ void runPythonHook(const QString& eventName, qint64 bookId)
         return;
 
     const Book book = Database::instance().bookById(bookId);
-    const QString scriptPath = QDir(AppConfig::hooksDir()).absoluteFilePath(eventName + ".py");
-    if (!QFileInfo::exists(scriptPath))
+    const QFileInfo hooksRootInfo(AppConfig::hooksDir());
+    const QString hooksRoot = hooksRootInfo.canonicalFilePath();
+    const QFileInfo scriptInfo(QDir(AppConfig::hooksDir()).absoluteFilePath(eventName + ".py"));
+    if (!scriptInfo.exists() || !scriptInfo.isFile() || scriptInfo.suffix().compare(QStringLiteral("py"), Qt::CaseInsensitive) != 0)
+        return;
+    const QString scriptPath = scriptInfo.canonicalFilePath();
+    if (hooksRoot.isEmpty() || scriptPath.isEmpty() || !scriptPath.startsWith(hooksRoot + QDir::separator()))
         return;
 
     QProcessEnvironment env = QProcessEnvironment::systemEnvironment();
@@ -84,6 +89,7 @@ void runPythonHook(const QString& eventName, qint64 bookId)
     proc->setProgram(python);
     proc->setArguments({scriptPath});
     proc->setProcessEnvironment(env);
+    proc->setWorkingDirectory(scriptInfo.absolutePath());
     QObject::connect(proc, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished), proc, &QObject::deleteLater);
     proc->start();
 }

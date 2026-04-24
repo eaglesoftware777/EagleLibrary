@@ -26,7 +26,7 @@ on:
       release_tag:
         description: 'Release tag (e.g. v1.1)'
         required: false
-        default: 'v1.1'
+        default: 'v1.0'
         type: string
       bust_qt_cache:
         description: 'Force re-download Qt (ignore cache)'
@@ -126,7 +126,11 @@ jobs:
             @{ Source = "resources";              Target = "build\Release\resources"    }
           )) {
             if (Test-Path $pair.Source) {
-              Copy-Item -Recurse -Force $pair.Source $pair.Target
+              if (Test-Path $pair.Target) {
+                Remove-Item -Recurse -Force $pair.Target
+              }
+              New-Item -ItemType Directory -Force $pair.Target | Out-Null
+              Copy-Item -Recurse -Force (Join-Path $pair.Source "*") $pair.Target
             }
           }
 
@@ -267,6 +271,7 @@ jobs:
             throw "makensis.exe was not found after NSIS installation"
           }
           if (Test-Path "installer\EagleLibrary.exe") { Remove-Item -Force "installer\EagleLibrary.exe" }
+          Get-ChildItem "installer" -Filter "*.dll" -File -ErrorAction SilentlyContinue | Remove-Item -Force
           foreach ($dir in @("platforms","styles","imageformats","iconengines","sqldrivers","tls","plugins","translations","themes","resources","help","hooks")) {
             $target = Join-Path "installer" $dir
             if (Test-Path $target) { Remove-Item -Recurse -Force $target }

@@ -89,9 +89,9 @@ echo [5/5] Portable package refreshed:
 echo        %DST%
 echo.
 echo Portable mode is enabled by portable.flag and keeps runtime state in:
-echo   %DST%\EagleLibrary.ini
-echo   %DST%\library.db
-echo   %DST%\data
+echo   %DST%\settings\EagleLibrary.ini
+echo   %DST%\data\library.db
+echo   %DST%\data\backups
 echo   %DST%\translations
 echo   %DST%\themes
 echo   %DST%\plugins
