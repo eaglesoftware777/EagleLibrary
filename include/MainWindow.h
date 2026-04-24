@@ -277,6 +277,7 @@ private:
     void pushTaskNotice(const QString& title, const QString& message, const QString& detail = QString(), const QString& kind = QStringLiteral("info"));
     void updateTaskQueueIndicators();
     void positionTaskToast();
+    void applyTaskToastVisual(const QString& kind);
     void showNextTaskToast();
     void hideTaskToast();
     bool backgroundWorkRunning() const;

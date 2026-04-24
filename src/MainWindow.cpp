@@ -2660,15 +2660,36 @@ void MainWindow::updateTaskQueueIndicators()
 
 void MainWindow::positionTaskToast()
 {
-    if (!m_taskToastFrame || !m_taskToastFrame->isVisible())
+    if (!m_taskToastFrame || !m_taskToastFrame->isVisible() || !statusBar())
         return;
 
     const QSize size = m_taskToastFrame->sizeHint().expandedTo(QSize(320, 116));
     const QRect area = centralWidget() ? centralWidget()->geometry() : rect();
-    const QPoint topLeft = mapToGlobal(QPoint(area.right() - size.width() - 26,
-                                              qMax(area.top() + 20, statusBar()->geometry().top() - size.height() - 18)));
+    const int localX = qMax(12, area.right() - size.width() - 26);
+    const int localY = qMax(12, qMax(area.top() + 20, statusBar()->geometry().top() - size.height() - 18));
+    const QPoint topLeft = mapToGlobal(QPoint(localX, localY));
     m_taskToastFrame->setGeometry(topLeft.x(), topLeft.y(), size.width(), size.height());
     m_taskToastFrame->raise();
+}
+
+void MainWindow::applyTaskToastVisual(const QString& kind)
+{
+    if (!m_taskToastFrame)
+        return;
+
+    QString border = QStringLiteral("rgba(125, 180, 226, 0.42)");
+    if (kind == QStringLiteral("success"))
+        border = QStringLiteral("rgba(94, 194, 132, 0.68)");
+    else if (kind == QStringLiteral("warning"))
+        border = QStringLiteral("rgba(230, 180, 84, 0.72)");
+
+    m_taskToastFrame->setStyleSheet(QString(
+        "QFrame#taskToast {"
+        "background: rgba(10, 22, 38, 0.97);"
+        "border: 1px solid %1;"
+        "border-radius: 14px;"
+        "}"
+    ).arg(border));
 }
 
 void MainWindow::showNextTaskToast()
@@ -2680,6 +2701,8 @@ void MainWindow::showNextTaskToast()
     if (m_isClosing || !m_taskPopupsEnabled || !m_taskToastFrame || !m_taskToastTitleLabel
         || !m_taskToastBodyLabel || !m_taskToastMetaLabel || !m_taskToastTimer
         || m_pendingTaskToastIndexes.isEmpty())
+        return;
+    if (!isVisible() || !windowHandle())
         return;
     if (m_taskToastFrame->isVisible())
         return;
@@ -2696,8 +2719,7 @@ void MainWindow::showNextTaskToast()
         ? notice.createdAt.toString("yyyy-MM-dd HH:mm:ss")
         : QString("%1  |  %2").arg(notice.detail, notice.createdAt.toString("yyyy-MM-dd HH:mm:ss"));
     m_taskToastMetaLabel->setText(metaText);
-    m_taskToastFrame->style()->unpolish(m_taskToastFrame);
-    m_taskToastFrame->style()->polish(m_taskToastFrame);
+    applyTaskToastVisual(notice.kind);
     m_taskToastFrame->adjustSize();
     m_taskToastFrame->show();
     positionTaskToast();
