@@ -12,6 +12,7 @@
 #include <QMutex>
 #include <QWaitCondition>
 #include <QQueue>
+#include <QPointer>
 #include <QThreadPool>
 #include <QRunnable>
 
@@ -80,8 +81,8 @@ signals:
     void scanError(const QString& msg);
 
 private:
-    QThread*    m_thread  = nullptr;
-    ScanWorker* m_worker  = nullptr;
+    QPointer<QThread>    m_thread;
+    QPointer<ScanWorker> m_worker;
 };
 
 // ── Smart Renamer ─────────────────────────────────────────────

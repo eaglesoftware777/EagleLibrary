@@ -988,6 +988,8 @@ void LibraryScanner::startScan(const QStringList& folders, int parallelism, bool
     connect(m_worker, &ScanWorker::progress,  this,   &LibraryScanner::progress);
     connect(m_worker, &ScanWorker::finished,  this,   &LibraryScanner::scanFinished);
     connect(m_worker, &ScanWorker::error,     this,   &LibraryScanner::scanError);
+    connect(m_worker, &QObject::destroyed, this, [this]() { m_worker = nullptr; });
+    connect(m_thread, &QObject::destroyed, this, [this]() { m_thread = nullptr; });
     connect(m_thread, &QThread::finished, m_worker, &QObject::deleteLater);
     connect(m_thread, &QThread::finished, m_thread, &QObject::deleteLater);
 

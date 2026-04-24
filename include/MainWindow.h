@@ -18,6 +18,7 @@
 #include <QJsonObject>
 #include <QQueue>
 #include <QFutureWatcher>
+#include <QPointer>
 #include <functional>
 
 #include "Book.h"
@@ -190,8 +191,8 @@ private:
     LibraryScanner*  m_scanner          = nullptr;
     MetadataFetcher* m_metaFetcher      = nullptr;
     CoverDownloader* m_coverDownloader  = nullptr;
-    SmartRenamer*    m_activeRenamer    = nullptr;
-    QThread*         m_renameThread     = nullptr;
+    QPointer<SmartRenamer>    m_activeRenamer;
+    QPointer<QThread>         m_renameThread;
 
     // Command Palette
     CommandPalette* m_commandPalette = nullptr;
@@ -247,7 +248,8 @@ private:
         bool invalidExisting = false;
         bool invalidCandidate = false;
     };
-    QFutureWatcher<IsbnExtractionResult>* m_isbnExtractionWatcher = nullptr;
+    QPointer<QFutureWatcher<IsbnExtractionResult>> m_isbnExtractionWatcher;
+    bool        m_layoutRefreshQueued = false;
 
     void setupMenuBar();
     void setupToolBar();

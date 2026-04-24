@@ -2219,9 +2219,9 @@ void MainWindow::setupSidebar()
     m_sidebarStatsLabel->setObjectName("statsLabel");
     m_sidebarStatsLabel->setAlignment(Qt::AlignCenter);
     m_sidebarStatsLabel->setWordWrap(true);
-    connect(m_model, &QAbstractItemModel::modelReset, this, [this]() {
-        if (m_sidebarStatsLabel)
-            m_sidebarStatsLabel->setText(trl("status.itemsInLibrary", "%1 items in library").arg(m_model->rowCount()));
+    connect(m_model, &QAbstractItemModel::modelReset, m_sidebarStatsLabel, [this, label = QPointer<QLabel>(m_sidebarStatsLabel)]() {
+        if (label && m_model)
+            label->setText(trl("status.itemsInLibrary", "%1 items in library").arg(m_model->rowCount()));
     });
     sideLayout->addWidget(m_sidebarStatsLabel);
 
@@ -2504,7 +2504,7 @@ void MainWindow::retranslateUi()
         QToolBar* oldToolBar = m_mainToolBar;
         removeToolBar(oldToolBar);
         m_mainToolBar = nullptr;
-        delete oldToolBar;
+        oldToolBar->deleteLater();
     }
     setupToolBar();
     refreshLibrarySelector();
@@ -2545,7 +2545,7 @@ void MainWindow::retranslateUi()
         m_savedSearchSection = nullptr;
         m_savedSearchButtonsLayout = nullptr;
         m_sidebarStatsLabel = nullptr;
-        delete oldSidebarDock;
+        oldSidebarDock->deleteLater();
     }
     setupSidebar();
     if (m_sidebarDock)
@@ -3276,11 +3276,13 @@ void MainWindow::startSmartRename(const QVector<Book>& books, const QString& tit
                          QString("%1  %2").arg(detail, currentFile));
     }, Qt::QueuedConnection);
     connect(m_activeRenamer, &SmartRenamer::finished, this, &MainWindow::onRenameFinished, Qt::QueuedConnection);
+    connect(m_activeRenamer, &QObject::destroyed, this, [this]() { m_activeRenamer = nullptr; });
 
     connect(m_renameThread, &QThread::started, m_activeRenamer, [this, books]() {
         if (m_activeRenamer)
             m_activeRenamer->renameAll(books);
     }, Qt::QueuedConnection);
+    connect(m_renameThread, &QObject::destroyed, this, [this]() { m_renameThread = nullptr; });
     connect(m_renameThread, &QThread::finished, m_activeRenamer, &QObject::deleteLater);
     connect(m_renameThread, &QThread::finished, m_renameThread, &QObject::deleteLater);
     m_renameThread->start(QThread::LowPriority);
@@ -3621,6 +3623,7 @@ void MainWindow::extractMissingIsbns()
 
     auto* watcher = new QFutureWatcher<IsbnExtractionResult>(this);
     m_isbnExtractionWatcher = watcher;
+    connect(watcher, &QObject::destroyed, this, [this]() { m_isbnExtractionWatcher = nullptr; });
     auto state = QSharedPointer<QJsonObject>::create();
     (*state)["feature"] = "extract_missing_isbns";
     (*state)["updated_books"] = 0;
@@ -4592,8 +4595,16 @@ void MainWindow::closeEvent(QCloseEvent* event)
 void MainWindow::resizeEvent(QResizeEvent* event)
 {
     QMainWindow::resizeEvent(event);
-    applyResponsiveLayout();
-    positionTaskToast();
+    if (m_layoutRefreshQueued)
+        return;
+    m_layoutRefreshQueued = true;
+    QTimer::singleShot(0, this, [this]() {
+        m_layoutRefreshQueued = false;
+        if (m_isClosing)
+            return;
+        applyResponsiveLayout();
+        positionTaskToast();
+    });
 }
 
 void MainWindow::loadSettings()
