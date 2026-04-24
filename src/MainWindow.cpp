@@ -73,6 +73,7 @@
 #include <QToolButton>
 #include <QResizeEvent>
 #include <QPixmap>
+#include <QPointer>
 #include <QItemSelectionModel>
 #include <QDateTime>
 #include <QEventLoop>
@@ -96,6 +97,24 @@
 #include <utility>
 
 namespace {
+
+template <typename Fn>
+void runOnGuiThread(QObject* context, Fn&& fn)
+{
+    if (!context)
+        return;
+    if (QThread::currentThread() == context->thread()) {
+        fn();
+        return;
+    }
+    QMetaObject::invokeMethod(
+        context,
+        [ctx = QPointer<QObject>(context), work = std::forward<Fn>(fn)]() mutable {
+            if (ctx)
+                work();
+        },
+        Qt::QueuedConnection);
+}
 
 QString trl(const QString& key, const QString& fallback)
 {
@@ -2439,9 +2458,11 @@ void MainWindow::setupStatusBar()
     statusBar()->setSizeGripEnabled(false);
     updateTaskQueueIndicators();
 
-    m_taskToastFrame = new QFrame(this);
+    m_taskToastFrame = new QFrame(this, Qt::ToolTip | Qt::FramelessWindowHint);
     m_taskToastFrame->setObjectName("taskToast");
     m_taskToastFrame->setFrameShape(QFrame::StyledPanel);
+    m_taskToastFrame->setAttribute(Qt::WA_ShowWithoutActivating, true);
+    m_taskToastFrame->setAttribute(Qt::WA_TransparentForMouseEvents, true);
     auto* toastLayout = new QVBoxLayout(m_taskToastFrame);
     toastLayout->setContentsMargins(14, 12, 14, 12);
     toastLayout->setSpacing(4);
@@ -2541,6 +2562,12 @@ void MainWindow::retranslateUi()
 
 void MainWindow::showTaskProgress(const QString& title, const QString& status, int current, int total, const QString& detail)
 {
+    if (QThread::currentThread() != thread()) {
+        runOnGuiThread(this, [this, title, status, current, total, detail]() {
+            showTaskProgress(title, status, current, total, detail);
+        });
+        return;
+    }
     if (m_isClosing || !m_statusLabel || !m_scanLabel || !m_progressBar)
         return;
 
@@ -2565,6 +2592,12 @@ void MainWindow::showTaskProgress(const QString& title, const QString& status, i
 
 void MainWindow::hideTaskProgress(const QString& finalStatus)
 {
+    if (QThread::currentThread() != thread()) {
+        runOnGuiThread(this, [this, finalStatus]() {
+            hideTaskProgress(finalStatus);
+        });
+        return;
+    }
     if (!m_progressBar || !m_scanLabel || !m_statusLabel)
         return;
     if (m_progressBar->maximum() > 0)
@@ -2579,6 +2612,14 @@ void MainWindow::hideTaskProgress(const QString& finalStatus)
 
 void MainWindow::pushTaskNotice(const QString& title, const QString& message, const QString& detail, const QString& kind)
 {
+    if (QThread::currentThread() != thread()) {
+        runOnGuiThread(this, [this, title, message, detail, kind]() {
+            pushTaskNotice(title, message, detail, kind);
+        });
+        return;
+    }
+    if (m_isClosing)
+        return;
     TaskNotice notice;
     notice.title = title.trimmed();
     notice.message = message.trimmed();
@@ -2624,15 +2665,21 @@ void MainWindow::positionTaskToast()
 
     const QSize size = m_taskToastFrame->sizeHint().expandedTo(QSize(320, 116));
     const QRect area = centralWidget() ? centralWidget()->geometry() : rect();
-    const int x = area.right() - size.width() - 26;
-    const int y = qMax(area.top() + 20, statusBar()->geometry().top() - size.height() - 18);
-    m_taskToastFrame->setGeometry(x, y, size.width(), size.height());
+    const QPoint topLeft = mapToGlobal(QPoint(area.right() - size.width() - 26,
+                                              qMax(area.top() + 20, statusBar()->geometry().top() - size.height() - 18)));
+    m_taskToastFrame->setGeometry(topLeft.x(), topLeft.y(), size.width(), size.height());
     m_taskToastFrame->raise();
 }
 
 void MainWindow::showNextTaskToast()
 {
-    if (!m_taskPopupsEnabled || !m_taskToastFrame || m_pendingTaskToastIndexes.isEmpty())
+    if (QThread::currentThread() != thread()) {
+        runOnGuiThread(this, [this]() { showNextTaskToast(); });
+        return;
+    }
+    if (m_isClosing || !m_taskPopupsEnabled || !m_taskToastFrame || !m_taskToastTitleLabel
+        || !m_taskToastBodyLabel || !m_taskToastMetaLabel || !m_taskToastTimer
+        || m_pendingTaskToastIndexes.isEmpty())
         return;
     if (m_taskToastFrame->isVisible())
         return;
@@ -2649,8 +2696,8 @@ void MainWindow::showNextTaskToast()
         ? notice.createdAt.toString("yyyy-MM-dd HH:mm:ss")
         : QString("%1  |  %2").arg(notice.detail, notice.createdAt.toString("yyyy-MM-dd HH:mm:ss"));
     m_taskToastMetaLabel->setText(metaText);
-    style()->unpolish(m_taskToastFrame);
-    style()->polish(m_taskToastFrame);
+    m_taskToastFrame->style()->unpolish(m_taskToastFrame);
+    m_taskToastFrame->style()->polish(m_taskToastFrame);
     m_taskToastFrame->adjustSize();
     m_taskToastFrame->show();
     positionTaskToast();
@@ -2659,6 +2706,10 @@ void MainWindow::showNextTaskToast()
 
 void MainWindow::hideTaskToast()
 {
+    if (QThread::currentThread() != thread()) {
+        runOnGuiThread(this, [this]() { hideTaskToast(); });
+        return;
+    }
     if (m_taskToastFrame)
         m_taskToastFrame->hide();
     if (!m_pendingTaskToastIndexes.isEmpty())
@@ -4088,10 +4139,12 @@ void MainWindow::stopAllTasks()
         m_coverDownloader->cancelAll();
 
     hideTaskProgress(m_isClosing ? QString() : "All running tasks were stopped safely.");
-    pushTaskNotice(QStringLiteral("Tasks Stopped"),
-                   QString("Stopped active work and cleared %1 queued task(s).").arg(queuedTasks),
-                   QStringLiteral("Manual stop"),
-                   QStringLiteral("warning"));
+    if (!m_isClosing) {
+        pushTaskNotice(QStringLiteral("Tasks Stopped"),
+                       QString("Stopped active work and cleared %1 queued task(s).").arg(queuedTasks),
+                       QStringLiteral("Manual stop"),
+                       QStringLiteral("warning"));
+    }
 }
 
 void MainWindow::consultDatabaseSummary()
@@ -4472,6 +4525,11 @@ void MainWindow::closeEvent(QCloseEvent* event)
 {
     qInfo().noquote() << "[MainWindow] closeEvent";
     m_isClosing = true;
+    m_pendingTaskToastIndexes.clear();
+    if (m_taskToastTimer)
+        m_taskToastTimer->stop();
+    if (m_taskToastFrame)
+        m_taskToastFrame->hide();
     if (m_libraryChangeTimer)
         m_libraryChangeTimer->stop();
     if (m_libraryWatcher)
