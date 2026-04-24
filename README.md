@@ -400,6 +400,7 @@ Microsoft Office and other mixed document archives in the same catalog.
 - Improved company-logo branding in the toolbar and splash screen
 - Improved scan/status progress indicators without modal background dialogs
 - Task Center, popup task notices, and batch maintenance execution
+- Extra scan-time protection now locks live library widgets while the first scan is inserting rows
 - Diagnostic logs are disabled by default and can be enabled from Settings
 - Plugin URL actions are restricted to trusted HTTPS destinations
 - Python hook execution is disabled unless explicitly enabled
@@ -464,6 +465,11 @@ publisher.
 - ISBN extraction runs in a capped background worker pool to keep the UI responsive during slow file/PDF/OCR reads
 - Scanner thread waits up to 3 seconds after cancel before the window closes; Qt events flushed
   before plugin unload to prevent stale signal delivery
+- Task popup and status updates now marshal to the GUI thread and stop cleanly during shutdown
+- Library views and filter widgets are temporarily locked during active scans to avoid interaction with changing model indexes
+- Toolbar/sidebar teardown now uses deferred deletion, reducing use-after-free risks during UI refresh and language changes
+- Resize handling now defers heavy responsive layout work instead of mutating the live widget tree directly inside `resizeEvent()`
+- Scanner, rename, and ISBN watcher lifetimes are guarded with tracked pointers so stale async callbacks do not query freed objects
 - Metadata timer restarts correctly on subsequent fetches
 - App data and settings stored beside the executable for both portable and installed modes
 - CMake: Qt auto-detected in `C:/Qt/6.*/msvc2022_64` and `C:/Qt/6.*/msvc2019_64` — no
