@@ -25,7 +25,9 @@ It is aimed at users who manage mixed collections such as:
 - Fast library scanning with incremental re-index support
 - Virtual organization through shelves, tags, collections, and saved searches
 - Metadata enrichment from embedded metadata, Open Library, and Google Books
+- Upgrade-safe local storage with backup/import support for previous databases
 - Built-in database editor, metadata enrichment, and maintenance workflows
+- Task Center with popup notices, queued task history, and batch execution
 - Portable mode with local data and settings
 - CHM offline help and HTML documentation
 - Plugin-ready architecture for extra book/document actions
@@ -85,13 +87,16 @@ Eagle Library is built around these principles:
 - Duplicate analysis
 - Search-index rebuild
 - SQLite optimize / maintenance tools
+- Import previous database backups into the current library
 
 ### UI and Workflow
 
 - List and grid view modes
 - Command palette
 - Blue, white, and mac-style themes
-- Status-based task progress
+- Status-bar task progress with popup notifications
+- Task Center for queued tasks and recent activity
+- Batch task runner for maintenance workflows
 - Detail dialogs with plugin actions
 - Multilingual UI with built-in language packs and external language-pack support
 
@@ -101,6 +106,7 @@ Eagle Library is built around these principles:
 - Starter plugin manifests
 - Plugin actions in item details
 - External translations folder for custom language packs
+- Hardened local hook execution inside the app hooks directory
 
 ## Supported Formats
 
@@ -374,7 +380,7 @@ Microsoft Office and other mixed document archives in the same catalog.
 #### Highlights
 
 - Reference-first library management: files remain in their original folders
-- Local database and settings stored beside the executable
+- Local database and settings stored in `data\` and `settings\` beside the executable
 - Mixed ebook and document indexing for PDF, EPUB, MOBI, AZW/AZW3, DjVu, FB2,
   CBZ/CBR, CHM, LIT, plain text, Markdown, CSV, HTML/XML, OpenDocument,
   Apple iWork, OneNote, XPS/OpenXPS, and Microsoft Office files
@@ -386,12 +392,14 @@ Microsoft Office and other mixed document archives in the same catalog.
 - Smart categorization treats Office and OpenDocument families as documents,
   while still allowing long-form PDFs and ebooks to remain in book workflows
 - NSIS setup installs a self-contained Program Files layout with Qt runtime DLLs, plugins, themes, translations, help, and Start Menu shortcuts
+- Installer upgrades now back up the previous database and settings, then allow import from the backup inside the app
 - Metadata enrichment, cover tools, and database maintenance
 - Grid/list views, command palette, themes, and multilingual UI
 - Plugin actions for book and document details
 - CHM documentation bundled with release artifacts
 - Improved company-logo branding in the toolbar and splash screen
 - Improved scan/status progress indicators without modal background dialogs
+- Task Center, popup task notices, and batch maintenance execution
 - Diagnostic logs are disabled by default and can be enabled from Settings
 - Plugin URL actions are restricted to trusted HTTPS destinations
 - Python hook execution is disabled unless explicitly enabled
