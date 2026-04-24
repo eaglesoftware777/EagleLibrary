@@ -2852,6 +2852,7 @@ void MainWindow::startScanNow()
         return;
     }
     m_recentlyAddedBooks.clear();
+    setScanInteractionEnabled(false);
     const QString modeLabel = m_fastScanMode ? "Fast scan mode enabled" : "Deep metadata scan enabled";
     qInfo().noquote() << "[Scan] Starting folders=" << m_watchFolders.join(QStringLiteral(" | "))
                       << "threads=" << m_scanThreads
@@ -2887,6 +2888,7 @@ void MainWindow::onBookFound(Book book)
 void MainWindow::onScanFinished(int added, int skipped)
 {
     qInfo().noquote() << "[Scan] Finished added=" << added << "skipped=" << skipped;
+    setScanInteractionEnabled(true);
     hideTaskProgress(QString("Scan complete -- %1 new, %2 already indexed").arg(added).arg(skipped));
     refreshLibraryWatcher();
     updateStatusCount();
@@ -3042,6 +3044,11 @@ void MainWindow::openSettings()
 
 void MainWindow::openBookDetail(const QModelIndex& index)
 {
+    if (m_scanner && m_scanner->isRunning()) {
+        if (m_statusLabel)
+            m_statusLabel->setText("Book details are temporarily locked while scanning.");
+        return;
+    }
     QModelIndex srcIdx = m_filterModel->mapToSource(index);
     if (!srcIdx.isValid()) return;
     const Book& b = m_model->bookAt(srcIdx.row());
@@ -3066,6 +3073,11 @@ void MainWindow::openBookDetail()
 
 void MainWindow::openBookFile(const QModelIndex& index)
 {
+    if (m_scanner && m_scanner->isRunning()) {
+        if (m_statusLabel)
+            m_statusLabel->setText("Opening items is temporarily locked while scanning.");
+        return;
+    }
     QModelIndex srcIdx = m_filterModel->mapToSource(index);
     if (!srcIdx.isValid()) return;
 
@@ -3853,6 +3865,11 @@ void MainWindow::scheduleMetadataFetch(const Book& book,
 
 void MainWindow::removeSelectedBook()
 {
+    if (m_scanner && m_scanner->isRunning()) {
+        if (m_statusLabel)
+            m_statusLabel->setText("Removing items is temporarily locked while scanning.");
+        return;
+    }
     QListView* v = currentView();
     QModelIndexList sel = v->selectionModel()->selectedIndexes();
     if (sel.isEmpty()) return;
@@ -4144,6 +4161,7 @@ void MainWindow::stopAllTasks()
 
     if (m_scanner && m_scanner->isRunning())
         m_scanner->cancel();
+    setScanInteractionEnabled(true);
 
     if (m_activeRenamer)
         m_activeRenamer->cancel();
@@ -4637,6 +4655,37 @@ void MainWindow::saveSettings()
 }
 
 QListView* MainWindow::currentView() const { return m_isGridView ? m_gridView : m_listView; }
+
+void MainWindow::setScanInteractionEnabled(bool enabled)
+{
+    if (m_gridView)
+        m_gridView->setEnabled(enabled);
+    if (m_listView)
+        m_listView->setEnabled(enabled);
+    if (m_sidebarDock)
+        m_sidebarDock->setEnabled(enabled);
+    if (m_libraryCombo)
+        m_libraryCombo->setEnabled(enabled);
+    if (m_shelfCombo)
+        m_shelfCombo->setEnabled(enabled);
+    if (m_formatCombo)
+        m_formatCombo->setEnabled(enabled);
+    if (m_categoryCombo)
+        m_categoryCombo->setEnabled(enabled);
+    if (m_sortCombo)
+        m_sortCombo->setEnabled(enabled);
+    if (m_searchBox)
+        m_searchBox->setEnabled(enabled);
+    if (m_gridAction)
+        m_gridAction->setEnabled(enabled);
+    if (m_listAction)
+        m_listAction->setEnabled(enabled);
+    if (m_favAction)
+        m_favAction->setEnabled(enabled);
+
+    if (!enabled && m_statusLabel)
+        m_statusLabel->setText("Scanning in progress. Library widgets are temporarily locked for stability.");
+}
 
 void MainWindow::updateWorkspaceHeader()
 {

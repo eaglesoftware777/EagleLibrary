@@ -263,6 +263,7 @@ private:
     void updateWorkspaceHeader();
     void refreshCategoryOptions();
     void applyResponsiveLayout();
+    void setScanInteractionEnabled(bool enabled);
     void rebuildSmartCategorySidebar();
     void rebuildSavedSearchSidebar();
     void refreshLibrarySelector();
