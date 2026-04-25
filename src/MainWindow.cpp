@@ -73,6 +73,7 @@
 #include <QPushButton>
 #include <QToolButton>
 #include <QResizeEvent>
+#include <QMouseEvent>
 #include <QPixmap>
 #include <QPointer>
 #include <QItemSelectionModel>
@@ -2789,6 +2790,9 @@ void MainWindow::setupStatusBar()
     m_progressBar->setTextVisible(true);
     m_progressBar->setFormat("%p%");
     m_progressBar->setVisible(false);
+    m_progressBar->setCursor(Qt::PointingHandCursor);
+    m_progressBar->setToolTip(trl("status.progressBarTip", "Click to open Task Center"));
+    m_progressBar->installEventFilter(this);
     statusBar()->addWidget(m_progressBar);
 
     m_taskQueueLabel = new QLabel(trl("status.tasksIdle", "No queued tasks"));
@@ -2996,26 +3000,25 @@ void MainWindow::pushTaskNotice(const QString& title, const QString& message, co
 void MainWindow::updateTaskQueueIndicators()
 {
     const int queuedTasks = m_menuTaskQueue.size();
-    const int activeUnits = (m_menuTaskActive ? 1 : 0)
-        + (backgroundWorkRunning() ? 1 : 0);
+    const bool anyActive = m_menuTaskActive || backgroundWorkRunning();
 
     if (m_taskQueueLabel) {
-        if (queuedTasks > 0)
-            m_taskQueueLabel->setText(QString("Queued %1 task(s)").arg(queuedTasks));
-        else if (activeUnits > 0)
-            m_taskQueueLabel->setText(QString("Running %1 task group(s)").arg(activeUnits));
+        if (queuedTasks > 0 && anyActive)
+            m_taskQueueLabel->setText(trl("status.runningWithQueued", "Running — %1 queued").arg(queuedTasks));
+        else if (queuedTasks > 0)
+            m_taskQueueLabel->setText(trl("status.tasksQueued", "%1 task(s) queued").arg(queuedTasks));
+        else if (anyActive)
+            m_taskQueueLabel->setText(trl("status.taskRunning", "Running..."));
         else
-            m_taskQueueLabel->setText(trl("status.tasksIdle", "No queued tasks"));
+            m_taskQueueLabel->setText(trl("status.tasksIdle", "No active tasks"));
     }
 
     if (m_taskCenterButton) {
         const int count = m_taskNotices.size();
         m_taskCenterButton->setText(count > 0
-            ? QString("Tasks (%1)").arg(count)
+            ? trl("status.taskCenter", "Tasks") + QString(" (%1)").arg(count)
             : trl("status.taskCenter", "Tasks"));
-        m_taskCenterButton->setToolTip(queuedTasks > 0
-            ? QString("Open Task Center. %1 task(s) queued.").arg(queuedTasks)
-            : QString("Open Task Center. %1 notice(s) saved.").arg(count));
+        m_taskCenterButton->setToolTip(trl("status.progressBarTip", "Click to open Task Center"));
     }
 }
 
@@ -5173,6 +5176,17 @@ void MainWindow::resizeEvent(QResizeEvent* event)
         applyResponsiveLayout();
         positionTaskToast();
     });
+}
+
+bool MainWindow::eventFilter(QObject* watched, QEvent* event)
+{
+    if (watched == m_progressBar && event->type() == QEvent::MouseButtonRelease) {
+        auto* me = static_cast<QMouseEvent*>(event);
+        if (me->button() == Qt::LeftButton)
+            openTaskCenter();
+        return true;
+    }
+    return QMainWindow::eventFilter(watched, event);
 }
 
 void MainWindow::loadSettings()
