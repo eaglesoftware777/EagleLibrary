@@ -2,9 +2,9 @@
 
 Eagle Library is a Windows desktop catalog for books, papers, manuals, and mixed-format document archives. It keeps files in their original folders, indexes metadata into a local database, and provides shelves, search, maintenance tools, exports, plugins, and offline help.
 
-## Release 1.0
+## Release 1.1
 
-The current prerelease is `v1.0`. The release page provides:
+The current prerelease is `v1.1`. The release page provides:
 
 - `EagleLibrary-Setup-x64.exe` - 64-bit Windows installer.
 - `EagleLibrary-Portable-x64.zip` - portable build with `portable.flag`.
@@ -40,4 +40,4 @@ Shelves such as Books Only, Documents Only, Favourites, Recently Added, Missing 
 
 ## Packaging
 
-The GitHub Actions workflow builds the Windows release, runs runtime tests, packages a portable ZIP, optionally builds the NSIS installer, generates checksums, and updates the `v1.0` prerelease assets when release publishing is enabled.
+The GitHub Actions workflow builds the Windows release, runs runtime tests, packages a portable ZIP, optionally builds the NSIS installer, generates checksums, and updates the `v1.1` prerelease assets when release publishing is enabled.

@@ -369,6 +369,9 @@ This prerelease builds on `v1.0` without replacing it. The focus is day-to-day
 library work: better classification for mixed archives, faster bulk metadata
 cleanup, and real reading/lending tracking inside the local catalog.
 
+The release page and checksum bundle are refreshed together so the published
+`v1.1` prerelease always matches the latest packaged installer and portable ZIP.
+
 #### Highlights
 
 - Reading states: `Want to Read`, `Reading`, `Read`
