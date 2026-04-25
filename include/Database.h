@@ -16,7 +16,7 @@
 #include <QJsonObject>
 
 // ── Sort options ──────────────────────────────────────────────
-enum class SortField  { Title, Author, Year, DateAdded, Rating, FileSize, Format, OpenCount, Series };
+enum class SortField  { Title, Author, Publisher, Year, DateAdded, Rating, Progress, FileSize, Format, OpenCount, Series };
 enum class SortOrder  { Asc, Desc };
 
 // ── Filter options ────────────────────────────────────────────
@@ -25,6 +25,7 @@ struct BookFilter {
     QString  format;
     QString  author;
     QString  tag;
+    QString  readingStatus;
     QString  language;
     QString  collection;    // virtual collection name
     QString  series;
@@ -127,6 +128,14 @@ public:
     void updateRating(qint64 id, double rating);
     void updateNotes(qint64 id, const QString& notes);
     void updateTags(qint64 id, const QStringList& tags);
+    void updateReadingState(qint64 id,
+                            const QString& readingStatus,
+                            int progressPercent,
+                            int currentPage,
+                            const QDateTime& dateStarted,
+                            const QDateTime& dateFinished,
+                            int readingMinutes);
+    void updateLoanState(qint64 id, const QString& loanedTo, const QDateTime& loanDueDate);
 
     // ── Collections ───────────────────────────────────────────
     QVector<Collection> allCollections() const;

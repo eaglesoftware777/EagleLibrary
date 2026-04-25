@@ -6,7 +6,7 @@
 cmake_minimum_required(VERSION 3.20)
 
 project(EagleLibrary
-    VERSION 1.0.0
+    VERSION 1.1.0
     DESCRIPTION "Eagle Software - Professional eBook & Document Library Manager"
     LANGUAGES CXX
 )
@@ -148,7 +148,7 @@ endif()
 
 # ── Definitions ──────────────────────────────────────────────────────────────
 target_compile_definitions(EagleLibrary PRIVATE
-    APP_VERSION="1.0.0"
+    APP_VERSION="1.1.0"
     APP_COMPANY="Eagle Software"
     APP_NAME="Eagle Library"
     UNICODE
@@ -233,11 +233,11 @@ endif()
 set(CPACK_GENERATOR "NSIS")
 set(CPACK_PACKAGE_NAME "EagleLibrary")
 set(CPACK_PACKAGE_VENDOR "Eagle Software")
-set(CPACK_PACKAGE_VERSION "1.0.0")
+set(CPACK_PACKAGE_VERSION "1.1.0")
 set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "Eagle Library - Professional eBook & Document Manager")
 set(CPACK_PACKAGE_INSTALL_DIRECTORY "Eagle Library")
 set(CPACK_NSIS_DISPLAY_NAME "Eagle Library")
-set(CPACK_NSIS_PACKAGE_NAME "Eagle Library 1.0.0")
+set(CPACK_NSIS_PACKAGE_NAME "Eagle Library 1.1.0")
 set(CPACK_NSIS_MUI_ICON "${CMAKE_SOURCE_DIR}/resources/eagle.ico")
 set(CPACK_NSIS_MUI_UNIICON "${CMAKE_SOURCE_DIR}/resources/eagle.ico")
 set(CPACK_NSIS_INSTALLED_ICON_NAME "EagleLibrary.exe")

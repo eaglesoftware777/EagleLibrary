@@ -28,6 +28,15 @@ constexpr auto kBookSelectColumns =
     "isbn,language,year,pages,rating,description,tags,subjects,"
     "cover_path,has_cover,date_added,date_modified,last_opened,"
     "open_count,is_favourite,notes,"
+    "COALESCE(reading_status,'') AS reading_status,"
+    "COALESCE(progress_percent,0) AS progress_percent,"
+    "COALESCE(current_page,0) AS current_page,"
+    "COALESCE(date_started,'') AS date_started,"
+    "COALESCE(date_finished,'') AS date_finished,"
+    "COALESCE(last_reading_session,'') AS last_reading_session,"
+    "COALESCE(reading_minutes,0) AS reading_minutes,"
+    "COALESCE(loaned_to,'') AS loaned_to,"
+    "COALESCE(loan_due_date,'') AS loan_due_date,"
     "COALESCE(series,'') AS series,"
     "COALESCE(series_index,0) AS series_index,"
     "COALESCE(edition,'') AS edition";
@@ -200,6 +209,11 @@ Book sanitizedBook(Book book)
     book.description = sanitizeTextValue(book.description);
     book.coverPath = sanitizeTextValue(book.coverPath);
     book.notes = sanitizeTextValue(book.notes);
+    book.readingStatus = sanitizeTextValue(book.readingStatus);
+    book.loanedTo = sanitizeTextValue(book.loanedTo);
+    book.progressPercent = qBound(0, book.progressPercent, 100);
+    book.currentPage = qMax(0, book.currentPage);
+    book.readingMinutes = qMax(0, book.readingMinutes);
     book.series = sanitizeTextValue(book.series);
     book.edition = sanitizeTextValue(book.edition);
     book.tags = sanitizeTextList(book.tags);
@@ -286,6 +300,15 @@ QJsonObject bookToJson(const Book& b)
     obj["open_count"] = b.openCount;
     obj["is_favourite"] = b.isFavourite;
     obj["notes"] = b.notes;
+    obj["reading_status"] = b.readingStatus;
+    obj["progress_percent"] = b.progressPercent;
+    obj["current_page"] = b.currentPage;
+    obj["date_started"] = b.dateStarted.toString(Qt::ISODate);
+    obj["date_finished"] = b.dateFinished.toString(Qt::ISODate);
+    obj["last_reading_session"] = b.lastReadingSession.toString(Qt::ISODate);
+    obj["reading_minutes"] = b.readingMinutes;
+    obj["loaned_to"] = b.loanedTo;
+    obj["loan_due_date"] = b.loanDueDate.toString(Qt::ISODate);
     return obj;
 }
 
@@ -319,6 +342,15 @@ Book bookFromJsonObject(const QJsonObject& obj)
     b.openCount = obj.value("open_count").toInt();
     b.isFavourite = obj.value("is_favourite").toBool();
     b.notes = obj.value("notes").toString();
+    b.readingStatus = obj.value("reading_status").toString();
+    b.progressPercent = obj.value("progress_percent").toInt();
+    b.currentPage = obj.value("current_page").toInt();
+    b.dateStarted = QDateTime::fromString(obj.value("date_started").toString(), Qt::ISODate);
+    b.dateFinished = QDateTime::fromString(obj.value("date_finished").toString(), Qt::ISODate);
+    b.lastReadingSession = QDateTime::fromString(obj.value("last_reading_session").toString(), Qt::ISODate);
+    b.readingMinutes = obj.value("reading_minutes").toInt();
+    b.loanedTo = obj.value("loaned_to").toString();
+    b.loanDueDate = QDateTime::fromString(obj.value("loan_due_date").toString(), Qt::ISODate);
     return sanitizedBook(b);
 }
 
@@ -460,9 +492,9 @@ void syncBookSearchRow(const QSqlDatabase& db, qint64 bookId, const Book& book)
     QSqlQuery q(db);
     q.prepare(R"(
         INSERT INTO books_fts
-            (rowid, title, author, publisher, isbn, description, tags, subjects, notes, series, file_path)
+            (rowid, title, author, publisher, isbn, description, tags, subjects, notes, reading_status, loaned_to, series, file_path)
         VALUES
-            (:rowid, :title, :author, :publisher, :isbn, :description, :tags, :subjects, :notes, :series, :file_path)
+            (:rowid, :title, :author, :publisher, :isbn, :description, :tags, :subjects, :notes, :reading_status, :loaned_to, :series, :file_path)
     )");
     q.bindValue(":rowid", bookId);
     q.bindValue(":title", book.title);
@@ -473,6 +505,8 @@ void syncBookSearchRow(const QSqlDatabase& db, qint64 bookId, const Book& book)
     q.bindValue(":tags", book.tags.join(" "));
     q.bindValue(":subjects", book.subjects.join(" "));
     q.bindValue(":notes", book.notes);
+    q.bindValue(":reading_status", book.readingStatus);
+    q.bindValue(":loaned_to", book.loanedTo);
     q.bindValue(":series", book.series);
     q.bindValue(":file_path", book.filePath);
     if (!q.exec())
@@ -614,6 +648,15 @@ bool Database::createTables()
             open_count    INTEGER DEFAULT 0,
             is_favourite  INTEGER DEFAULT 0,
             notes         TEXT,
+            reading_status TEXT DEFAULT '',
+            progress_percent INTEGER DEFAULT 0,
+            current_page INTEGER DEFAULT 0,
+            date_started TEXT,
+            date_finished TEXT,
+            last_reading_session TEXT,
+            reading_minutes INTEGER DEFAULT 0,
+            loaned_to TEXT DEFAULT '',
+            loan_due_date TEXT,
             series        TEXT COLLATE NOCASE,
             series_index  INTEGER DEFAULT 0,
             edition       TEXT
@@ -625,6 +668,15 @@ bool Database::createTables()
     q.exec("ALTER TABLE books ADD COLUMN series       TEXT COLLATE NOCASE");
     q.exec("ALTER TABLE books ADD COLUMN series_index INTEGER DEFAULT 0");
     q.exec("ALTER TABLE books ADD COLUMN edition      TEXT");
+    q.exec("ALTER TABLE books ADD COLUMN reading_status TEXT DEFAULT ''");
+    q.exec("ALTER TABLE books ADD COLUMN progress_percent INTEGER DEFAULT 0");
+    q.exec("ALTER TABLE books ADD COLUMN current_page INTEGER DEFAULT 0");
+    q.exec("ALTER TABLE books ADD COLUMN date_started TEXT");
+    q.exec("ALTER TABLE books ADD COLUMN date_finished TEXT");
+    q.exec("ALTER TABLE books ADD COLUMN last_reading_session TEXT");
+    q.exec("ALTER TABLE books ADD COLUMN reading_minutes INTEGER DEFAULT 0");
+    q.exec("ALTER TABLE books ADD COLUMN loaned_to TEXT DEFAULT ''");
+    q.exec("ALTER TABLE books ADD COLUMN loan_due_date TEXT");
 
     q.exec(R"(
         CREATE TABLE IF NOT EXISTS collections (
@@ -692,6 +744,8 @@ bool Database::createTables()
             tags,
             subjects,
             notes,
+            reading_status,
+            loaned_to,
             series,
             file_path
         )
@@ -719,6 +773,10 @@ bool Database::createIndexes()
     q.exec("CREATE INDEX IF NOT EXISTS idx_added    ON books(date_added)");
     q.exec("CREATE INDEX IF NOT EXISTS idx_opened   ON books(last_opened)");
     q.exec("CREATE INDEX IF NOT EXISTS idx_filesize ON books(file_size)");
+    q.exec("CREATE INDEX IF NOT EXISTS idx_publisher_fmt ON books(publisher COLLATE NOCASE, format)");
+    q.exec("CREATE INDEX IF NOT EXISTS idx_reading_status ON books(reading_status COLLATE NOCASE)");
+    q.exec("CREATE INDEX IF NOT EXISTS idx_progress_percent ON books(progress_percent)");
+    q.exec("CREATE INDEX IF NOT EXISTS idx_loaned_to ON books(loaned_to COLLATE NOCASE)");
     q.exec("CREATE INDEX IF NOT EXISTS idx_format_year ON books(format, year)");
     q.exec("CREATE INDEX IF NOT EXISTS idx_fav_opened ON books(is_favourite, last_opened)");
     q.exec("CREATE INDEX IF NOT EXISTS idx_series     ON books(series COLLATE NOCASE)");
@@ -759,6 +817,15 @@ Book Database::bookFromQuery(const QSqlQuery& q) const
     b.openCount    = q.value("open_count").toInt();
     b.isFavourite  = q.value("is_favourite").toInt() != 0;
     b.notes        = q.value("notes").toString();
+    b.readingStatus = q.value("reading_status").toString();
+    b.progressPercent = q.value("progress_percent").toInt();
+    b.currentPage = q.value("current_page").toInt();
+    b.dateStarted = QDateTime::fromString(q.value("date_started").toString(), Qt::ISODate);
+    b.dateFinished = QDateTime::fromString(q.value("date_finished").toString(), Qt::ISODate);
+    b.lastReadingSession = QDateTime::fromString(q.value("last_reading_session").toString(), Qt::ISODate);
+    b.readingMinutes = q.value("reading_minutes").toInt();
+    b.loanedTo = q.value("loaned_to").toString();
+    b.loanDueDate = QDateTime::fromString(q.value("loan_due_date").toString(), Qt::ISODate);
     b.series       = q.value("series").toString();
     b.seriesIndex  = q.value("series_index").toInt();
     b.edition      = q.value("edition").toString();
@@ -779,9 +846,11 @@ QString Database::sortClause(SortField s, SortOrder o) const
     switch (s) {
         case SortField::Title:     col = "title COLLATE NOCASE"; break;
         case SortField::Author:    col = "author COLLATE NOCASE"; break;
+        case SortField::Publisher: col = "publisher COLLATE NOCASE"; break;
         case SortField::Year:      col = "year"; break;
         case SortField::DateAdded: col = "date_added"; break;
         case SortField::Rating:    col = "rating"; break;
+        case SortField::Progress:  col = "progress_percent"; break;
         case SortField::FileSize:  col = "file_size"; break;
         case SortField::Format:    col = "format"; break;
         case SortField::OpenCount: col = "open_count"; break;
@@ -811,6 +880,10 @@ QString Database::buildWhereClause(const BookFilter& f, QSqlQuery& q) const
     if (!f.tag.isEmpty()) {
         clauses << "tags LIKE :tag";
         q.bindValue(":tag", "%" + f.tag + "%");
+    }
+    if (!f.readingStatus.isEmpty()) {
+        clauses << "reading_status = :readingStatus";
+        q.bindValue(":readingStatus", f.readingStatus);
     }
     if (!f.language.isEmpty()) {
         clauses << "language = :lang";
@@ -973,11 +1046,15 @@ qint64 Database::insertBook(const Book& b)
             (file_path,file_hash,format,file_size,title,author,publisher,
              isbn,language,year,pages,rating,description,tags,subjects,
              cover_path,has_cover,date_added,date_modified,last_opened,
-             open_count,is_favourite,notes,series,series_index,edition)
+             open_count,is_favourite,notes,reading_status,progress_percent,current_page,
+             date_started,date_finished,last_reading_session,reading_minutes,loaned_to,loan_due_date,
+             series,series_index,edition)
         VALUES
             (:fp,:fh,:fmt,:fs,:ti,:au,:pub,
              :isbn,:lang,:yr,:pg,:rt,:desc,:tags,:subj,
-             :cp,:hc,:da,:dm,:lo,:oc,:fav,:notes,:ser,:seridx,:ed)
+             :cp,:hc,:da,:dm,:lo,:oc,:fav,:notes,:reading_status,:progress_percent,:current_page,
+             :date_started,:date_finished,:last_reading_session,:reading_minutes,:loaned_to,:loan_due_date,
+             :ser,:seridx,:ed)
     )");
     q.bindValue(":fp",     clean.filePath);
     q.bindValue(":fh",     clean.fileHash);
@@ -1002,6 +1079,15 @@ qint64 Database::insertBook(const Book& b)
     q.bindValue(":oc",     clean.openCount);
     q.bindValue(":fav",    clean.isFavourite ? 1 : 0);
     q.bindValue(":notes",  clean.notes);
+    q.bindValue(":reading_status", clean.readingStatus);
+    q.bindValue(":progress_percent", clean.progressPercent);
+    q.bindValue(":current_page", clean.currentPage);
+    q.bindValue(":date_started", clean.dateStarted.toString(Qt::ISODate));
+    q.bindValue(":date_finished", clean.dateFinished.toString(Qt::ISODate));
+    q.bindValue(":last_reading_session", clean.lastReadingSession.toString(Qt::ISODate));
+    q.bindValue(":reading_minutes", clean.readingMinutes);
+    q.bindValue(":loaned_to", clean.loanedTo);
+    q.bindValue(":loan_due_date", clean.loanDueDate.toString(Qt::ISODate));
     q.bindValue(":ser",    clean.series);
     q.bindValue(":seridx", clean.seriesIndex);
     q.bindValue(":ed",     clean.edition);
@@ -1023,6 +1109,9 @@ bool Database::updateBook(const Book& b)
             description=:desc, tags=:tags, subjects=:subj,
             cover_path=:cp, has_cover=:hc, date_modified=:dm,
             is_favourite=:fav, notes=:notes,
+            reading_status=:reading_status, progress_percent=:progress_percent, current_page=:current_page,
+            date_started=:date_started, date_finished=:date_finished, last_reading_session=:last_reading_session,
+            reading_minutes=:reading_minutes, loaned_to=:loaned_to, loan_due_date=:loan_due_date,
             series=:ser, series_index=:seridx, edition=:ed
         WHERE id=:id
     )");
@@ -1042,6 +1131,15 @@ bool Database::updateBook(const Book& b)
     q.bindValue(":dm",     QDateTime::currentDateTime().toString(Qt::ISODate));
     q.bindValue(":fav",    clean.isFavourite ? 1 : 0);
     q.bindValue(":notes",  clean.notes);
+    q.bindValue(":reading_status", clean.readingStatus);
+    q.bindValue(":progress_percent", clean.progressPercent);
+    q.bindValue(":current_page", clean.currentPage);
+    q.bindValue(":date_started", clean.dateStarted.toString(Qt::ISODate));
+    q.bindValue(":date_finished", clean.dateFinished.toString(Qt::ISODate));
+    q.bindValue(":last_reading_session", clean.lastReadingSession.toString(Qt::ISODate));
+    q.bindValue(":reading_minutes", clean.readingMinutes);
+    q.bindValue(":loaned_to", clean.loanedTo);
+    q.bindValue(":loan_due_date", clean.loanDueDate.toString(Qt::ISODate));
     q.bindValue(":ser",    clean.series);
     q.bindValue(":seridx", clean.seriesIndex);
     q.bindValue(":ed",     clean.edition);
@@ -1065,11 +1163,15 @@ bool Database::upsertBook(const Book& b)
             (file_path,file_hash,format,file_size,title,author,publisher,
              isbn,language,year,pages,rating,description,tags,subjects,
              cover_path,has_cover,date_added,date_modified,last_opened,
-             open_count,is_favourite,notes,series,series_index,edition)
+             open_count,is_favourite,notes,reading_status,progress_percent,current_page,
+             date_started,date_finished,last_reading_session,reading_minutes,loaned_to,loan_due_date,
+             series,series_index,edition)
         VALUES
             (:fp,:fh,:fmt,:fs,:ti,:au,:pub,
              :isbn,:lang,:yr,:pg,:rt,:desc,:tags,:subj,
-             :cp,:hc,:da,:dm,:lo,:oc,:fav,:notes,:ser,:seridx,:ed)
+             :cp,:hc,:da,:dm,:lo,:oc,:fav,:notes,:reading_status,:progress_percent,:current_page,
+             :date_started,:date_finished,:last_reading_session,:reading_minutes,:loaned_to,:loan_due_date,
+             :ser,:seridx,:ed)
         ON CONFLICT(file_path) DO UPDATE SET
             file_hash=excluded.file_hash,
             format=excluded.format,
@@ -1093,6 +1195,15 @@ bool Database::upsertBook(const Book& b)
             open_count=excluded.open_count,
             is_favourite=excluded.is_favourite,
             notes=excluded.notes,
+            reading_status=excluded.reading_status,
+            progress_percent=excluded.progress_percent,
+            current_page=excluded.current_page,
+            date_started=excluded.date_started,
+            date_finished=excluded.date_finished,
+            last_reading_session=excluded.last_reading_session,
+            reading_minutes=excluded.reading_minutes,
+            loaned_to=excluded.loaned_to,
+            loan_due_date=excluded.loan_due_date,
             series=excluded.series,
             series_index=excluded.series_index,
             edition=excluded.edition
@@ -1120,6 +1231,15 @@ bool Database::upsertBook(const Book& b)
     q.bindValue(":oc",     clean.openCount);
     q.bindValue(":fav",    clean.isFavourite ? 1 : 0);
     q.bindValue(":notes",  clean.notes);
+    q.bindValue(":reading_status", clean.readingStatus);
+    q.bindValue(":progress_percent", clean.progressPercent);
+    q.bindValue(":current_page", clean.currentPage);
+    q.bindValue(":date_started", clean.dateStarted.toString(Qt::ISODate));
+    q.bindValue(":date_finished", clean.dateFinished.toString(Qt::ISODate));
+    q.bindValue(":last_reading_session", clean.lastReadingSession.toString(Qt::ISODate));
+    q.bindValue(":reading_minutes", clean.readingMinutes);
+    q.bindValue(":loaned_to", clean.loanedTo);
+    q.bindValue(":loan_due_date", clean.loanDueDate.toString(Qt::ISODate));
     q.bindValue(":ser",    clean.series);
     q.bindValue(":seridx", clean.seriesIndex);
     q.bindValue(":ed",     clean.edition);
@@ -1252,8 +1372,13 @@ QStringList Database::allSeries() const
 void Database::markOpened(qint64 id)
 {
     QSqlQuery q(QSqlDatabase::database("eagle_lib"));
-    q.prepare("UPDATE books SET last_opened=:t, open_count=open_count+1 WHERE id=:id");
-    q.bindValue(":t",  QDateTime::currentDateTime().toString(Qt::ISODate));
+    const QString now = QDateTime::currentDateTime().toString(Qt::ISODate);
+    q.prepare("UPDATE books SET last_opened=:t, open_count=open_count+1, "
+              "last_reading_session=:t, "
+              "reading_status=CASE WHEN COALESCE(reading_status,'')='' OR reading_status='Want to Read' THEN 'Reading' ELSE reading_status END, "
+              "date_started=CASE WHEN COALESCE(date_started,'')='' THEN :t ELSE date_started END "
+              "WHERE id=:id");
+    q.bindValue(":t",  now);
     q.bindValue(":id", id);
     q.exec();
 }
@@ -1321,6 +1446,41 @@ void Database::updateTags(qint64 id, const QStringList& tags)
     QSqlQuery q(QSqlDatabase::database("eagle_lib"));
     q.prepare("UPDATE books SET tags=:t, date_modified=:dm WHERE id=:id");
     q.bindValue(":t",  sanitizeTextList(tags).join("|"));
+    q.bindValue(":dm", QDateTime::currentDateTime().toString(Qt::ISODate));
+    q.bindValue(":id", id);
+    q.exec();
+}
+
+void Database::updateReadingState(qint64 id,
+                                  const QString& readingStatus,
+                                  int progressPercent,
+                                  int currentPage,
+                                  const QDateTime& dateStarted,
+                                  const QDateTime& dateFinished,
+                                  int readingMinutes)
+{
+    QSqlQuery q(QSqlDatabase::database("eagle_lib"));
+    q.prepare("UPDATE books SET reading_status=:status, progress_percent=:progress, current_page=:page, "
+              "date_started=:started, date_finished=:finished, last_reading_session=:session, "
+              "reading_minutes=:minutes, date_modified=:dm WHERE id=:id");
+    q.bindValue(":status", sanitizeTextValue(readingStatus));
+    q.bindValue(":progress", qBound(0, progressPercent, 100));
+    q.bindValue(":page", qMax(0, currentPage));
+    q.bindValue(":started", dateStarted.toString(Qt::ISODate));
+    q.bindValue(":finished", dateFinished.toString(Qt::ISODate));
+    q.bindValue(":session", QDateTime::currentDateTime().toString(Qt::ISODate));
+    q.bindValue(":minutes", qMax(0, readingMinutes));
+    q.bindValue(":dm", QDateTime::currentDateTime().toString(Qt::ISODate));
+    q.bindValue(":id", id);
+    q.exec();
+}
+
+void Database::updateLoanState(qint64 id, const QString& loanedTo, const QDateTime& loanDueDate)
+{
+    QSqlQuery q(QSqlDatabase::database("eagle_lib"));
+    q.prepare("UPDATE books SET loaned_to=:loanedTo, loan_due_date=:dueDate, date_modified=:dm WHERE id=:id");
+    q.bindValue(":loanedTo", sanitizeTextValue(loanedTo));
+    q.bindValue(":dueDate", loanDueDate.toString(Qt::ISODate));
     q.bindValue(":dm", QDateTime::currentDateTime().toString(Qt::ISODate));
     q.bindValue(":id", id);
     q.exec();
@@ -1903,6 +2063,11 @@ int Database::importFromDatabase(const QString& filePath)
             book.openCount = queryIntValue(select, QStringLiteral("open_count"));
             book.isFavourite = queryBoolValue(select, QStringLiteral("is_favourite"));
             book.notes = queryValue(select, QStringLiteral("notes"));
+            book.readingStatus = queryValue(select, QStringLiteral("reading_status"));
+            book.progressPercent = queryIntValue(select, QStringLiteral("progress_percent"));
+            book.currentPage = queryIntValue(select, QStringLiteral("current_page"));
+            book.readingMinutes = queryIntValue(select, QStringLiteral("reading_minutes"));
+            book.loanedTo = queryValue(select, QStringLiteral("loaned_to"));
             book.series = queryValue(select, QStringLiteral("series"));
             book.seriesIndex = queryIntValue(select, QStringLiteral("series_index"));
             book.edition = queryValue(select, QStringLiteral("edition"));
@@ -1916,6 +2081,18 @@ int Database::importFromDatabase(const QString& filePath)
             const QString lastOpened = queryValue(select, QStringLiteral("last_opened"));
             if (!lastOpened.isEmpty())
                 book.lastOpened = QDateTime::fromString(lastOpened, Qt::ISODate);
+            const QString dateStarted = queryValue(select, QStringLiteral("date_started"));
+            if (!dateStarted.isEmpty())
+                book.dateStarted = QDateTime::fromString(dateStarted, Qt::ISODate);
+            const QString dateFinished = queryValue(select, QStringLiteral("date_finished"));
+            if (!dateFinished.isEmpty())
+                book.dateFinished = QDateTime::fromString(dateFinished, Qt::ISODate);
+            const QString lastReadingSession = queryValue(select, QStringLiteral("last_reading_session"));
+            if (!lastReadingSession.isEmpty())
+                book.lastReadingSession = QDateTime::fromString(lastReadingSession, Qt::ISODate);
+            const QString loanDueDate = queryValue(select, QStringLiteral("loan_due_date"));
+            if (!loanDueDate.isEmpty())
+                book.loanDueDate = QDateTime::fromString(loanDueDate, Qt::ISODate);
 
             if (!upsertBook(book))
                 continue;

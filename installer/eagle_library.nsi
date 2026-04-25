@@ -16,18 +16,18 @@
 
 ; ── General ──────────────────────────────────────────────────
 Name              "Eagle Library"
-OutFile           "EagleLibrary_Setup_1.0.0.exe"
+OutFile           "EagleLibrary_Setup_1.1.0.exe"
 InstallDir        "$PROGRAMFILES64\Eagle Library"
 InstallDirRegKey  HKLM "Software\Eagle Software\Eagle Library" "InstallDir"
 RequestExecutionLevel admin
 
 ; ── Version info ─────────────────────────────────────────────
-VIProductVersion  "1.0.0.0"
+VIProductVersion  "1.1.0.0"
 VIAddVersionKey   "ProductName"     "Eagle Library"
 VIAddVersionKey   "CompanyName"     "Eagle Software"
 VIAddVersionKey   "LegalCopyright"  "Copyright (C) 2026 Eagle Software"
 VIAddVersionKey   "FileDescription" "Eagle Library 1.0 Installer"
-VIAddVersionKey   "FileVersion"     "1.0.0.0"
+VIAddVersionKey   "FileVersion"     "1.1.0.0"
 
 ; ── MUI Settings ─────────────────────────────────────────────
 !define MUI_ABORTWARNING
@@ -171,7 +171,7 @@ Section "Eagle Library (required)" SecMain
 
     ; ── Registry ─────────────────────────────────────────────
     WriteRegStr HKLM "Software\Eagle Software\Eagle Library" "InstallDir" "$INSTDIR"
-    WriteRegStr HKLM "Software\Eagle Software\Eagle Library" "Version"    "1.0.0"
+    WriteRegStr HKLM "Software\Eagle Software\Eagle Library" "Version"    "1.1.0"
 
     ; ── Uninstall info (Add/Remove Programs) ─────────────────
     WriteRegStr HKLM \
@@ -188,7 +188,7 @@ Section "Eagle Library (required)" SecMain
         "Publisher"            "Eagle Software"
     WriteRegStr HKLM \
         "Software\Microsoft\Windows\CurrentVersion\Uninstall\EagleLibrary" \
-        "DisplayVersion"       "1.0.0"
+        "DisplayVersion"       "1.1.0"
     WriteRegStr HKLM \
         "Software\Microsoft\Windows\CurrentVersion\Uninstall\EagleLibrary" \
         "URLInfoAbout"         "https://eaglesoftware.biz/"

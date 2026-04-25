@@ -32,6 +32,9 @@ enum BookRole {
     OpenCountRole,
     DateAddedRole,
     CategoryRole,
+    ReadingStatusRole,
+    ProgressRole,
+    LoanedToRole,
 };
 
 class BookModel : public QAbstractListModel

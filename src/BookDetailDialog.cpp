@@ -127,6 +127,10 @@ void BookDetailDialog::setupUi()
     addInfoRow("Added",  m_book.dateAdded.toString("dd MMM yyyy"));
     if (m_book.openCount > 0)
         addInfoRow("Opened", QString("%1x").arg(m_book.openCount));
+    if (!m_book.readingStatus.trimmed().isEmpty())
+        addInfoRow("Reading", m_book.readingStatus);
+    if (!m_book.loanedTo.trimmed().isEmpty())
+        addInfoRow("Loaned To", m_book.loanedTo);
     leftLayout->addWidget(fileInfoGroup);
 
     auto* locationsGroup = new QGroupBox("File Locations");
@@ -346,7 +350,58 @@ void BookDetailDialog::setupUi()
     metaForm->addRow("Edition:",      m_editionEdit);
     tabs->addTab(metaWidget, "Metadata");
 
-    // Tab 2: Description
+    // Tab 2: Reading
+    auto* readingWidget = new QWidget;
+    auto* readingForm = new QFormLayout(readingWidget);
+    readingForm->setLabelAlignment(Qt::AlignRight);
+    readingForm->setSpacing(10);
+
+    m_readingStatusCombo = new QComboBox(readingWidget);
+    m_readingStatusCombo->addItems({"", "Want to Read", "Reading", "Read"});
+    {
+        const int idx = m_readingStatusCombo->findText(m_book.readingStatus);
+        m_readingStatusCombo->setCurrentIndex(idx >= 0 ? idx : 0);
+    }
+    m_progressSpin = new QSpinBox(readingWidget);
+    m_progressSpin->setRange(0, 100);
+    m_progressSpin->setSuffix("%");
+    m_progressSpin->setValue(m_book.progressPercent);
+    m_currentPageSpin = new QSpinBox(readingWidget);
+    m_currentPageSpin->setRange(0, 1000000);
+    m_currentPageSpin->setValue(m_book.currentPage);
+    m_dateStartedEdit = new QDateEdit(readingWidget);
+    m_dateStartedEdit->setCalendarPopup(true);
+    m_dateStartedEdit->setSpecialValueText("Not set");
+    m_dateStartedEdit->setMinimumDate(QDate(1900, 1, 1));
+    m_dateStartedEdit->setDate(m_book.dateStarted.isValid() ? m_book.dateStarted.date() : m_dateStartedEdit->minimumDate());
+    m_dateFinishedEdit = new QDateEdit(readingWidget);
+    m_dateFinishedEdit->setCalendarPopup(true);
+    m_dateFinishedEdit->setSpecialValueText("Not set");
+    m_dateFinishedEdit->setMinimumDate(QDate(1900, 1, 1));
+    m_dateFinishedEdit->setDate(m_book.dateFinished.isValid() ? m_book.dateFinished.date() : m_dateFinishedEdit->minimumDate());
+    m_readingMinutesSpin = new QSpinBox(readingWidget);
+    m_readingMinutesSpin->setRange(0, 100000);
+    m_readingMinutesSpin->setSuffix(" min");
+    m_readingMinutesSpin->setValue(m_book.readingMinutes);
+    m_loanedToEdit = new QLineEdit(m_book.loanedTo, readingWidget);
+    m_loanedToEdit->setPlaceholderText("Borrower name or device");
+    m_loanDueDateEdit = new QDateEdit(readingWidget);
+    m_loanDueDateEdit->setCalendarPopup(true);
+    m_loanDueDateEdit->setSpecialValueText("Not set");
+    m_loanDueDateEdit->setMinimumDate(QDate(1900, 1, 1));
+    m_loanDueDateEdit->setDate(m_book.loanDueDate.isValid() ? m_book.loanDueDate.date() : m_loanDueDateEdit->minimumDate());
+
+    readingForm->addRow("Status:", m_readingStatusCombo);
+    readingForm->addRow("Progress:", m_progressSpin);
+    readingForm->addRow("Current Page:", m_currentPageSpin);
+    readingForm->addRow("Started:", m_dateStartedEdit);
+    readingForm->addRow("Finished:", m_dateFinishedEdit);
+    readingForm->addRow("Reading Time:", m_readingMinutesSpin);
+    readingForm->addRow("Loaned To:", m_loanedToEdit);
+    readingForm->addRow("Loan Due:", m_loanDueDateEdit);
+    tabs->addTab(readingWidget, "Reading");
+
+    // Tab 3: Description
     auto* descWidget = new QWidget;
     auto* descLayout = new QVBoxLayout(descWidget);
     m_descEdit = new QTextEdit(m_book.description);
@@ -354,7 +409,7 @@ void BookDetailDialog::setupUi()
     descLayout->addWidget(m_descEdit);
     tabs->addTab(descWidget, "Description");
 
-    // Tab 3: Notes
+    // Tab 4: Notes
     auto* notesWidget = new QWidget;
     auto* notesLayout = new QVBoxLayout(notesWidget);
     m_notesEdit = new QTextEdit(m_book.notes);
@@ -412,6 +467,20 @@ Book BookDetailDialog::editedBook() const
     b.series      = m_seriesEdit->text().trimmed();
     b.seriesIndex = m_seriesIndexSpin->value();
     b.edition     = m_editionEdit->text().trimmed();
+    b.readingStatus = m_readingStatusCombo ? m_readingStatusCombo->currentText().trimmed() : QString();
+    b.progressPercent = m_progressSpin ? m_progressSpin->value() : 0;
+    b.currentPage = m_currentPageSpin ? m_currentPageSpin->value() : 0;
+    b.dateStarted = (m_dateStartedEdit && m_dateStartedEdit->date() != m_dateStartedEdit->minimumDate())
+        ? QDateTime(m_dateStartedEdit->date(), QTime(0, 0))
+        : QDateTime();
+    b.dateFinished = (m_dateFinishedEdit && m_dateFinishedEdit->date() != m_dateFinishedEdit->minimumDate())
+        ? QDateTime(m_dateFinishedEdit->date(), QTime(0, 0))
+        : QDateTime();
+    b.readingMinutes = m_readingMinutesSpin ? m_readingMinutesSpin->value() : 0;
+    b.loanedTo = m_loanedToEdit ? m_loanedToEdit->text().trimmed() : QString();
+    b.loanDueDate = (m_loanDueDateEdit && m_loanDueDateEdit->date() != m_loanDueDateEdit->minimumDate())
+        ? QDateTime(m_loanDueDateEdit->date(), QTime(0, 0))
+        : QDateTime();
     QString rawTags = m_tagsEdit->text();
     b.tags.clear();
     for (const auto& t : rawTags.split(",", Qt::SkipEmptyParts))

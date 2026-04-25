@@ -87,6 +87,7 @@ private slots:
     void showNoMetaFilter(bool on);
     void fetchAllMetadata();
     void openMetadataManager();
+    void bulkEditMetadata();
     void enrichIncompleteBooksAction();
     void runQualityCheck();
     void findDuplicates();
@@ -124,10 +125,12 @@ private slots:
     // Collections
     void manageCollections();
     void createCollection();
+    void openReadingDashboard();
     // Plugins
     void openPluginManager();
     void openTaskCenter();
     void runBatchTasks();
+    void recoverFromHungState();
     // Advanced Search
     void openAdvancedSearchDialog();
     // Saved searches
@@ -242,6 +245,13 @@ private:
     QString     m_activeMenuTaskName;
     bool        m_metadataTaskWaitingForCovers = false;
     bool        m_taskPopupsEnabled = true;
+    QTimer*     m_recoveryHeartbeatTimer = nullptr;
+    QTimer*     m_stallWatchdogTimer = nullptr;
+    QDateTime   m_lastProgressPulseUtc;
+    QString     m_runtimeActivity;
+    QString     m_runtimeDetail;
+    bool        m_detectedUncleanShutdown = false;
+    bool        m_stallRecoveryArmed = false;
     struct IsbnExtractionResult {
         Book book;
         QString isbn;
@@ -289,6 +299,10 @@ private:
     void finishMenuTask(const QString& finalStatus = QString());
     void runNextQueuedMenuTask();
     void maybeFinishMetadataMenuTask();
+    void setupRecoveryMonitor();
+    void pulseRecovery(const QString& activity = QString(), const QString& detail = QString());
+    void writeRecoverySnapshot(bool cleanShutdown = false, const QString& reason = QString()) const;
+    void recoverFromHang(const QString& reason, bool automatic);
     void startScanNow();
     void scheduleMetadataFetch(const Book& book,
                                bool forceCover = false,

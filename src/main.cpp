@@ -167,6 +167,7 @@ void seedBundledRuntimeAssets()
     QDir().mkpath(AppConfig::themesDir());
     QDir().mkpath(AppConfig::hooksDir());
     QDir().mkpath(AppConfig::resourcesDir());
+    QDir().mkpath(AppConfig::runtimeDir());
 
     const QDir translationsResourceDir(":/translations");
     for (const QString& fileName : translationsResourceDir.entryList(QStringList() << "*.json", QDir::Files, QDir::Name))
@@ -191,6 +192,7 @@ void migrateLegacyStorage()
     QDir().mkpath(AppConfig::themesDir());
     QDir().mkpath(AppConfig::hooksDir());
     QDir().mkpath(AppConfig::resourcesDir());
+    QDir().mkpath(AppConfig::runtimeDir());
     QDir().mkpath(AppConfig::backupsDir());
 
     const QString newDbPath = AppConfig::dbPath();
@@ -306,6 +308,7 @@ int runCliCommand(QApplication& app)
     QDir().mkpath(AppConfig::themesDir());
     QDir().mkpath(AppConfig::hooksDir());
     QDir().mkpath(AppConfig::resourcesDir());
+    QDir().mkpath(AppConfig::runtimeDir());
     Database::instance().open(AppConfig::dbPath());
 
     QTextStream out(stdout);

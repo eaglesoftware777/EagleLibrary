@@ -14,7 +14,7 @@ namespace AppConfig
 {
     inline QString appName()   { return QString("Eagle Library"); }
     inline QString company()   { return QString("Eagle Software"); }
-    inline QString version()   { return QString("1.0.0"); }
+    inline QString version()   { return QString("1.1.0"); }
     inline QString website()   { return QString("https://eaglesoftware.biz/"); }
     inline QString copyright() { return QString("Copyright (C) 2026 Eagle Software. All rights reserved."); }
 
@@ -108,6 +108,8 @@ namespace AppConfig
     inline QString thumbsDir()   { return dataDir() + "/thumbs"; }
     inline QString jsonDir()     { return dataDir() + "/json"; }
     inline QString backupsDir()  { return dataDir() + "/backups"; }
+    inline QString runtimeDir()  { return dataDir() + "/runtime"; }
+    inline QString sessionStatePath() { return runtimeDir() + "/session-state.json"; }
     inline QString pluginsDir()  { return appDir()  + "/plugins"; }
     inline QString sidecarsDir() { return dataDir() + "/sidecars"; }
     inline QString logoPngPath() { return resourcesDir() + "/eagle_logo.png"; }

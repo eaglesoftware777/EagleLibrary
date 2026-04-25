@@ -135,7 +135,7 @@ Current format support includes:
 Typical generated outputs:
 
 - App: `build-release/Release/EagleLibrary.exe`
-- Installer: `installer/EagleLibrary_Setup_1.0.0.exe`
+- Installer: `installer/EagleLibrary_Setup_1.1.0.exe`
 - Portable folder: `\EagleLibrary_Portable`
 - GitHub-style release assets:
   - `release/EagleLibrary-Setup-x64.exe`
@@ -283,7 +283,7 @@ makensis installer\eagle_library.nsi
 
 Or open the `.nsi` file in NSIS and click **Compile**.
 
-Output: `installer\EagleLibrary_Setup_1.0.0.exe`
+Output: `installer\EagleLibrary_Setup_1.1.0.exe`
 
 ---
 
@@ -361,6 +361,26 @@ At minimum, Eagle Library currently provides:
 
 ## Release Notes
 
+### 1.1
+
+**Eagle Library 1.1 — reading workflow and richer document intelligence**
+
+This prerelease builds on `v1.0` without replacing it. The focus is day-to-day
+library work: better classification for mixed archives, faster bulk metadata
+cleanup, and real reading/lending tracking inside the local catalog.
+
+#### Highlights
+
+- Reading states: `Want to Read`, `Reading`, `Read`
+- Reading progress tracking with percentage, current page, started/finished dates, and reading time
+- Reading Dashboard for active progress and loaned-item review
+- Lending tracker fields for borrower/device and due date
+- Bulk Metadata Edit for publisher, language, rating, tags, reading state, progress, and lending info
+- Improved classifier that separates books, research papers, slide decks, manuals, and general documents
+- Search tokens extended with `status:`, `kind:`, `progress:`, and `loan:`
+- New sort options for publisher and reading progress
+- Recovery monitor for stalled tasks and unclean previous sessions
+
 ### 1.0
 
 **Eagle Library 1.0 — GitHub release package**
@@ -433,6 +453,12 @@ publisher.
 - Built-in database editor with direct SQLite record editing
 - Nonblocking ISBN extraction and metadata lookup so slow PDF/OCR probing no longer freezes the app
 - Duplicate analysis and database maintenance tools for large catalogs
+- Reading workflow tracking with `Want to Read`, `Reading`, and `Read` states
+- Reading progress, current page, reading time, and per-book lending fields
+- Reading Dashboard for active progress and loaned-book review
+- Bulk Metadata Edit for publisher, language, rating, tags, reading state, and lending updates
+- Stronger document classifier for books, research papers, slide decks, manuals, and mixed documents
+- Search tokens extended with `status:`, `kind:`, `progress:`, and `loan:`
 - Full-text search index with rebuild and optimize controls
 - Blue, white, and mac-style themes with runtime switching
 - Command palette for keyboard-driven access to all actions

@@ -53,6 +53,15 @@ struct Book
     int         openCount   = 0;
     bool        isFavourite = false;
     QString     notes;
+    QString     readingStatus;      // Want to Read / Reading / Read
+    int         progressPercent = 0;
+    int         currentPage = 0;
+    QDateTime   dateStarted;
+    QDateTime   dateFinished;
+    QDateTime   lastReadingSession;
+    int         readingMinutes = 0;
+    QString     loanedTo;
+    QDateTime   loanDueDate;
 
     // ── Helpers ───────────────────────────────────────────────
     QString displayTitle() const {
@@ -65,7 +74,7 @@ struct Book
         const QString blob = (title + " " + author + " " + publisher + " " + description + " "
                               + filePath + " " + tags.join(' ') + " " + subjects.join(' ')).toLower();
 
-        int bookScore = 0, documentScore = 0;
+        int bookScore = 0, paperScore = 0, slideScore = 0, manualScore = 0, documentScore = 0;
 
         if (!isbn.trimmed().isEmpty()) bookScore += 4;
         if (!author.trimmed().isEmpty()) bookScore += 2;
@@ -79,6 +88,28 @@ struct Book
         for (const QString& t : bookTokens)
             if (blob.contains(t)) ++bookScore;
 
+        static const QStringList paperTokens = {
+            "abstract", "introduction", "methodology", "methods", "results",
+            "discussion", "conclusion", "references", "journal", "conference",
+            "proceedings", "doi", "issn", "et al", "research paper", "preprint"
+        };
+        for (const QString& t : paperTokens)
+            if (blob.contains(t)) paperScore += 2;
+
+        static const QStringList slideTokens = {
+            "slides", "slide deck", "powerpoint", "keynote", "presentation",
+            "agenda", "speaker notes", "lecture slides", "seminar"
+        };
+        for (const QString& t : slideTokens)
+            if (blob.contains(t)) slideScore += 2;
+
+        static const QStringList manualTokens = {
+            "manual", "user guide", "installation guide", "service manual",
+            "reference manual", "operator", "datasheet", "handbook", "specification"
+        };
+        for (const QString& t : manualTokens)
+            if (blob.contains(t)) manualScore += 2;
+
         static const QStringList documentTokens = {
             "invoice", "report", "manual", "documentation", "specification", "spec ",
             "datasheet", "presentation", "slides", "slide deck", "worksheet",
@@ -89,8 +120,14 @@ struct Book
         for (const QString& t : documentTokens)
             if (blob.contains(t)) documentScore += 2;
 
+        if (blob.contains("arxiv") || blob.contains("doi:") || blob.contains("issn"))
+            paperScore += 3;
         if (format.compare("PDF", Qt::CaseInsensitive) == 0 && pages > 0 && pages <= 36)
             ++documentScore;
+        if (format.compare("PDF", Qt::CaseInsensitive) == 0 && pages >= 4 && pages <= 40)
+            slideScore += 1;
+        if (format.compare("PDF", Qt::CaseInsensitive) == 0 && pages >= 6 && pages <= 80)
+            paperScore += 1;
         static const QStringList officeFormats = {
             "Word", "Word Template", "Excel", "Excel Template", "PowerPoint",
             "PowerPoint Template", "PowerPoint Show", "PowerPoint Slide",
@@ -103,15 +140,32 @@ struct Book
         };
         if (officeFormats.contains(format, Qt::CaseInsensitive))
             documentScore += 2;
+        if (format.contains("PowerPoint", Qt::CaseInsensitive) || format.compare("Keynote", Qt::CaseInsensitive) == 0)
+            slideScore += 4;
         if (author.trimmed().isEmpty() && publisher.trimmed().isEmpty())
             ++documentScore;
         if (filePath.contains("/docs/", Qt::CaseInsensitive) || filePath.contains("\\docs\\", Qt::CaseInsensitive))
             ++documentScore;
+        if (filePath.contains("/papers/", Qt::CaseInsensitive) || filePath.contains("\\papers\\", Qt::CaseInsensitive))
+            paperScore += 2;
+        if (filePath.contains("/slides/", Qt::CaseInsensitive) || filePath.contains("\\slides\\", Qt::CaseInsensitive))
+            slideScore += 3;
+        if (filePath.contains("/manual", Qt::CaseInsensitive) || filePath.contains("\\manual", Qt::CaseInsensitive))
+            manualScore += 2;
 
-        return documentScore >= bookScore + 2 ? QStringLiteral("Document") : QStringLiteral("Book");
+        const int bestDocumentScore = qMax(qMax(paperScore, slideScore), qMax(manualScore, documentScore));
+        if (bookScore >= bestDocumentScore + 1)
+            return QStringLiteral("Book");
+        if (paperScore >= qMax(slideScore, qMax(manualScore, documentScore)))
+            return QStringLiteral("Research Paper");
+        if (slideScore >= qMax(paperScore, qMax(manualScore, documentScore)))
+            return QStringLiteral("Slide Deck");
+        if (manualScore >= qMax(paperScore, qMax(slideScore, documentScore)))
+            return QStringLiteral("Manual");
+        return QStringLiteral("Document");
     }
 
-    bool isLikelyDocument() const { return classificationTag() == QStringLiteral("Document"); }
+    bool isLikelyDocument() const { return classificationTag() != QStringLiteral("Book"); }
 
     QString tagsDisplay() const { return tags.join(", "); }
 

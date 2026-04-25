@@ -13,6 +13,8 @@
 #include <QPushButton>
 #include <QTabWidget>
 #include <QListWidget>
+#include <QComboBox>
+#include <QDateEdit>
 
 class BookDetailDialog : public QDialog
 {
@@ -36,6 +38,14 @@ private:
     QLineEdit*   m_seriesEdit;
     QSpinBox*    m_seriesIndexSpin;
     QLineEdit*   m_editionEdit;
+    QComboBox*   m_readingStatusCombo = nullptr;
+    QSpinBox*    m_progressSpin = nullptr;
+    QSpinBox*    m_currentPageSpin = nullptr;
+    QDateEdit*   m_dateStartedEdit = nullptr;
+    QDateEdit*   m_dateFinishedEdit = nullptr;
+    QSpinBox*    m_readingMinutesSpin = nullptr;
+    QLineEdit*   m_loanedToEdit = nullptr;
+    QDateEdit*   m_loanDueDateEdit = nullptr;
     QTextEdit*   m_descEdit;
     QTextEdit*   m_notesEdit;
     QPushButton* m_openBtn;

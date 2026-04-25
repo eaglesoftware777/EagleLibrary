@@ -35,6 +35,7 @@
 #include <QCheckBox>
 #include <QRadioButton>
 #include <QSpinBox>
+#include <QDateEdit>
 #include <QDialog>
 #include <QDialogButtonBox>
 #include <QAbstractButton>
@@ -145,6 +146,31 @@ QString normalizeShelfId(const QString& value)
     if (value == QStringLiteral("missing_metadata") || value == QStringLiteral("Missing Metadata")) return QStringLiteral("missing_metadata");
     if (value == QStringLiteral("no_cover") || value == QStringLiteral("No Cover")) return QStringLiteral("no_cover");
     return value.trimmed().isEmpty() ? QStringLiteral("all") : value;
+}
+
+QJsonObject loadRecoverySnapshot()
+{
+    QFile file(AppConfig::sessionStatePath());
+    if (!file.open(QIODevice::ReadOnly | QIODevice::Text))
+        return {};
+
+    QJsonParseError error;
+    const QJsonDocument doc = QJsonDocument::fromJson(file.readAll(), &error);
+    if (error.error != QJsonParseError::NoError || !doc.isObject())
+        return {};
+    return doc.object();
+}
+
+bool saveRecoverySnapshot(const QJsonObject& object)
+{
+    QDir().mkpath(AppConfig::runtimeDir());
+    QSaveFile file(AppConfig::sessionStatePath());
+    if (!file.open(QIODevice::WriteOnly | QIODevice::Text))
+        return false;
+
+    const QJsonDocument doc(object);
+    file.write(doc.toJson(QJsonDocument::Indented));
+    return file.commit();
 }
 
 Book mergeFetchedMetadata(const Book& current, const Book& fetched)
@@ -743,6 +769,13 @@ QStringList inferSmartTags(const Book& book)
     }
 
     QStringList tags = book.tags;
+    const QString detectedKind = book.classificationTag();
+    if (!detectedKind.isEmpty())
+        tags << detectedKind;
+    if (book.isLikelyDocument())
+        tags << QStringLiteral("Document");
+    else
+        tags << QStringLiteral("Book");
     QList<int> scoreKeys = scored.keys();
     std::sort(scoreKeys.begin(), scoreKeys.end(), std::greater<int>());
     for (int score : scoreKeys) {
@@ -917,7 +950,7 @@ public:
         auto* form = new QFormLayout;
 
         m_text = new QLineEdit(this);
-        m_text->setPlaceholderText("Use tokens like author:, title:, tag:, category:, isbn:, path:");
+        m_text->setPlaceholderText("Use tokens like author:, title:, tag:, category:, isbn:, path:, status:, kind:, loan:");
         form->addRow("Search text", m_text);
 
         m_author = new QLineEdit(this);
@@ -932,6 +965,9 @@ public:
         m_category->addItem("Any category");
         m_category->addItem("Book");
         m_category->addItem("Document");
+        m_category->addItem("Research Paper");
+        m_category->addItem("Slide Deck");
+        m_category->addItem("Manual");
         m_category->addItems(Database::instance().allTags());
         form->addRow("Category", m_category);
 
@@ -1157,6 +1193,144 @@ private:
     QTableWidget* m_table = nullptr;
 };
 
+class BulkMetadataDialog : public QDialog
+{
+public:
+    explicit BulkMetadataDialog(QWidget* parent = nullptr)
+        : QDialog(parent)
+    {
+        setWindowTitle("Bulk Metadata Edit");
+        resize(520, 420);
+
+        auto* layout = new QVBoxLayout(this);
+        auto* hint = new QLabel("Apply selected metadata changes to the chosen books. Unchecked sections are left untouched.", this);
+        hint->setWordWrap(true);
+        layout->addWidget(hint);
+
+        auto* form = new QFormLayout;
+
+        m_setPublisher = new QCheckBox("Set publisher", this);
+        m_publisher = new QLineEdit(this);
+        form->addRow(m_setPublisher, m_publisher);
+
+        m_setLanguage = new QCheckBox("Set language", this);
+        m_language = new QLineEdit(this);
+        form->addRow(m_setLanguage, m_language);
+
+        m_setRating = new QCheckBox("Set rating", this);
+        m_rating = new QDoubleSpinBox(this);
+        m_rating->setRange(0.0, 5.0);
+        m_rating->setSingleStep(0.5);
+        form->addRow(m_setRating, m_rating);
+
+        m_setTags = new QCheckBox("Update tags", this);
+        auto* tagsRow = new QWidget(this);
+        auto* tagsLayout = new QHBoxLayout(tagsRow);
+        tagsLayout->setContentsMargins(0, 0, 0, 0);
+        m_tagMode = new QComboBox(tagsRow);
+        m_tagMode->addItems({"Append", "Replace"});
+        m_tags = new QLineEdit(tagsRow);
+        m_tags->setPlaceholderText("Comma-separated tags");
+        tagsLayout->addWidget(m_tagMode);
+        tagsLayout->addWidget(m_tags, 1);
+        form->addRow(m_setTags, tagsRow);
+
+        m_setReading = new QCheckBox("Set reading status", this);
+        m_readingStatus = new QComboBox(this);
+        m_readingStatus->addItems({"Want to Read", "Reading", "Read"});
+        form->addRow(m_setReading, m_readingStatus);
+
+        m_setProgress = new QCheckBox("Set reading progress", this);
+        auto* progressRow = new QWidget(this);
+        auto* progressLayout = new QHBoxLayout(progressRow);
+        progressLayout->setContentsMargins(0, 0, 0, 0);
+        m_progress = new QSpinBox(progressRow);
+        m_progress->setRange(0, 100);
+        m_progress->setSuffix("%");
+        m_currentPage = new QSpinBox(progressRow);
+        m_currentPage->setRange(0, 1000000);
+        m_currentPage->setPrefix("Page ");
+        progressLayout->addWidget(m_progress);
+        progressLayout->addWidget(m_currentPage);
+        form->addRow(m_setProgress, progressRow);
+
+        m_setLoan = new QCheckBox("Set lending info", this);
+        auto* loanRow = new QWidget(this);
+        auto* loanLayout = new QHBoxLayout(loanRow);
+        loanLayout->setContentsMargins(0, 0, 0, 0);
+        m_loanedTo = new QLineEdit(loanRow);
+        m_loanedTo->setPlaceholderText("Borrower or device");
+        m_loanDue = new QDateEdit(loanRow);
+        m_loanDue->setCalendarPopup(true);
+        m_loanDue->setMinimumDate(QDate(1900, 1, 1));
+        m_loanDue->setSpecialValueText("No due date");
+        m_loanDue->setDate(m_loanDue->minimumDate());
+        loanLayout->addWidget(m_loanedTo, 1);
+        loanLayout->addWidget(m_loanDue);
+        form->addRow(m_setLoan, loanRow);
+
+        m_clearLoan = new QCheckBox("Clear existing lending info", this);
+        form->addRow(QString(), m_clearLoan);
+
+        layout->addLayout(form);
+
+        auto* buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, this);
+        connect(buttons, &QDialogButtonBox::accepted, this, &QDialog::accept);
+        connect(buttons, &QDialogButtonBox::rejected, this, &QDialog::reject);
+        layout->addWidget(buttons);
+    }
+
+    bool applyPublisher() const { return m_setPublisher->isChecked(); }
+    bool applyLanguage() const { return m_setLanguage->isChecked(); }
+    bool applyRating() const { return m_setRating->isChecked(); }
+    bool applyTags() const { return m_setTags->isChecked(); }
+    bool applyReading() const { return m_setReading->isChecked(); }
+    bool applyProgress() const { return m_setProgress->isChecked(); }
+    bool applyLoan() const { return m_setLoan->isChecked(); }
+    bool clearLoan() const { return m_clearLoan->isChecked(); }
+    QString publisher() const { return m_publisher->text().trimmed(); }
+    QString language() const { return m_language->text().trimmed(); }
+    double rating() const { return m_rating->value(); }
+    QStringList tags() const {
+        QStringList out;
+        for (const QString& item : m_tags->text().split(',', Qt::SkipEmptyParts))
+            out << item.trimmed();
+        out.removeAll(QString());
+        out.removeDuplicates();
+        return out;
+    }
+    bool replaceTags() const { return m_tagMode->currentIndex() == 1; }
+    QString readingStatus() const { return m_readingStatus->currentText(); }
+    int progress() const { return m_progress->value(); }
+    int currentPage() const { return m_currentPage->value(); }
+    QString loanedTo() const { return m_loanedTo->text().trimmed(); }
+    QDateTime loanDueDate() const {
+        return m_loanDue->date() == m_loanDue->minimumDate()
+            ? QDateTime()
+            : QDateTime(m_loanDue->date(), QTime(0, 0));
+    }
+
+private:
+    QCheckBox* m_setPublisher = nullptr;
+    QCheckBox* m_setLanguage = nullptr;
+    QCheckBox* m_setRating = nullptr;
+    QCheckBox* m_setTags = nullptr;
+    QCheckBox* m_setReading = nullptr;
+    QCheckBox* m_setProgress = nullptr;
+    QCheckBox* m_setLoan = nullptr;
+    QCheckBox* m_clearLoan = nullptr;
+    QLineEdit* m_publisher = nullptr;
+    QLineEdit* m_language = nullptr;
+    QDoubleSpinBox* m_rating = nullptr;
+    QComboBox* m_tagMode = nullptr;
+    QLineEdit* m_tags = nullptr;
+    QComboBox* m_readingStatus = nullptr;
+    QSpinBox* m_progress = nullptr;
+    QSpinBox* m_currentPage = nullptr;
+    QLineEdit* m_loanedTo = nullptr;
+    QDateEdit* m_loanDue = nullptr;
+};
+
 class ReferenceLookupDialog : public QDialog
 {
 public:
@@ -1354,6 +1528,7 @@ MainWindow::MainWindow(QWidget* parent)
     setupCommandPalette();
     applyStyles();
     loadSettings();
+    setupRecoveryMonitor();
 
     // Apply saved theme
     {
@@ -1430,6 +1605,18 @@ MainWindow::MainWindow(QWidget* parent)
     updateStatusCount();
     refreshCategoryOptions();
     updateWorkspaceHeader();
+
+    if (m_detectedUncleanShutdown) {
+        setScanInteractionEnabled(true);
+        hideTaskProgress();
+        pushTaskNotice(QStringLiteral("Recovery Mode"),
+                       QStringLiteral("The previous session did not close cleanly. Eagle Library restored a safe idle state for this launch."),
+                       QDir::toNativeSeparators(AppConfig::sessionStatePath()),
+                       QStringLiteral("warning"));
+        if (m_statusLabel)
+            m_statusLabel->setText(QStringLiteral("Recovered from a previous unclean shutdown. Review tasks before scanning again."));
+        writeRecoverySnapshot(false, QStringLiteral("startup recovered from previous unclean shutdown"));
+    }
 
     connect(&LanguageManager::instance(), &LanguageManager::languageChanged, this, [this]() {
         retranslateUi();
@@ -1571,6 +1758,11 @@ void MainWindow::setupMenuBar()
     });
     metaMenu->addAction(metaManagerAct);
 
+    QAction* bulkMetadataAct = new QAction(trl("action.bulkEditMetadata", "Bulk Metadata Edit..."), this);
+    bulkMetadataAct->setStatusTip("Update tags, reading state, publisher, language, and lending fields for many books at once");
+    connect(bulkMetadataAct, &QAction::triggered, this, &MainWindow::bulkEditMetadata);
+    metaMenu->addAction(bulkMetadataAct);
+
     QAction* enrichIncompleteAct = new QAction(trl("action.enrichIncompleteBooks", "Enrich Incomplete Books"), this);
     enrichIncompleteAct->setStatusTip("Fetch metadata only for books with incomplete information");
     connect(enrichIncompleteAct, &QAction::triggered, this, [this]() {
@@ -1623,7 +1815,7 @@ void MainWindow::setupMenuBar()
     toolsMenu->addAction(dupesAct);
 
     QAction* categorizeAct = new QAction(trl("action.smartCategorize", "Smart Categorize"), this);
-    categorizeAct->setStatusTip("Auto-classify books vs documents");
+    categorizeAct->setStatusTip("Auto-classify books, research papers, manuals, and slide decks");
     connect(categorizeAct, &QAction::triggered, this, [this]() {
         queueOrRunMenuTask("Smart Categorize", [this]() { smartCategorizeLibrary(); });
     });
@@ -1651,6 +1843,11 @@ void MainWindow::setupMenuBar()
     collectionsAct->setStatusTip("Create and manage virtual book collections");
     connect(collectionsAct, &QAction::triggered, this, &MainWindow::manageCollections);
     libMenu->addAction(collectionsAct);
+
+    QAction* readingDashboardAct = new QAction(trl("action.readingDashboard", "Reading Dashboard..."), this);
+    readingDashboardAct->setStatusTip("Review reading progress, finished items, and loaned books");
+    connect(readingDashboardAct, &QAction::triggered, this, &MainWindow::openReadingDashboard);
+    libMenu->addAction(readingDashboardAct);
 
     // Web Research
     libMenu->addSeparator();
@@ -1866,6 +2063,12 @@ void MainWindow::setupMenuBar()
     connect(batchAct, &QAction::triggered, this, &MainWindow::runBatchTasks);
     tasksMenu->addAction(batchAct);
 
+    QAction* recoverAct = new QAction(trl("action.recoverHungState", "Recover From Stalled Task"), this);
+    recoverAct->setShortcut(QKeySequence(QStringLiteral("Ctrl+Shift+R")));
+    recoverAct->setStatusTip(QStringLiteral("Stop active work, clear task UI, and restore the library to a safe idle state"));
+    connect(recoverAct, &QAction::triggered, this, &MainWindow::recoverFromHungState);
+    tasksMenu->addAction(recoverAct);
+
     QAction* popupAct = new QAction(trl("action.popupTaskNotifications", "Popup Task Notifications"), this);
     popupAct->setCheckable(true);
     popupAct->setChecked(m_taskPopupsEnabled);
@@ -2055,10 +2258,12 @@ void MainWindow::setupToolBar()
     m_sortCombo->setToolTip(trl("toolbar.sortTip", "Sort order"));
     m_sortCombo->addItem(trl("sort.title", "Title"),           (int)SortField::Title);
     m_sortCombo->addItem(trl("sort.author", "Author"),         (int)SortField::Author);
+    m_sortCombo->addItem(trl("sort.publisher", "Publisher"),   (int)SortField::Publisher);
     m_sortCombo->addItem(trl("sort.year", "Year"),             (int)SortField::Year);
     m_sortCombo->addItem(trl("sort.format", "Format"),         (int)SortField::Format);
     m_sortCombo->addItem(trl("sort.dateAdded", "Date Added"),  (int)SortField::DateAdded);
     m_sortCombo->addItem(trl("sort.rating", "Rating"),         (int)SortField::Rating);
+    m_sortCombo->addItem(trl("sort.progress", "Progress"),     (int)SortField::Progress);
     m_sortCombo->addItem(trl("sort.fileSize", "File Size"),    (int)SortField::FileSize);
     m_sortCombo->addItem(trl("sort.series", "Series"),         (int)SortField::Series);
     connect(m_sortCombo, qOverload<int>(&QComboBox::currentIndexChanged), this, &MainWindow::sortChanged);
@@ -2587,6 +2792,7 @@ void MainWindow::showTaskProgress(const QString& title, const QString& status, i
     }
     m_statusLabel->setText(statusText);
     m_scanLabel->setText(safeDetail.isEmpty() ? trl("status.processing", "Processing") : safeDetail);
+    pulseRecovery(title, safeDetail.isEmpty() ? status : safeDetail);
     updateTaskQueueIndicators();
 }
 
@@ -2607,6 +2813,7 @@ void MainWindow::hideTaskProgress(const QString& finalStatus)
     m_scanLabel->setText(trl("status.idle", "Idle"));
     if (!finalStatus.isEmpty())
         m_statusLabel->setText(finalStatus);
+    pulseRecovery(QStringLiteral("Idle"), finalStatus);
     updateTaskQueueIndicators();
 }
 
@@ -2628,6 +2835,7 @@ void MainWindow::pushTaskNotice(const QString& title, const QString& message, co
     notice.createdAt = QDateTime::currentDateTime();
     m_taskNotices.push_back(notice);
     m_pendingTaskToastIndexes.enqueue(m_taskNotices.size() - 1);
+    pulseRecovery(notice.title, notice.message);
     updateTaskQueueIndicators();
     showNextTaskToast();
 }
@@ -2774,9 +2982,11 @@ void MainWindow::startMenuTask(const QString& name, std::function<void()> task)
     m_menuTaskActive = true;
     m_activeMenuTaskName = name;
     m_metadataTaskWaitingForCovers = false;
+    m_stallRecoveryArmed = false;
     qInfo().noquote() << "[TaskQueue] Starting" << name;
     if (m_statusLabel)
         m_statusLabel->setText(QString("Running %1...").arg(name));
+    pulseRecovery(name, QStringLiteral("Task started"));
     pushTaskNotice(QStringLiteral("Task Started"),
                    QString("Running %1.").arg(name),
                    QString("Queue depth: %1").arg(m_menuTaskQueue.size()),
@@ -2798,9 +3008,11 @@ void MainWindow::finishMenuTask(const QString& finalStatus)
     m_menuTaskActive = false;
     m_activeMenuTaskName.clear();
     m_metadataTaskWaitingForCovers = false;
+    m_stallRecoveryArmed = false;
 
     if (!finalStatus.isEmpty() && m_statusLabel)
         m_statusLabel->setText(finalStatus);
+    pulseRecovery(QStringLiteral("Idle"), finalStatus.isEmpty() ? QStringLiteral("Task complete") : finalStatus);
     if (!finishedName.isEmpty())
         pushTaskNotice(QStringLiteral("Task Complete"),
                        finalStatus.isEmpty() ? QString("%1 finished.").arg(finishedName) : finalStatus,
@@ -2874,6 +3086,7 @@ void MainWindow::onBookFound(Book book)
 {
     m_model->addBook(book);
     m_recentlyAddedBooks << book;
+    pulseRecovery(QStringLiteral("Scanning Library"), book.displayTitle());
     if (m_recentlyAddedBooks.size() <= 5 || (m_recentlyAddedBooks.size() % 50) == 0) {
         qInfo().noquote() << "[Scan] Found item count=" << m_recentlyAddedBooks.size()
                           << "latestId=" << book.id
@@ -2889,6 +3102,7 @@ void MainWindow::onScanFinished(int added, int skipped)
 {
     qInfo().noquote() << "[Scan] Finished added=" << added << "skipped=" << skipped;
     setScanInteractionEnabled(true);
+    m_stallRecoveryArmed = false;
     hideTaskProgress(QString("Scan complete -- %1 new, %2 already indexed").arg(added).arg(skipped));
     refreshLibraryWatcher();
     updateStatusCount();
@@ -2922,6 +3136,7 @@ void MainWindow::onMetadataReady(qint64 id, Book updated)
     Book merged = mergeFetchedMetadata(*current, updated);
     m_model->updateBook(merged);
     Database::instance().updateBook(merged);
+    pulseRecovery(QStringLiteral("Fetching Metadata"), merged.displayTitle());
     PluginManager::instance().notifyBookUpdated(id);
 }
 
@@ -2944,6 +3159,7 @@ void MainWindow::onCoverReady(qint64 id, const QString& path)
         return;
     m_model->updateCover(id, path);
     Database::instance().updateCoverPath(id, path);
+    pulseRecovery(QStringLiteral("Downloading Covers"), QFileInfo(path).fileName());
 }
 
 void MainWindow::onMetadataFetchProgress(int completed, int total, const QString& currentFile, const QString& stage)
@@ -3489,6 +3705,111 @@ void MainWindow::openMetadataManager()
         m_statusLabel->setText("No books needed metadata updates for the selected mode.");
     else
         m_statusLabel->setText(QString("Queued metadata updates for %1 books.").arg(queued));
+}
+
+void MainWindow::bulkEditMetadata()
+{
+    QVector<Book> books = chooseBooksScope("Bulk Metadata Edit");
+    if (books.isEmpty())
+        return;
+
+    BulkMetadataDialog dlg(this);
+    dlg.setStyleSheet(styleSheet());
+    if (dlg.exec() != QDialog::Accepted)
+        return;
+
+    if (!dlg.applyPublisher() && !dlg.applyLanguage() && !dlg.applyRating()
+        && !dlg.applyTags() && !dlg.applyReading() && !dlg.applyProgress()
+        && !dlg.applyLoan() && !dlg.clearLoan()) {
+        QMessageBox::information(this, "Bulk Metadata Edit", "Select at least one field to update.");
+        return;
+    }
+
+    int updated = 0;
+    for (int index = 0; index < books.size(); ++index) {
+        Book book = books.at(index);
+        showTaskProgress("Bulk Metadata Edit",
+                         QString("Updating %1/%2 books").arg(index + 1).arg(books.size()),
+                         index + 1,
+                         books.size(),
+                         book.displayTitle());
+
+        bool changed = false;
+        if (dlg.applyPublisher() && book.publisher != dlg.publisher()) {
+            book.publisher = dlg.publisher();
+            changed = true;
+        }
+        if (dlg.applyLanguage() && book.language != dlg.language()) {
+            book.language = dlg.language();
+            changed = true;
+        }
+        if (dlg.applyRating() && !qFuzzyCompare(book.rating + 1.0, dlg.rating() + 1.0)) {
+            book.rating = dlg.rating();
+            changed = true;
+        }
+        if (dlg.applyTags()) {
+            const QStringList incomingTags = dlg.tags();
+            const QStringList nextTags = dlg.replaceTags() ? incomingTags : uniqueCaseInsensitive(book.tags + incomingTags);
+            if (nextTags != book.tags) {
+                book.tags = nextTags;
+                changed = true;
+            }
+        }
+        if (dlg.applyReading()) {
+            const QString status = dlg.readingStatus();
+            if (book.readingStatus != status) {
+                book.readingStatus = status;
+                changed = true;
+            }
+            if (status == QStringLiteral("Reading") && !book.dateStarted.isValid())
+                book.dateStarted = QDateTime::currentDateTime();
+            if (status == QStringLiteral("Read")) {
+                if (book.progressPercent < 100)
+                    book.progressPercent = 100;
+                if (!book.dateFinished.isValid())
+                    book.dateFinished = QDateTime::currentDateTime();
+            }
+        }
+        if (dlg.applyProgress()) {
+            if (book.progressPercent != dlg.progress() || book.currentPage != dlg.currentPage()) {
+                book.progressPercent = dlg.progress();
+                book.currentPage = dlg.currentPage();
+                changed = true;
+            }
+            if (book.progressPercent > 0 && !book.dateStarted.isValid())
+                book.dateStarted = QDateTime::currentDateTime();
+            if (book.progressPercent >= 100 && book.readingStatus != QStringLiteral("Read")) {
+                book.readingStatus = QStringLiteral("Read");
+                if (!book.dateFinished.isValid())
+                    book.dateFinished = QDateTime::currentDateTime();
+                changed = true;
+            }
+        }
+        if (dlg.clearLoan()) {
+            if (!book.loanedTo.isEmpty() || book.loanDueDate.isValid()) {
+                book.loanedTo.clear();
+                book.loanDueDate = QDateTime();
+                changed = true;
+            }
+        } else if (dlg.applyLoan()) {
+            if (book.loanedTo != dlg.loanedTo() || book.loanDueDate != dlg.loanDueDate()) {
+                book.loanedTo = dlg.loanedTo();
+                book.loanDueDate = dlg.loanDueDate();
+                changed = true;
+            }
+        }
+
+        if (!changed)
+            continue;
+
+        Database::instance().updateBook(book);
+        m_model->updateBook(book);
+        ++updated;
+    }
+
+    refreshCategoryOptions();
+    updateStatusCount();
+    hideTaskProgress(QString("Bulk metadata edit complete. Updated %1 books.").arg(updated));
 }
 
 void MainWindow::enrichIncompleteBooksAction()
@@ -4161,6 +4482,7 @@ void MainWindow::stopAllTasks()
 
     m_recentlyAddedBooks.clear();
     m_forceCoverFetchIds.clear();
+    m_stallRecoveryArmed = false;
 
     if (m_scanner && m_scanner->isRunning())
         m_scanner->cancel();
@@ -4182,6 +4504,8 @@ void MainWindow::stopAllTasks()
         m_coverDownloader->cancelAll();
 
     hideTaskProgress(m_isClosing ? QString() : "All running tasks were stopped safely.");
+    pulseRecovery(QStringLiteral("Idle"), QStringLiteral("Tasks stopped"));
+    writeRecoverySnapshot(false, QStringLiteral("tasks stopped"));
     if (!m_isClosing) {
         pushTaskNotice(QStringLiteral("Tasks Stopped"),
                        QString("Stopped active work and cleared %1 queued task(s).").arg(queuedTasks),
@@ -4589,6 +4913,7 @@ void MainWindow::closeEvent(QCloseEvent* event)
     QApplication::processEvents(QEventLoop::ExcludeUserInputEvents);
     PluginManager::instance().unloadAll();
     saveSettings();
+    writeRecoverySnapshot(true, QStringLiteral("clean shutdown"));
     event->accept();
 }
 
@@ -4663,6 +4988,123 @@ void MainWindow::saveSettings()
         s.remove("window/geometry");
         s.remove("window/state");
     }
+}
+
+void MainWindow::setupRecoveryMonitor()
+{
+    const QJsonObject previous = loadRecoverySnapshot();
+    m_detectedUncleanShutdown = !previous.isEmpty() && !previous.value(QStringLiteral("clean_shutdown")).toBool(false);
+    m_lastProgressPulseUtc = QDateTime::currentDateTimeUtc();
+    m_runtimeActivity = QStringLiteral("Startup");
+    m_runtimeDetail = QStringLiteral("Main window initialized");
+    writeRecoverySnapshot(false, QStringLiteral("startup"));
+
+    m_recoveryHeartbeatTimer = new QTimer(this);
+    m_recoveryHeartbeatTimer->setInterval(2000);
+    connect(m_recoveryHeartbeatTimer, &QTimer::timeout, this, [this]() {
+        if (m_isClosing)
+            return;
+        writeRecoverySnapshot(false, QStringLiteral("heartbeat"));
+    });
+    m_recoveryHeartbeatTimer->start();
+
+    m_stallWatchdogTimer = new QTimer(this);
+    m_stallWatchdogTimer->setInterval(5000);
+    connect(m_stallWatchdogTimer, &QTimer::timeout, this, [this]() {
+        if (m_isClosing)
+            return;
+        if (!backgroundWorkRunning()) {
+            m_stallRecoveryArmed = false;
+            return;
+        }
+
+        const qint64 silentSeconds = m_lastProgressPulseUtc.secsTo(QDateTime::currentDateTimeUtc());
+        if (silentSeconds >= 90) {
+            recoverFromHang(QStringLiteral("No progress update was received for 90 seconds while background work was active."), true);
+            return;
+        }
+        if (silentSeconds >= 45 && !m_stallRecoveryArmed) {
+            m_stallRecoveryArmed = true;
+            const QString message = QStringLiteral("Background work looks stalled. Eagle Library will recover it automatically if no progress returns.");
+            if (m_statusLabel)
+                m_statusLabel->setText(message);
+            pushTaskNotice(QStringLiteral("Possible Stall Detected"),
+                           message,
+                           QStringLiteral("%1 seconds without progress").arg(silentSeconds),
+                           QStringLiteral("warning"));
+            writeRecoverySnapshot(false, QStringLiteral("stall warning"));
+        }
+    });
+    m_stallWatchdogTimer->start();
+}
+
+void MainWindow::pulseRecovery(const QString& activity, const QString& detail)
+{
+    m_lastProgressPulseUtc = QDateTime::currentDateTimeUtc();
+    if (!activity.trimmed().isEmpty())
+        m_runtimeActivity = activity.trimmed();
+    if (!detail.trimmed().isEmpty())
+        m_runtimeDetail = detail.trimmed();
+    if (m_stallRecoveryArmed && !detail.trimmed().isEmpty())
+        m_stallRecoveryArmed = false;
+    writeRecoverySnapshot(false, QStringLiteral("progress"));
+}
+
+void MainWindow::writeRecoverySnapshot(bool cleanShutdown, const QString& reason) const
+{
+    QJsonObject snapshot;
+    snapshot[QStringLiteral("app_version")] = AppConfig::version();
+    snapshot[QStringLiteral("pid")] = static_cast<qint64>(QCoreApplication::applicationPid());
+    snapshot[QStringLiteral("timestamp_utc")] = QDateTime::currentDateTimeUtc().toString(Qt::ISODate);
+    snapshot[QStringLiteral("last_progress_utc")] = m_lastProgressPulseUtc.isValid()
+        ? m_lastProgressPulseUtc.toString(Qt::ISODate)
+        : QString();
+    snapshot[QStringLiteral("activity")] = m_runtimeActivity;
+    snapshot[QStringLiteral("detail")] = m_runtimeDetail;
+    snapshot[QStringLiteral("reason")] = reason;
+    snapshot[QStringLiteral("clean_shutdown")] = cleanShutdown;
+    snapshot[QStringLiteral("background_work_running")] = backgroundWorkRunning();
+    snapshot[QStringLiteral("queued_tasks")] = m_menuTaskQueue.size();
+    snapshot[QStringLiteral("active_menu_task")] = m_activeMenuTaskName;
+    snapshot[QStringLiteral("watch_folders")] = QJsonArray::fromStringList(m_watchFolders);
+    saveRecoverySnapshot(snapshot);
+}
+
+void MainWindow::recoverFromHang(const QString& reason, bool automatic)
+{
+    if (m_isClosing)
+        return;
+
+    qWarning().noquote() << "[Recovery]" << reason << "automatic=" << automatic;
+    const bool hadBackgroundWork = backgroundWorkRunning() || m_menuTaskActive || !m_menuTaskQueue.isEmpty();
+    stopAllTasks();
+    setScanInteractionEnabled(true);
+    m_incrementalScanPending = false;
+    m_pendingTaskToastIndexes.clear();
+    if (m_taskToastTimer)
+        m_taskToastTimer->stop();
+    if (m_taskToastFrame)
+        m_taskToastFrame->hide();
+    hideTaskProgress(QStringLiteral("Recovered from stalled work. You can start the task again when ready."));
+    m_runtimeActivity = QStringLiteral("Recovered");
+    m_runtimeDetail = reason;
+    m_stallRecoveryArmed = false;
+    writeRecoverySnapshot(false, automatic ? QStringLiteral("automatic recovery") : QStringLiteral("manual recovery"));
+
+    const QString message = hadBackgroundWork
+        ? QStringLiteral("Stopped active work, cleared the task queue, and restored the library to a safe idle state.")
+        : QStringLiteral("Refreshed the task system and restored the library to a safe idle state.");
+    if (m_statusLabel)
+        m_statusLabel->setText(message);
+    pushTaskNotice(automatic ? QStringLiteral("Automatic Recovery Complete") : QStringLiteral("Recovery Complete"),
+                   message,
+                   reason,
+                   automatic ? QStringLiteral("warning") : QStringLiteral("success"));
+}
+
+void MainWindow::recoverFromHungState()
+{
+    recoverFromHang(QStringLiteral("Manual recovery requested from the Tasks menu."), false);
 }
 
 QListView* MainWindow::currentView() const { return m_isGridView ? m_gridView : m_listView; }
@@ -4762,9 +5204,15 @@ void MainWindow::refreshCategoryOptions()
     m_categoryCombo->addItem(trl("category.all", "All Categories"), QString());
     m_categoryCombo->addItem(trl("category.book", "Book"), QStringLiteral("Book"));
     m_categoryCombo->addItem(trl("category.document", "Document"), QStringLiteral("Document"));
+    m_categoryCombo->addItem(trl("category.paper", "Research Paper"), QStringLiteral("Research Paper"));
+    m_categoryCombo->addItem(trl("category.slideDeck", "Slide Deck"), QStringLiteral("Slide Deck"));
+    m_categoryCombo->addItem(trl("category.manual", "Manual"), QStringLiteral("Manual"));
 
     QSet<QString> categorySet;
     for (const Book& book : currentLibraryBooks()) {
+        const QString detected = book.classificationTag();
+        if (!detected.trimmed().isEmpty())
+            categorySet.insert(detected.trimmed());
         for (const QString& tag : book.tags)
             if (!tag.trimmed().isEmpty())
                 categorySet.insert(tag.trimmed());
@@ -4774,7 +5222,10 @@ void MainWindow::refreshCategoryOptions()
     categories.sort(Qt::CaseInsensitive);
     for (const QString& category : categories) {
         if (category.compare("Book", Qt::CaseInsensitive) != 0
-            && category.compare("Document", Qt::CaseInsensitive) != 0) {
+            && category.compare("Document", Qt::CaseInsensitive) != 0
+            && category.compare("Research Paper", Qt::CaseInsensitive) != 0
+            && category.compare("Slide Deck", Qt::CaseInsensitive) != 0
+            && category.compare("Manual", Qt::CaseInsensitive) != 0) {
             m_categoryCombo->addItem(category, category);
         }
     }
@@ -5400,12 +5851,14 @@ void MainWindow::setupCommandPalette()
         { "scan",         "Scan Folders",              "Scan watched folders for new files", "F5",       "Library",  [this]{ onScanStart(); } },
         { "refresh",      "Refresh View",              "Reload the current view",            "",         "Library",  [this]{ refreshLibrary(); } },
         { "fetch_meta",   "Fetch All Metadata",        "Download metadata for all books",    "",         "Library",  [this]{ queueOrRunMenuTask("Fetch All Metadata", [this]{ fetchAllMetadata(); }); } },
+        { "bulk_meta",    "Bulk Metadata Edit",        "Edit tags, reading state, and lending fields in batch", "", "Library", [this]{ bulkEditMetadata(); } },
         { "enrich",       "Enrich Incomplete Books",   "Fill in missing metadata",           "",         "Library",  [this]{ queueOrRunMenuTask("Enrich Incomplete Books", [this]{ enrichIncompleteBooksAction(); }); } },
         { "find_dupes",   "Find Duplicates",           "Detect duplicate files by hash",     "",         "Library",  [this]{ queueOrRunMenuTask("Find Duplicates", [this]{ findDuplicates(); }); } },
         { "quality",      "Quality Check",             "Scan for encoding and meta issues",  "",         "Library",  [this]{ queueOrRunMenuTask("Quality Check", [this]{ runQualityCheck(); }); } },
-        { "smart_cat",    "Smart Categorize",          "Auto-classify books vs documents",   "",         "Library",  [this]{ queueOrRunMenuTask("Smart Categorize", [this]{ smartCategorizeLibrary(); }); } },
+        { "smart_cat",    "Smart Categorize",          "Auto-classify books, papers, manuals, and slides",   "",         "Library",  [this]{ queueOrRunMenuTask("Smart Categorize", [this]{ smartCategorizeLibrary(); }); } },
         { "smart_rename", "Smart Rename All",          "Auto-rename from filename patterns", "Ctrl+R",   "Library",  [this]{ queueOrRunMenuTask("Smart Rename All", [this]{ onSmartRenameAll(); }); } },
         { "collections",  "Manage Collections",        "Create virtual book collections",    "",         "Library",  [this]{ manageCollections(); } },
+        { "reading_dashboard", "Reading Dashboard",    "View reading progress and loaned books", "",      "Library",  [this]{ openReadingDashboard(); } },
         { "google",       "Search on Google",          "Search selected book on Google",     "Ctrl+Shift+G", "Research", [this]{ searchSelectedOnGoogle(); } },
         { "adv_search",   "Advanced Search",           "Multi-field search dialog",          "Ctrl+Shift+F", "Search", [this]{ openAdvancedSearch(); } },
         { "save_search",  "Save Current Search",       "Save search query for quick access", "",         "Search",   [this]{ saveCurrentSearch(); } },
@@ -5618,6 +6071,95 @@ void MainWindow::createCollection()
         refreshCategoryOptions();
         m_statusLabel->setText("Collection created: " + name);
     }
+}
+
+void MainWindow::openReadingDashboard()
+{
+    const QVector<Book> books = currentLibraryBooks();
+    int wantToRead = 0;
+    int reading = 0;
+    int finished = 0;
+    int loaned = 0;
+    int totalProgress = 0;
+    int progressSamples = 0;
+    int readingMinutes = 0;
+    QStringList inProgressItems;
+    QStringList loanedItems;
+
+    for (const Book& book : books) {
+        const QString status = book.readingStatus.trimmed();
+        if (status == QStringLiteral("Want to Read"))
+            ++wantToRead;
+        else if (status == QStringLiteral("Reading"))
+            ++reading;
+        else if (status == QStringLiteral("Read"))
+            ++finished;
+
+        if (book.progressPercent > 0) {
+            totalProgress += book.progressPercent;
+            ++progressSamples;
+        }
+        readingMinutes += book.readingMinutes;
+
+        if (!book.loanedTo.trimmed().isEmpty()) {
+            ++loaned;
+            if (loanedItems.size() < 10) {
+                const QString due = book.loanDueDate.isValid() ? book.loanDueDate.date().toString("yyyy-MM-dd") : QStringLiteral("no due date");
+                loanedItems << QString("%1  ->  %2 (%3)").arg(book.displayTitle(), book.loanedTo, due);
+            }
+        }
+
+        if (status == QStringLiteral("Reading") && inProgressItems.size() < 10) {
+            inProgressItems << QString("%1  [%2% | page %3]").arg(book.displayTitle()).arg(book.progressPercent).arg(book.currentPage);
+        }
+    }
+
+    QDialog dlg(this);
+    dlg.setWindowTitle("Reading Dashboard");
+    dlg.resize(620, 520);
+    auto* layout = new QVBoxLayout(&dlg);
+
+    auto* summary = new QLabel(QString(
+        "<b>Reading overview</b><br>"
+        "Want to Read: %1<br>"
+        "Reading: %2<br>"
+        "Finished: %3<br>"
+        "Loaned out: %4<br>"
+        "Average tracked progress: %5%<br>"
+        "Tracked reading time: %6 hours")
+        .arg(wantToRead)
+        .arg(reading)
+        .arg(finished)
+        .arg(loaned)
+        .arg(progressSamples > 0 ? totalProgress / progressSamples : 0)
+        .arg(QString::number(readingMinutes / 60.0, 'f', 1)));
+    summary->setTextFormat(Qt::RichText);
+    summary->setWordWrap(true);
+    layout->addWidget(summary);
+
+    auto* progressBar = new QProgressBar(&dlg);
+    progressBar->setRange(0, 100);
+    progressBar->setValue(progressSamples > 0 ? totalProgress / progressSamples : 0);
+    progressBar->setFormat("Average completion %p%");
+    layout->addWidget(progressBar);
+
+    auto* currentLabel = new QLabel("Currently Reading", &dlg);
+    layout->addWidget(currentLabel);
+    auto* currentList = new QListWidget(&dlg);
+    currentList->addItems(inProgressItems.isEmpty() ? QStringList{QStringLiteral("No active reading sessions tracked yet.")} : inProgressItems);
+    layout->addWidget(currentList, 1);
+
+    auto* loansLabel = new QLabel("Loaned Books / Devices", &dlg);
+    layout->addWidget(loansLabel);
+    auto* loansList = new QListWidget(&dlg);
+    loansList->addItems(loanedItems.isEmpty() ? QStringList{QStringLiteral("No books are currently marked as loaned.")} : loanedItems);
+    layout->addWidget(loansList, 1);
+
+    auto* close = new QDialogButtonBox(QDialogButtonBox::Close, &dlg);
+    connect(close, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
+    connect(close, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
+    layout->addWidget(close);
+    dlg.exec();
 }
 
 // ── Plugin Manager ────────────────────────────────────────────

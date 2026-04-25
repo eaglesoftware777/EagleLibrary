@@ -65,9 +65,15 @@ QVariant BookModel::data(const QModelIndex& index, int role) const
         case DescriptionRole:   return b.description;
         case TagsRole: {
             QStringList tags = b.tags;
-            const QString synthetic = b.isLikelyDocument() ? QStringLiteral("Document") : QStringLiteral("Book");
-            if (!tags.contains(synthetic, Qt::CaseInsensitive))
+            const QString synthetic = b.classificationTag();
+            if (!synthetic.isEmpty() && !tags.contains(synthetic, Qt::CaseInsensitive))
                 tags << synthetic;
+            if (b.isLikelyDocument() && !tags.contains(QStringLiteral("Document"), Qt::CaseInsensitive))
+                tags << QStringLiteral("Document");
+            if (!b.isLikelyDocument() && !tags.contains(QStringLiteral("Book"), Qt::CaseInsensitive))
+                tags << QStringLiteral("Book");
+            if (!b.readingStatus.trimmed().isEmpty() && !tags.contains(b.readingStatus.trimmed(), Qt::CaseInsensitive))
+                tags << b.readingStatus.trimmed();
             return tags;
         }
         case IsbnRole:          return b.isbn;
@@ -77,6 +83,9 @@ QVariant BookModel::data(const QModelIndex& index, int role) const
         case OpenCountRole:     return b.openCount;
         case DateAddedRole:     return b.dateAdded;
         case CategoryRole:      return b.classificationTag();
+        case ReadingStatusRole: return b.readingStatus;
+        case ProgressRole:      return b.progressPercent;
+        case LoanedToRole:      return b.loanedTo;
     }
     return {};
 }
@@ -101,6 +110,9 @@ QHash<int, QByteArray> BookModel::roleNames() const
         {OpenCountRole,   "openCount"},
         {DateAddedRole,   "dateAdded"},
         {CategoryRole,    "category"},
+        {ReadingStatusRole,"readingStatus"},
+        {ProgressRole,    "progressPercent"},
+        {LoanedToRole,    "loanedTo"},
     };
 }
 
@@ -257,8 +269,10 @@ void BookFilterModel::sortBy(SortField f, SortOrder o)
     int role = TitleRole;
     switch (f) {
         case SortField::Author:    role = AuthorRole;    break;
+        case SortField::Publisher: role = PublisherRole; break;
         case SortField::Year:      role = YearRole;      break;
         case SortField::Rating:    role = RatingRole;    break;
+        case SortField::Progress:  role = ProgressRole;  break;
         case SortField::FileSize:  role = FileSizeRole;  break;
         case SortField::Format:    role = FormatRole;    break;
         case SortField::OpenCount: role = OpenCountRole; break;
@@ -332,9 +346,13 @@ bool BookFilterModel::filterAcceptsRow(int srcRow, const QModelIndex& srcParent)
         const QString category = src->data(idx, CategoryRole).toString();
         const QString format = src->data(idx, FormatRole).toString();
         const QString year = src->data(idx, YearRole).toString();
+        const QString readingStatus = src->data(idx, ReadingStatusRole).toString();
+        const QString progress = src->data(idx, ProgressRole).toString();
+        const QString loanedTo = src->data(idx, LoanedToRole).toString();
         const QString haystack = (title + "\n" + author + "\n" + publisher + "\n" + description + "\n"
                                   + tags + "\n" + isbn + "\n" + language + "\n" + path + "\n"
-                                  + category + "\n" + format + "\n" + year).toLower();
+                                  + category + "\n" + format + "\n" + year + "\n"
+                                  + readingStatus + "\n" + progress + "\n" + loanedTo).toLower();
         const QStringList tokens = parseSearchTokens(m_filterText);
         for (QString token : tokens) {
             if (token.compare("and", Qt::CaseInsensitive) == 0)
@@ -362,6 +380,10 @@ bool BookFilterModel::filterAcceptsRow(int srcRow, const QModelIndex& srcParent)
                 else if (key == "format" || key == "ext") matched = tokenMatchesField(format, value);
                 else if (key == "year") matched = tokenMatchesField(year, value);
                 else if (key == "desc" || key == "description" || key == "content") matched = tokenMatchesField(description, value);
+                else if (key == "status" || key == "reading") matched = tokenMatchesField(readingStatus, value);
+                else if (key == "progress") matched = tokenMatchesField(progress, value);
+                else if (key == "loan" || key == "loaned" || key == "borrower") matched = tokenMatchesField(loanedTo, value);
+                else if (key == "kind") matched = tokenMatchesField(category, value);
                 else matched = haystack.contains(token.toLower());
             } else {
                 matched = haystack.contains(token.toLower());
