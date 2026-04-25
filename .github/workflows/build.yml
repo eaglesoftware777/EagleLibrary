@@ -184,10 +184,18 @@ jobs:
       - name: Package portable ZIP
         shell: pwsh
         run: |
-          $portableRoot = "build\portable\EagleLibrary"
-          if (Test-Path $portableRoot) {
-            Remove-Item -Recurse -Force $portableRoot
+          foreach ($path in @(
+            "build\Release\diagnostic-logs",
+            "build\portable\EagleLibrary",
+            "build\EagleLibrary-Portable-x64.zip",
+            "dist"
+          )) {
+            if (Test-Path $path) {
+              Remove-Item -Recurse -Force $path
+            }
           }
+
+          $portableRoot = "build\portable\EagleLibrary"
           New-Item -ItemType Directory -Path $portableRoot | Out-Null
 
           $items = @(
@@ -221,7 +229,6 @@ jobs:
           New-Item -ItemType File -Path (Join-Path $portableRoot "portable.flag") -Force | Out-Null
 
           $zipPath = "build\EagleLibrary-Portable-x64.zip"
-          if (Test-Path $zipPath) { Remove-Item -Force $zipPath }
           Compress-Archive -Path "$portableRoot\*" -DestinationPath $zipPath -CompressionLevel Optimal
           Write-Host "Portable ZIP: $zipPath ($('{0:N2}' -f ((Get-Item $zipPath).Length / 1MB)) MB)"
 
@@ -270,6 +277,7 @@ jobs:
           if (-not $makensis) {
             throw "makensis.exe was not found after NSIS installation"
           }
+          if (Test-Path "installer\diagnostic-logs") { Remove-Item -Recurse -Force "installer\diagnostic-logs" }
           if (Test-Path "installer\EagleLibrary.exe") { Remove-Item -Force "installer\EagleLibrary.exe" }
           Get-ChildItem "installer" -Filter "*.dll" -File -ErrorAction SilentlyContinue | Remove-Item -Force
           foreach ($dir in @("platforms","styles","imageformats","iconengines","sqldrivers","tls","plugins","translations","themes","resources","help","hooks")) {
@@ -334,7 +342,25 @@ jobs:
           Write-Host "--- SHA256SUMS.txt ---"
           Get-Content "build\SHA256SUMS.txt"
 
-      # ── 18. Upload installer artifact ─────────────────────────
+      # ── 18. Copy release payload into dist/ ───────────────────
+      - name: Prepare dist folder
+        shell: pwsh
+        run: |
+          if (Test-Path "dist") {
+            Remove-Item -Recurse -Force "dist"
+          }
+          New-Item -ItemType Directory -Path "dist" | Out-Null
+          Copy-Item -Force "build\EagleLibrary-Portable-x64.zip" "dist\EagleLibrary-Portable-x64.zip"
+          Copy-Item -Force "build\SHA256SUMS.txt" "dist\SHA256SUMS.txt"
+          if (Test-Path "EagleLibrary-Setup-x64.exe") {
+            Copy-Item -Force "EagleLibrary-Setup-x64.exe" "dist\EagleLibrary-Setup-x64.exe"
+          }
+          if (Test-Path "docs\help\EagleLibrary.chm") {
+            Copy-Item -Force "docs\help\EagleLibrary.chm" "dist\EagleLibrary.chm"
+          }
+          Write-Host "Prepared dist/ release payload"
+
+      # ── 19. Upload installer artifact ─────────────────────────
       - name: Upload installer artifact
         if: ${{ github.event.inputs.build_installer == 'true' }}
         uses: actions/upload-artifact@v4
@@ -343,7 +369,7 @@ jobs:
           path: EagleLibrary-Setup-x64.exe
           retention-days: 30
 
-      # ── 19. Upload portable artifact ───────────────────────────
+      # ── 20. Upload portable artifact ───────────────────────────
       - name: Upload portable artifact
         uses: actions/upload-artifact@v4
         with:
@@ -351,7 +377,7 @@ jobs:
           path: build/EagleLibrary-Portable-x64.zip
           retention-days: 30
 
-      # ── 20. Upload checksums artifact ──────────────────────────
+      # ── 21. Upload checksums artifact ──────────────────────────
       - name: Upload checksums artifact
         uses: actions/upload-artifact@v4
         with:
@@ -359,7 +385,7 @@ jobs:
           path: build/SHA256SUMS.txt
           retention-days: 30
 
-      # ── 21. Upload CHM help artifact ──────────────────────────
+      # ── 22. Upload CHM help artifact ──────────────────────────
       - name: Upload CHM help artifact
         if: ${{ hashFiles('docs/help/EagleLibrary.chm') != '' }}
         uses: actions/upload-artifact@v4
@@ -368,7 +394,7 @@ jobs:
           path: docs/help/EagleLibrary.chm
           retention-days: 30
 
-      # ── 22. Publish release ────────────────────────────────────
+      # ── 23. Publish release ────────────────────────────────────
       - name: Publish release
         if: ${{ github.event.inputs.publish_release == 'true' }}
         env:

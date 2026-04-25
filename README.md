@@ -389,6 +389,7 @@ cleanup, and real reading/lending tracking inside the local catalog.
 - Collections can now be managed from the context menu, the collection manager, and the book detail view, including hiding selected books from a collection
 - Added a Library Dashboard with compact statistics and progress-bar diagrams for format and category distribution
 - Common new menu and collection actions now have better built-in language-pack coverage in the major shipped translations
+- Release packaging now removes runtime `diagnostic-logs` and rebuilds a fresh `dist/` payload before publishing `v1.1`
 
 ### 1.0
 
