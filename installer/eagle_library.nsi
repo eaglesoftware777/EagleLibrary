@@ -89,6 +89,11 @@ Section "Eagle Library (required)" SecMain
     IfFileExists "$INSTDIR\settings\EagleLibrary.ini" 0 +1
         CopyFiles /SILENT "$INSTDIR\settings\EagleLibrary.ini" "$INSTDIR\data\backups\EagleLibrary-preupgrade-settings.ini"
 
+    ; Remove stale diagnostic and runtime traces from previous installs.
+    RMDir /r "$INSTDIR\diagnostic-logs"
+    RMDir /r "$INSTDIR\data\runtime"
+    RMDir /r "$INSTDIR\data\json"
+
     ; Main executable
     File "EagleLibrary.exe"
     FileOpen $0 "$INSTDIR\portable.flag" w
@@ -222,6 +227,7 @@ Section "Uninstall"
     Delete "$INSTDIR\README.txt"
     Delete "$INSTDIR\LICENSE.txt"
     Delete "$INSTDIR\portable.flag"
+    RMDir /r "$INSTDIR\diagnostic-logs"
     Delete "$INSTDIR\library.db"
     Delete "$INSTDIR\library.db-wal"
     Delete "$INSTDIR\library.db-shm"

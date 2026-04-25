@@ -102,6 +102,8 @@ private slots:
     void refreshLibrary();
     void clearCurrentLibraryAndRescan();
     void exportLibrarySnapshot();
+    void exportLibraryXml();
+    void exportLibraryHtml();
     void importLibrarySnapshot();
     void importPreviousDatabaseBackup();
     void stopAllTasks();
@@ -109,6 +111,12 @@ private slots:
     void diagnoseDatabaseText();
     void repairDatabaseText();
     void openExternalToolsDialog();
+    void openCloudSyncDialog();
+    void sendSelectedToDevice();
+    void convertSelectedFormats();
+    void openWishlistDialog();
+    void detectDrmProtectedFiles();
+    void managePasswordProtection();
     void openDatabaseFolder();
     void openDatabaseEditor();
     void remapLibraryPaths();

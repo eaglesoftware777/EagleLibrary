@@ -19,10 +19,13 @@
 #include <QEventLoop>
 #include <QFileInfo>
 #include <QFile>
+#include <QLineEdit>
 #include <QMutex>
 #include <QMutexLocker>
 #include <QDateTime>
 #include <QSysInfo>
+#include <QCryptographicHash>
+#include <QInputDialog>
 
 #include "SplashScreen.h"
 #include "MainWindow.h"
@@ -36,6 +39,12 @@ namespace {
 QMutex g_logMutex;
 QFile* g_logFile = nullptr;
 QString g_logPath;
+
+QString hashPasswordSecret(const QString& password, const QString& salt)
+{
+    return QString::fromLatin1(
+        QCryptographicHash::hash((salt + "::" + password).toUtf8(), QCryptographicHash::Sha256).toHex());
+}
 
 void writeDiagnosticLine(const QString& level, const QString& message)
 {
@@ -113,13 +122,48 @@ void configureDiagnostics()
 
     qInstallMessageHandler(releaseMessageHandler);
 
-    qInfo().noquote() << "[Diagnostics] Temporary portable test logging enabled";
+    qInfo().noquote() << "[Diagnostics] Local diagnostic logging enabled";
     qInfo().noquote() << "[Diagnostics] Log file:" << QDir::toNativeSeparators(g_logPath);
     qInfo().noquote() << "[Diagnostics] App dir:" << QDir::toNativeSeparators(AppConfig::appDir());
     qInfo().noquote() << "[Diagnostics] Portable mode:" << AppConfig::isPortableMode();
     qInfo().noquote() << "[Diagnostics] App version:" << AppConfig::version();
     qInfo().noquote() << "[Diagnostics] Qt:" << qVersion();
     qInfo().noquote() << "[Diagnostics] OS:" << QSysInfo::prettyProductName();
+}
+
+bool diagnosticLoggingEnabled()
+{
+    QSettings settings(AppConfig::settingsPath(), QSettings::IniFormat);
+    return settings.value("diagnostics/loggingEnabled", false).toBool();
+}
+
+bool requestPasswordUnlock()
+{
+    QSettings settings(AppConfig::settingsPath(), QSettings::IniFormat);
+    const QString salt = settings.value("security/passwordSalt").toString().trimmed();
+    const QString storedHash = settings.value("security/passwordHash").toString().trimmed();
+    if (salt.isEmpty() || storedHash.isEmpty())
+        return true;
+
+    const QString title = LanguageManager::instance().text("password.title", "Password Protection");
+    for (int attempt = 0; attempt < 3; ++attempt) {
+        bool ok = false;
+        const QString entered = QInputDialog::getText(nullptr,
+                                                      title,
+                                                      LanguageManager::instance().text("password.currentPassword", "Current password:"),
+                                                      QLineEdit::Password,
+                                                      QString(),
+                                                      &ok);
+        if (!ok)
+            return false;
+        if (hashPasswordSecret(entered, salt) == storedHash)
+            return true;
+        QMessageBox::warning(nullptr,
+                             title,
+                             LanguageManager::instance().text("password.wrong", "Incorrect password."));
+    }
+
+    return false;
 }
 
 bool copyDirectoryTree(const QString& sourcePath, const QString& targetPath)
@@ -395,18 +439,18 @@ int main(int argc, char* argv[])
     app.setFont(buildUiFont());
 
     configureSettingsStorage();
-    configureDiagnostics();
-    qInfo().noquote() << "[Startup] Settings storage configured";
     migrateLegacyStorage();
-    qInfo().noquote() << "[Startup] Legacy storage migration checked";
     seedBundledRuntimeAssets();
-    qInfo().noquote() << "[Startup] Bundled runtime assets checked";
     LanguageManager::instance().initialize();
-    qInfo().noquote() << "[Startup] Language initialized:" << LanguageManager::instance().currentLanguage();
     app.setLayoutDirection(LanguageManager::instance().isRightToLeft() ? Qt::RightToLeft : Qt::LeftToRight);
     QObject::connect(&LanguageManager::instance(), &LanguageManager::languageChanged, &app, [&app]() {
         app.setLayoutDirection(LanguageManager::instance().isRightToLeft() ? Qt::RightToLeft : Qt::LeftToRight);
     });
+
+    if (diagnosticLoggingEnabled()) {
+        configureDiagnostics();
+        qInfo().noquote() << "[Startup] Diagnostic logging enabled";
+    }
 
     if (app.arguments().size() > 1) {
         qInfo().noquote() << "[CLI] Arguments:" << app.arguments().join(' ');
@@ -420,6 +464,9 @@ int main(int argc, char* argv[])
         appIcon = QIcon(":/eagle_logo.png");
     if (!appIcon.isNull())
         app.setWindowIcon(appIcon);
+
+    if (!requestPasswordUnlock())
+        return 1;
 
     // Splash screen
     QElapsedTimer splashTimer;

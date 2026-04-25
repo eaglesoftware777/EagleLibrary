@@ -94,11 +94,16 @@
 #include <QFileSystemWatcher>
 #include <QJsonDocument>
 #include <QSharedPointer>
+#include <QCryptographicHash>
+#include <QStorageInfo>
+#include <QXmlStreamWriter>
 #include <QtConcurrent>
 #include <algorithm>
 #include <utility>
 
 namespace {
+
+QStringList uniqueCaseInsensitive(QStringList values);
 
 template <typename Fn>
 void runOnGuiThread(QObject* context, Fn&& fn)
@@ -133,6 +138,125 @@ QString defaultCollectionName()
     return QStringLiteral("Catalogue");
 }
 
+QString wishlistTag()
+{
+    return QStringLiteral("Wishlist");
+}
+
+QString drmTag()
+{
+    return QStringLiteral("DRM Protected");
+}
+
+QString hashPasswordSecret(const QString& password, const QString& salt)
+{
+    return QString::fromLatin1(
+        QCryptographicHash::hash((salt + "::" + password).toUtf8(), QCryptographicHash::Sha256).toHex());
+}
+
+QStringList withTag(QStringList tags, const QString& value)
+{
+    if (!tags.contains(value, Qt::CaseInsensitive))
+        tags << value;
+    return uniqueCaseInsensitive(tags);
+}
+
+QStringList withoutTag(QStringList tags, const QString& value)
+{
+    QStringList filtered;
+    for (const QString& tag : tags) {
+        if (tag.compare(value, Qt::CaseInsensitive) != 0)
+            filtered << tag;
+    }
+    return uniqueCaseInsensitive(filtered);
+}
+
+bool likelyDrmProtected(const Book& book)
+{
+    const QString blob = (book.displayTitle() + " " + book.description + " " + book.publisher + " "
+                          + book.filePath + " " + book.format + " " + book.tags.join(' ')).toLower();
+    if (book.format.compare(QStringLiteral("AZW"), Qt::CaseInsensitive) == 0
+        || book.format.compare(QStringLiteral("AZW3"), Qt::CaseInsensitive) == 0)
+        return true;
+    return blob.contains(QStringLiteral("drm"))
+        || blob.contains(QStringLiteral("adept"))
+        || blob.contains(QStringLiteral("digital editions"))
+        || blob.contains(QStringLiteral("kindle"))
+        || blob.contains(QStringLiteral("encryption"));
+}
+
+bool exportBooksToXml(const QString& path, const QVector<Book>& books)
+{
+    QFile file(path);
+    if (!file.open(QIODevice::WriteOnly | QIODevice::Text))
+        return false;
+
+    QXmlStreamWriter xml(&file);
+    xml.setAutoFormatting(true);
+    xml.writeStartDocument();
+    xml.writeStartElement(QStringLiteral("eagle-library"));
+    xml.writeAttribute(QStringLiteral("version"), AppConfig::version());
+    xml.writeAttribute(QStringLiteral("generated"), QDateTime::currentDateTimeUtc().toString(Qt::ISODate));
+    for (const Book& book : books) {
+        xml.writeStartElement(QStringLiteral("book"));
+        xml.writeTextElement(QStringLiteral("title"), book.displayTitle());
+        xml.writeTextElement(QStringLiteral("author"), book.author);
+        xml.writeTextElement(QStringLiteral("publisher"), book.publisher);
+        xml.writeTextElement(QStringLiteral("year"), book.year > 0 ? QString::number(book.year) : QString());
+        xml.writeTextElement(QStringLiteral("format"), book.format);
+        xml.writeTextElement(QStringLiteral("isbn"), book.isbn);
+        xml.writeTextElement(QStringLiteral("language"), book.language);
+        xml.writeTextElement(QStringLiteral("pages"), book.pages > 0 ? QString::number(book.pages) : QString());
+        xml.writeTextElement(QStringLiteral("rating"), book.rating > 0 ? QString::number(book.rating, 'f', 2) : QString());
+        xml.writeTextElement(QStringLiteral("category"), book.classificationTag());
+        xml.writeTextElement(QStringLiteral("tags"), book.tags.join(QStringLiteral(", ")));
+        xml.writeTextElement(QStringLiteral("filePath"), book.filePath);
+        xml.writeEndElement();
+    }
+    xml.writeEndElement();
+    xml.writeEndDocument();
+    return true;
+}
+
+bool exportBooksToHtml(const QString& path, const QVector<Book>& books)
+{
+    QFile file(path);
+    if (!file.open(QIODevice::WriteOnly | QIODevice::Text))
+        return false;
+
+    QTextStream out(&file);
+    out << "<!doctype html><html><head><meta charset=\"utf-8\">"
+        << "<title>Eagle Library Export</title>"
+        << "<style>"
+        << "body{font-family:'Segoe UI',sans-serif;background:#f4f7fb;color:#102030;margin:24px;}"
+        << "h1{margin:0 0 12px;}table{width:100%;border-collapse:collapse;background:#fff;}"
+        << "th,td{border:1px solid #d8e1eb;padding:8px 10px;text-align:left;vertical-align:top;}"
+        << "th{background:#e8f0f8;}tr:nth-child(even){background:#f8fbfe;}"
+        << "</style></head><body>";
+    out << "<h1>Eagle Library Export</h1>";
+    out << "<p>Generated " << QDateTime::currentDateTimeUtc().toString(Qt::ISODate) << "</p>";
+    out << "<table><thead><tr>"
+        << "<th>Title</th><th>Author</th><th>Publisher</th><th>Year</th><th>Format</th>"
+        << "<th>ISBN</th><th>Language</th><th>Rating</th><th>Category</th><th>Tags</th><th>Path</th>"
+        << "</tr></thead><tbody>";
+    for (const Book& book : books) {
+        out << "<tr><td>" << book.displayTitle().toHtmlEscaped()
+            << "</td><td>" << book.author.toHtmlEscaped()
+            << "</td><td>" << book.publisher.toHtmlEscaped()
+            << "</td><td>" << (book.year > 0 ? QString::number(book.year) : QString()).toHtmlEscaped()
+            << "</td><td>" << book.format.toHtmlEscaped()
+            << "</td><td>" << book.isbn.toHtmlEscaped()
+            << "</td><td>" << book.language.toHtmlEscaped()
+            << "</td><td>" << (book.rating > 0 ? QString::number(book.rating, 'f', 2) : QString()).toHtmlEscaped()
+            << "</td><td>" << book.classificationTag().toHtmlEscaped()
+            << "</td><td>" << book.tags.join(QStringLiteral(", ")).toHtmlEscaped()
+            << "</td><td>" << QDir::toNativeSeparators(book.filePath).toHtmlEscaped()
+            << "</td></tr>";
+    }
+    out << "</tbody></table></body></html>";
+    return true;
+}
+
 QString shelfLabel(const QString& id)
 {
     if (id == QStringLiteral("all")) return trl("shelf.allItems", "All Items");
@@ -143,6 +267,8 @@ QString shelfLabel(const QString& id)
     if (id == QStringLiteral("opened")) return trl("shelf.mostOpened", "Most Opened");
     if (id == QStringLiteral("missing_metadata")) return trl("shelf.missingMetadata", "Missing Metadata");
     if (id == QStringLiteral("no_cover")) return trl("shelf.noCover", "No Cover");
+    if (id == QStringLiteral("wishlist")) return trl("shelf.wishlist", "Wishlist");
+    if (id == QStringLiteral("drm")) return trl("shelf.drmProtected", "DRM Protected");
     return id;
 }
 
@@ -156,6 +282,8 @@ QString normalizeShelfId(const QString& value)
     if (value == QStringLiteral("opened") || value == QStringLiteral("Most Opened")) return QStringLiteral("opened");
     if (value == QStringLiteral("missing_metadata") || value == QStringLiteral("Missing Metadata")) return QStringLiteral("missing_metadata");
     if (value == QStringLiteral("no_cover") || value == QStringLiteral("No Cover")) return QStringLiteral("no_cover");
+    if (value == QStringLiteral("wishlist") || value == QStringLiteral("Wishlist")) return QStringLiteral("wishlist");
+    if (value == QStringLiteral("drm") || value == QStringLiteral("DRM Protected")) return QStringLiteral("drm");
     return value.trimmed().isEmpty() ? QStringLiteral("all") : value;
 }
 
@@ -1682,6 +1810,14 @@ void MainWindow::setupMenuBar()
     connect(exportAct, &QAction::triggered, this, &MainWindow::exportLibrarySnapshot);
     fileMenu->addAction(exportAct);
 
+    QAction* exportXmlAct = new QAction(trl("action.exportXml", "Export to XML..."), this);
+    connect(exportXmlAct, &QAction::triggered, this, &MainWindow::exportLibraryXml);
+    fileMenu->addAction(exportXmlAct);
+
+    QAction* exportHtmlAct = new QAction(trl("action.exportHtml", "Export to HTML..."), this);
+    connect(exportHtmlAct, &QAction::triggered, this, &MainWindow::exportLibraryHtml);
+    fileMenu->addAction(exportHtmlAct);
+
     QAction* importAct = new QAction(trl("action.importSnapshot", "Import Library Snapshot..."), this);
     importAct->setStatusTip("Import library metadata from JSON");
     connect(importAct, &QAction::triggered, this, &MainWindow::importLibrarySnapshot);
@@ -1866,6 +2002,22 @@ void MainWindow::setupMenuBar()
         queueOrRunMenuTask("Smart Rename Selected", [this]() { onSmartRenameSelected(); });
     });
     toolsMenu->addAction(renameSelectedAct2);
+
+    QAction* convertAct = new QAction(trl("action.convertFormat", "Convert Format..."), this);
+    connect(convertAct, &QAction::triggered, this, [this]() {
+        queueOrRunMenuTask("Convert Format", [this]() { convertSelectedFormats(); });
+    });
+    toolsMenu->addAction(convertAct);
+
+    QAction* drmAct = new QAction(trl("action.detectDrm", "Detect DRM Protection"), this);
+    connect(drmAct, &QAction::triggered, this, [this]() {
+        queueOrRunMenuTask("Detect DRM Protection", [this]() { detectDrmProtectedFiles(); });
+    });
+    toolsMenu->addAction(drmAct);
+
+    QAction* wishlistAct = new QAction(trl("action.wishlist", "Wishlist / To-Read..."), this);
+    connect(wishlistAct, &QAction::triggered, this, &MainWindow::openWishlistDialog);
+    toolsMenu->addAction(wishlistAct);
 
     // Collections
     libMenu->addSeparator();
@@ -2164,6 +2316,18 @@ void MainWindow::setupMenuBar()
     connect(toolsAct, &QAction::triggered, this, &MainWindow::openExternalToolsDialog);
     helpMenu->addAction(toolsAct);
 
+    QAction* cloudSyncAct = new QAction(trl("cloudsync.title", "Cloud Sync Settings"), this);
+    connect(cloudSyncAct, &QAction::triggered, this, &MainWindow::openCloudSyncDialog);
+    helpMenu->addAction(cloudSyncAct);
+
+    QAction* sendToDeviceAct = new QAction(trl("device.title", "Send to Device"), this);
+    connect(sendToDeviceAct, &QAction::triggered, this, &MainWindow::sendSelectedToDevice);
+    helpMenu->addAction(sendToDeviceAct);
+
+    QAction* passwordAct = new QAction(trl("action.passwordProtect", "Password Protection..."), this);
+    connect(passwordAct, &QAction::triggered, this, &MainWindow::managePasswordProtection);
+    helpMenu->addAction(passwordAct);
+
     helpMenu->addSeparator();
 
     QAction* webAct = new QAction(trl("action.visitWebsite", "Eagle Software Website"), this);
@@ -2412,6 +2576,14 @@ void MainWindow::setupSidebar()
         if (m_shelfCombo) m_shelfCombo->setCurrentIndex(m_shelfCombo->findData(QStringLiteral("missing_metadata")));
         else applyShelf(QStringLiteral("missing_metadata"));
     }, QStringLiteral("missing_metadata"));
+    makeBtn(trl("shelf.wishlist", "Wishlist"), [this]() {
+        if (m_shelfCombo) m_shelfCombo->setCurrentIndex(m_shelfCombo->findData(QStringLiteral("wishlist")));
+        else applyShelf(QStringLiteral("wishlist"));
+    }, QStringLiteral("wishlist"));
+    makeBtn(trl("shelf.drmProtected", "DRM Protected"), [this]() {
+        if (m_shelfCombo) m_shelfCombo->setCurrentIndex(m_shelfCombo->findData(QStringLiteral("drm")));
+        else applyShelf(QStringLiteral("drm"));
+    }, QStringLiteral("drm"));
     makeBtn(trl("sidebar.booksOnly", "Books Only"), [this]() {
         if (m_shelfCombo) m_shelfCombo->setCurrentIndex(m_shelfCombo->findData(QStringLiteral("books")));
         else applyShelf(QStringLiteral("books"));
@@ -2683,6 +2855,38 @@ void MainWindow::setupViews()
                             m_statusLabel->setText(updated.isFavourite
                                 ? trl("status.addedToFavourites", "Added to favourites.")
                                 : trl("status.removedFromFavourites", "Removed from favourites."));
+                    });
+
+                    const bool isWishlisted = b.tags.contains(wishlistTag(), Qt::CaseInsensitive);
+                    QAction* wishlistAct = menu.addAction(isWishlisted
+                        ? trl("wishlist.removeBook", "Remove from Wishlist")
+                        : trl("wishlist.addBook", "Add Book to Wishlist"));
+                    connect(wishlistAct, &QAction::triggered, this, [this, b, isWishlisted]() mutable {
+                        Book updated = b;
+                        updated.tags = isWishlisted ? withoutTag(updated.tags, wishlistTag())
+                                                    : withTag(updated.tags, wishlistTag());
+                        Database::instance().updateTags(updated.id, updated.tags);
+                        m_model->updateBook(updated);
+                        if (m_statusLabel)
+                            m_statusLabel->setText(isWishlisted
+                                ? trl("wishlist.removeBook", "Remove from Wishlist")
+                                : trl("wishlist.addBook", "Add Book to Wishlist"));
+                    });
+
+                    const bool isDrmFlagged = b.tags.contains(drmTag(), Qt::CaseInsensitive);
+                    QAction* drmAct = menu.addAction(isDrmFlagged
+                        ? trl("context.unmarkDrmProtected", "Clear DRM Flag")
+                        : trl("context.markDrmProtected", "Mark as DRM Protected"));
+                    connect(drmAct, &QAction::triggered, this, [this, b, isDrmFlagged]() mutable {
+                        Book updated = b;
+                        updated.tags = isDrmFlagged ? withoutTag(updated.tags, drmTag())
+                                                    : withTag(updated.tags, drmTag());
+                        Database::instance().updateTags(updated.id, updated.tags);
+                        m_model->updateBook(updated);
+                        if (m_statusLabel)
+                            m_statusLabel->setText(isDrmFlagged
+                                ? trl("status.clearedDrmFlag", "DRM flag removed.")
+                                : trl("status.markedDrmFlag", "Marked as DRM protected."));
                     });
 
                     const QVector<Collection> collections = Database::instance().allCollections();
@@ -4476,13 +4680,17 @@ void MainWindow::exportLibrarySnapshot()
         this,
         "Export Library",
         QDir::homePath() + "/" + m_currentLibraryName.toLower().replace(' ', '-') + "-export.json",
-        "Eagle Library Export (*.json);;CSV Spreadsheet (*.csv);;BibTeX (*.bib);;RIS (*.ris)");
+        "Eagle Library Export (*.json);;CSV Spreadsheet (*.csv);;XML Catalog (*.xml);;HTML Catalog (*.html);;BibTeX (*.bib);;RIS (*.ris)");
     if (path.isEmpty())
         return;
 
     bool ok = false;
     if (path.endsWith(".csv", Qt::CaseInsensitive))
         ok = exportBooksToCsv(path, books);
+    else if (path.endsWith(".xml", Qt::CaseInsensitive))
+        ok = exportBooksToXml(path, books);
+    else if (path.endsWith(".html", Qt::CaseInsensitive) || path.endsWith(".htm", Qt::CaseInsensitive))
+        ok = exportBooksToHtml(path, books);
     else if (path.endsWith(".bib", Qt::CaseInsensitive))
         ok = exportBooksToBibTex(path, books);
     else if (path.endsWith(".ris", Qt::CaseInsensitive))
@@ -4494,6 +4702,44 @@ void MainWindow::exportLibrarySnapshot()
         m_statusLabel->setText(QString("Library exported to %1").arg(QFileInfo(path).fileName()));
     else
         QMessageBox::warning(this, "Export Library", "Failed to export the active library.");
+}
+
+void MainWindow::exportLibraryXml()
+{
+    const QVector<Book> books = currentLibraryBooks();
+    if (books.isEmpty()) {
+        QMessageBox::information(this, trl("action.exportXml", "Export to XML"), trl("export.empty", "The active library has no books to export."));
+        return;
+    }
+    const QString path = QFileDialog::getSaveFileName(this,
+                                                      trl("action.exportXml", "Export to XML"),
+                                                      QDir::homePath() + "/" + m_currentLibraryName.toLower().replace(' ', '-') + ".xml",
+                                                      "XML Catalog (*.xml)");
+    if (path.isEmpty())
+        return;
+    if (exportBooksToXml(path, books))
+        m_statusLabel->setText(QString("XML export written to %1").arg(QFileInfo(path).fileName()));
+    else
+        QMessageBox::warning(this, trl("action.exportXml", "Export to XML"), "Failed to export the active library as XML.");
+}
+
+void MainWindow::exportLibraryHtml()
+{
+    const QVector<Book> books = currentLibraryBooks();
+    if (books.isEmpty()) {
+        QMessageBox::information(this, trl("action.exportHtml", "Export to HTML"), trl("export.empty", "The active library has no books to export."));
+        return;
+    }
+    const QString path = QFileDialog::getSaveFileName(this,
+                                                      trl("action.exportHtml", "Export to HTML"),
+                                                      QDir::homePath() + "/" + m_currentLibraryName.toLower().replace(' ', '-') + ".html",
+                                                      "HTML Catalog (*.html)");
+    if (path.isEmpty())
+        return;
+    if (exportBooksToHtml(path, books))
+        m_statusLabel->setText(QString("HTML export written to %1").arg(QFileInfo(path).fileName()));
+    else
+        QMessageBox::warning(this, trl("action.exportHtml", "Export to HTML"), "Failed to export the active library as HTML.");
 }
 
 void MainWindow::importLibrarySnapshot()
@@ -5081,6 +5327,316 @@ void MainWindow::openExternalToolsDialog()
     dlg.exec();
 }
 
+void MainWindow::openCloudSyncDialog()
+{
+    QDialog dlg(this);
+    dlg.setWindowTitle(trl("cloudsync.title", "Cloud Sync Settings"));
+    dlg.setStyleSheet(styleSheet());
+    dlg.setMinimumWidth(520);
+
+    auto* layout = new QVBoxLayout(&dlg);
+    auto* intro = new QLabel(trl("cloudsync.intro",
+                                 "Eagle Library can watch a OneDrive, Dropbox, or Google Drive folder to automatically detect changes. The cloud service handles the actual sync — Eagle Library only monitors the local folder."));
+    intro->setWordWrap(true);
+    layout->addWidget(intro);
+
+    const QString home = QDir::homePath();
+    const QList<QPair<QString, QString>> providers = {
+        {trl("cloudsync.onedrive", "OneDrive"), QDir(home).absoluteFilePath("OneDrive")},
+        {trl("cloudsync.dropbox", "Dropbox"), QDir(home).absoluteFilePath("Dropbox")},
+        {trl("cloudsync.gdrive", "Google Drive"), QDir(home).absoluteFilePath("Google Drive")}
+    };
+
+    auto* list = new QListWidget(&dlg);
+    for (const auto& provider : providers) {
+        const bool exists = QFileInfo::exists(provider.second);
+        auto* item = new QListWidgetItem(QString("%1 — %2")
+                                             .arg(provider.first,
+                                                  exists
+                                                      ? trl("cloudsync.autoDetected", "Auto-detected: %1").arg(QDir::toNativeSeparators(provider.second))
+                                                      : trl("cloudsync.notFound", "Not detected")),
+                                         list);
+        item->setData(Qt::UserRole, provider.second);
+        item->setFlags(item->flags() | Qt::ItemIsUserCheckable);
+        item->setCheckState(m_watchFolders.contains(provider.second) ? Qt::Checked : Qt::Unchecked);
+    }
+    layout->addWidget(list);
+
+    auto* watchCustom = new QCheckBox(trl("cloudsync.enableWatch", "Watch this folder for changes"), &dlg);
+    watchCustom->setChecked(true);
+    layout->addWidget(watchCustom);
+
+    auto* buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dlg);
+    auto* customBtn = buttons->addButton(trl("cloudsync.customFolder", "Custom folder..."), QDialogButtonBox::ActionRole);
+    connect(customBtn, &QPushButton::clicked, &dlg, [this, list]() {
+        const QString dir = QFileDialog::getExistingDirectory(this,
+                                                              trl("cloudsync.customFolder", "Custom folder..."),
+                                                              QDir::homePath(),
+                                                              QFileDialog::ShowDirsOnly);
+        if (dir.isEmpty())
+            return;
+        auto* item = new QListWidgetItem(QDir::toNativeSeparators(dir), list);
+        item->setData(Qt::UserRole, dir);
+        item->setFlags(item->flags() | Qt::ItemIsUserCheckable);
+        item->setCheckState(Qt::Checked);
+    });
+    layout->addWidget(buttons);
+    connect(buttons, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
+    connect(buttons, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
+
+    if (dlg.exec() != QDialog::Accepted)
+        return;
+
+    QSet<QString> merged(m_watchFolders.begin(), m_watchFolders.end());
+    for (int i = 0; i < list->count(); ++i) {
+        QListWidgetItem* item = list->item(i);
+        const QString path = item->data(Qt::UserRole).toString().trimmed();
+        if (path.isEmpty())
+            continue;
+        if (item->checkState() == Qt::Checked && watchCustom->isChecked())
+            merged.insert(path);
+    }
+
+    m_watchFolders = QStringList(merged.begin(), merged.end());
+    m_watchFolders.sort(Qt::CaseInsensitive);
+    QJsonArray foldersJson;
+    for (const QString& folder : m_watchFolders)
+        foldersJson.append(folder);
+    m_libraryProfiles[m_currentLibraryName] = foldersJson;
+    saveSettings();
+    refreshLibraryWatcher();
+    m_statusLabel->setText(trl("cloudsync.enableWatch", "Watch this folder for changes"));
+}
+
+void MainWindow::sendSelectedToDevice()
+{
+    QVector<Book> books = selectedBooks();
+    if (books.isEmpty()) {
+        QMessageBox::information(this, trl("device.title", "Send to Device"), trl("status.selectBookFirst", "Select a book first."));
+        return;
+    }
+
+    QDialog dlg(this);
+    dlg.setWindowTitle(trl("device.title", "Send to Device"));
+    dlg.setStyleSheet(styleSheet());
+    dlg.setMinimumWidth(460);
+    auto* layout = new QVBoxLayout(&dlg);
+    auto* label = new QLabel(trl("device.selectDevice", "Select device:"), &dlg);
+    layout->addWidget(label);
+
+    auto* deviceCombo = new QComboBox(&dlg);
+    QStringList candidateRoots;
+    const QList<QStorageInfo> volumes = QStorageInfo::mountedVolumes();
+    for (const QStorageInfo& volume : volumes) {
+        if (!volume.isValid() || !volume.isReady() || volume.isReadOnly())
+            continue;
+        const QString root = QDir::fromNativeSeparators(volume.rootPath()).trimmed();
+        if (root.isEmpty())
+            continue;
+        if (!candidateRoots.contains(root))
+            candidateRoots << root;
+        deviceCombo->addItem(QString("%1 (%2)").arg(volume.displayName().trimmed().isEmpty() ? root : volume.displayName(),
+                                                    QDir::toNativeSeparators(root)),
+                             root);
+    }
+    if (deviceCombo->count() == 0) {
+        QMessageBox::information(this, trl("device.title", "Send to Device"), trl("device.noDevice", "No compatible device detected. Connect a Kindle, Kobo, or other e-reader via USB."));
+        return;
+    }
+    layout->addWidget(deviceCombo);
+
+    auto* buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dlg);
+    buttons->button(QDialogButtonBox::Ok)->setText(trl("device.sendSelected", "Send Selected Books"));
+    layout->addWidget(buttons);
+    connect(buttons, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
+    connect(buttons, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
+
+    if (dlg.exec() != QDialog::Accepted)
+        return;
+
+    const QString targetRoot = deviceCombo->currentData().toString();
+    const QString targetFolder = QDir(targetRoot).absoluteFilePath(QStringLiteral("EagleLibrary"));
+    QDir().mkpath(targetFolder);
+
+    int copied = 0;
+    for (const Book& book : books) {
+        const QString sourcePath = book.filePath;
+        const QString destPath = QDir(targetFolder).absoluteFilePath(QFileInfo(sourcePath).fileName());
+        if (QFileInfo::exists(sourcePath) && QFile::copy(sourcePath, destPath))
+            ++copied;
+    }
+    m_statusLabel->setText(trl("device.done", "Sent %1 book(s) to %2.").arg(copied).arg(QDir::toNativeSeparators(targetFolder)));
+}
+
+void MainWindow::convertSelectedFormats()
+{
+    const QString calibreTool = QStandardPaths::findExecutable(QStringLiteral("ebook-convert"));
+    if (calibreTool.isEmpty()) {
+        QMessageBox::warning(this, trl("convert.title", "Convert Format"),
+                             trl("convert.calibreNotFound", "Calibre (ebook-convert) was not found. Install Calibre from https://calibre-ebook.com to enable format conversion."));
+        return;
+    }
+
+    const QVector<Book> books = chooseBooksScope(trl("convert.title", "Convert Format"));
+    if (books.isEmpty())
+        return;
+
+    QDialog dlg(this);
+    dlg.setWindowTitle(trl("convert.title", "Convert Format"));
+    dlg.setStyleSheet(styleSheet());
+    auto* layout = new QFormLayout(&dlg);
+    QComboBox targetCombo;
+    targetCombo.addItems({QStringLiteral("EPUB"), QStringLiteral("MOBI"), QStringLiteral("PDF"), QStringLiteral("AZW3"), QStringLiteral("TXT")});
+    QLineEdit outputEdit(QDir::homePath());
+    QPushButton browseBtn(trl("dialog.browse", "Browse"));
+    QObject::connect(&browseBtn, &QPushButton::clicked, &dlg, [this, &outputEdit]() {
+        const QString dir = QFileDialog::getExistingDirectory(this, trl("convert.outputFolder", "Output folder:"), outputEdit.text(), QFileDialog::ShowDirsOnly);
+        if (!dir.isEmpty())
+            outputEdit.setText(dir);
+    });
+    QWidget outputRow;
+    QHBoxLayout outputRowLayout(&outputRow);
+    outputRowLayout.setContentsMargins(0, 0, 0, 0);
+    outputRowLayout.addWidget(&outputEdit, 1);
+    outputRowLayout.addWidget(&browseBtn);
+    layout->addRow(trl("convert.targetFormat", "Target format:"), &targetCombo);
+    layout->addRow(trl("convert.outputFolder", "Output folder:"), &outputRow);
+    QDialogButtonBox buttons(QDialogButtonBox::Ok | QDialogButtonBox::Cancel);
+    buttons.button(QDialogButtonBox::Ok)->setText(trl("convert.startConvert", "Convert"));
+    layout->addRow(&buttons);
+    QObject::connect(&buttons, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
+    QObject::connect(&buttons, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
+
+    if (dlg.exec() != QDialog::Accepted)
+        return;
+
+    const QString outputFolder = outputEdit.text().trimmed();
+    if (outputFolder.isEmpty()) {
+        QMessageBox::warning(this, trl("convert.title", "Convert Format"), trl("dialog.emptyName", "The name cannot be empty."));
+        return;
+    }
+    QDir().mkpath(outputFolder);
+
+    int converted = 0;
+    int failed = 0;
+    for (const Book& book : books) {
+        const QString targetPath = QDir(outputFolder).absoluteFilePath(QFileInfo(book.filePath).completeBaseName() + "." + targetCombo.currentText().toLower());
+        showTaskProgress(trl("convert.title", "Convert Format"),
+                         trl("convert.converting", "Converting %1...").arg(book.displayTitle()),
+                         converted + failed + 1,
+                         books.size(),
+                         book.displayTitle());
+        QProcess proc;
+        proc.start(calibreTool, {book.filePath, targetPath});
+        if (!proc.waitForStarted(3000) || !proc.waitForFinished(90000) || proc.exitStatus() != QProcess::NormalExit || proc.exitCode() != 0)
+            ++failed;
+        else
+            ++converted;
+    }
+    hideTaskProgress(trl("convert.done", "Conversion complete: %1 converted, %2 failed.").arg(converted).arg(failed));
+}
+
+void MainWindow::openWishlistDialog()
+{
+    applyShelf(QStringLiteral("wishlist"));
+    QMessageBox::information(this,
+                             trl("wishlist.title", "Wishlist / To-Buy List"),
+                             m_filterModel->rowCount() > 0
+                                 ? trl("wishlist.addBook", "Add Book to Wishlist")
+                                 : trl("wishlist.empty", "Your wishlist is empty. Right-click a book and choose Add to Wishlist."));
+}
+
+void MainWindow::detectDrmProtectedFiles()
+{
+    const QVector<Book> books = chooseBooksScope(trl("drm.title", "DRM Detection"));
+    if (books.isEmpty())
+        return;
+
+    int flagged = 0;
+    int processed = 0;
+    for (const Book& book : books) {
+        ++processed;
+        showTaskProgress(trl("drm.title", "DRM Detection"),
+                         trl("drm.scanning", "Scanning %1/%2 files...").arg(processed).arg(books.size()),
+                         processed,
+                         books.size(),
+                         book.displayTitle());
+        if (!likelyDrmProtected(book))
+            continue;
+        Book updated = book;
+        updated.tags = withTag(updated.tags, drmTag());
+        Database::instance().updateTags(updated.id, updated.tags);
+        m_model->updateBook(updated);
+        ++flagged;
+    }
+    hideTaskProgress(flagged > 0
+                         ? trl("drm.found", "%1 DRM-protected file(s) found and flagged.").arg(flagged)
+                         : trl("drm.noneFound", "No DRM protection detected in the scanned files."));
+}
+
+void MainWindow::managePasswordProtection()
+{
+    QSettings settings(AppConfig::settingsPath(), QSettings::IniFormat);
+    const QString existingSalt = settings.value("security/passwordSalt").toString().trimmed();
+    const QString existingHash = settings.value("security/passwordHash").toString().trimmed();
+
+    QDialog dlg(this);
+    dlg.setWindowTitle(trl("password.title", "Password Protection"));
+    dlg.setStyleSheet(styleSheet());
+    auto* layout = new QFormLayout(&dlg);
+    QLineEdit currentEdit;
+    QLineEdit newEdit;
+    QLineEdit confirmEdit;
+    currentEdit.setEchoMode(QLineEdit::Password);
+    newEdit.setEchoMode(QLineEdit::Password);
+    confirmEdit.setEchoMode(QLineEdit::Password);
+    layout->addRow(trl("password.currentPassword", "Current password:"), &currentEdit);
+    layout->addRow(trl("password.newPassword", "New password:"), &newEdit);
+    layout->addRow(trl("password.confirmPassword", "Confirm password:"), &confirmEdit);
+    QDialogButtonBox buttons(QDialogButtonBox::Ok | QDialogButtonBox::Cancel);
+    auto* removeBtn = buttons.addButton(trl("password.removePassword", "Remove Password"), QDialogButtonBox::DestructiveRole);
+    auto* setBtn = buttons.button(QDialogButtonBox::Ok);
+    if (setBtn)
+        setBtn->setText(trl("password.setPassword", "Set Password"));
+    layout->addRow(&buttons);
+    QObject::connect(&buttons, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
+    QObject::connect(&buttons, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
+    QObject::connect(removeBtn, &QPushButton::clicked, &dlg, [&]() {
+        if (!existingHash.isEmpty() && hashPasswordSecret(currentEdit.text(), existingSalt) != existingHash) {
+            QMessageBox::warning(&dlg, trl("password.title", "Password Protection"), trl("password.wrong", "Incorrect password."));
+            return;
+        }
+        settings.remove("security/passwordSalt");
+        settings.remove("security/passwordHash");
+        m_statusLabel->setText(trl("password.disabled", "Password protection is disabled."));
+        dlg.done(2);
+    });
+
+    const int result = dlg.exec();
+    if (result == 2)
+        return;
+    if (result != QDialog::Accepted)
+        return;
+
+    if (newEdit.text() != confirmEdit.text()) {
+        QMessageBox::warning(this, trl("password.title", "Password Protection"), trl("password.mismatch", "Passwords do not match."));
+        return;
+    }
+    if (!existingHash.isEmpty() && hashPasswordSecret(currentEdit.text(), existingSalt) != existingHash) {
+        QMessageBox::warning(this, trl("password.title", "Password Protection"), trl("password.wrong", "Incorrect password."));
+        return;
+    }
+    if (newEdit.text().trimmed().isEmpty()) {
+        QMessageBox::warning(this, trl("password.title", "Password Protection"), trl("dialog.emptyName", "The name cannot be empty."));
+        return;
+    }
+
+    const QString salt = QString::number(QDateTime::currentMSecsSinceEpoch());
+    settings.setValue("security/passwordSalt", salt);
+    settings.setValue("security/passwordHash", hashPasswordSecret(newEdit.text(), salt));
+    m_statusLabel->setText(trl("password.enabled", "Password protection is enabled."));
+}
+
 void MainWindow::openDatabaseFolder()
 {
     const QString dir = QFileInfo(AppConfig::dbPath()).absolutePath();
@@ -5520,7 +6076,9 @@ void MainWindow::refreshShelfOptions()
         {trl("shelf.recentlyAdded", "Recently Added"), QStringLiteral("recent")},
         {trl("shelf.mostOpened", "Most Opened"), QStringLiteral("opened")},
         {trl("shelf.missingMetadata", "Missing Metadata"), QStringLiteral("missing_metadata")},
-        {trl("shelf.noCover", "No Cover"), QStringLiteral("no_cover")}
+        {trl("shelf.noCover", "No Cover"), QStringLiteral("no_cover")},
+        {trl("shelf.wishlist", "Wishlist"), QStringLiteral("wishlist")},
+        {trl("shelf.drmProtected", "DRM Protected"), QStringLiteral("drm")}
     };
     for (const auto& shelf : shelves)
         m_shelfCombo->addItem(shelf.first, shelf.second);
@@ -5627,6 +6185,10 @@ void MainWindow::applyShelf(const QString& shelfName)
         m_filterModel->setFilterNoMeta(true);
     } else if (m_activeShelfName == QStringLiteral("no_cover")) {
         m_filterModel->setFilterNoCover(true);
+    } else if (m_activeShelfName == QStringLiteral("wishlist")) {
+        m_filterModel->setFilterTag(wishlistTag());
+    } else if (m_activeShelfName == QStringLiteral("drm")) {
+        m_filterModel->setFilterTag(drmTag());
     }
 
     if (m_sidebarContent) {

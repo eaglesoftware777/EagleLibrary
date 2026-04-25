@@ -390,6 +390,14 @@ cleanup, and real reading/lending tracking inside the local catalog.
 - Added a Library Dashboard with compact statistics and progress-bar diagrams for format and category distribution
 - Common new menu and collection actions now have better built-in language-pack coverage in the major shipped translations
 - Release packaging now removes runtime `diagnostic-logs` and rebuilds a fresh `dist/` payload before publishing `v1.1`
+- Diagnostic logging now obeys settings at startup and stays disabled by default unless explicitly enabled
+- Installer upgrades now clear stale diagnostic traces, runtime session state, and generated JSON reports from older installs
+- Export now supports XML and HTML catalog output in addition to JSON, CSV, BibTeX, and RIS
+- Added working Wishlist and DRM Protected virtual shelves backed by book tags and context actions
+- Added lightweight password protection with startup unlock prompt
+- Added simple device send workflow for copying selected books to an attached destination folder
+- Added cloud-sync folder onboarding for OneDrive, Dropbox, Google Drive, or a custom synced folder
+- Added Calibre-based format conversion workflow when `ebook-convert` is installed
 
 ### 1.0
 
