@@ -1444,12 +1444,23 @@ public:
             "Open Install Guide",
             QUrl("https://github.com/UB-Mannheim/zotero-ocr/wiki/Install-pdftoppm"));
 
+        const QString wingetPath = QStandardPaths::findExecutable("winget");
         toolRow(
             "OCR engine (Tesseract)",
-            "Eagle can call Tesseract for OCR when embedded metadata and direct text extraction are not enough. The install command opens in Windows Terminal or Command Prompt so you can approve it normally.",
+            wingetPath.isEmpty()
+                ? "Eagle can call Tesseract for OCR when embedded metadata and direct text extraction are not enough. Winget is not available on this Windows installation, so Eagle opens the trusted download page instead of trying a missing command."
+                : "Eagle can call Tesseract for OCR when embedded metadata and direct text extraction are not enough. The install command opens in Windows Terminal or Command Prompt so you can approve it normally.",
             "tesseract",
-            "Install with winget",
-            [startDetached, this]() {
+            wingetPath.isEmpty() ? "Open Tesseract Download" : "Install with winget",
+            [startDetached, this, wingetPath]() {
+                if (wingetPath.isEmpty()) {
+                    qWarning().noquote() << "[ExternalTools] winget not found. Opening Tesseract download page.";
+                    QMessageBox::information(this,
+                                             "Install Tesseract",
+                                             "Winget is not available on this Windows system.\n\nEagle Library will open the trusted Tesseract download page instead.");
+                    QDesktopServices::openUrl(QUrl("https://github.com/UB-Mannheim/tesseract/wiki"));
+                    return;
+                }
                 if (QMessageBox::question(this,
                                           "Install Tesseract",
                                           "Launch a Windows terminal to install Tesseract with winget?",
@@ -1463,8 +1474,8 @@ public:
                                             << ""
                                             << "cmd.exe"
                                             << "/k"
-                                            << "winget install --id tesseract-ocr.tesseract -e --accept-package-agreements --accept-source-agreements || winget install --id UB-Mannheim.TesseractOCR -e --accept-package-agreements --accept-source-agreements",
-                              "Could not launch the winget install command.");
+                                            << QString("\"%1\" install --id tesseract-ocr.tesseract -e --accept-package-agreements --accept-source-agreements || \"%1\" install --id UB-Mannheim.TesseractOCR -e --accept-package-agreements --accept-source-agreements").arg(wingetPath),
+                              "Could not launch the Tesseract installer command.");
             },
             "Open Tesseract Project",
             QUrl("https://github.com/tesseract-ocr/tesseract"));
@@ -2573,23 +2584,36 @@ void MainWindow::setupViews()
     for (QListView* v : {m_gridView, m_listView}) {
         v->setContextMenuPolicy(Qt::CustomContextMenu);
         connect(v, &QListView::customContextMenuRequested,
-                this, [this](const QPoint& pos) {
-            QListView* view = currentView();
+                this, [this, v](const QPoint& pos) {
+            QListView* view = v;
+            if (!view)
+                return;
             QModelIndex idx = view->indexAt(pos);
+            qInfo().noquote() << "[ContextMenu] view=" << view->objectName()
+                              << "pos=" << pos
+                              << "validIndex=" << idx.isValid();
             QMenu menu;
             menu.setStyleSheet(styleSheet());
             if (idx.isValid()) {
                 QAction* openAct = menu.addAction("Open");
-                connect(openAct, &QAction::triggered, this, [this, idx]() { openBookFile(idx); });
+                connect(openAct, &QAction::triggered, this, [this, idx]() {
+                    qInfo().noquote() << "[ContextMenu] Open triggered";
+                    openBookFile(idx);
+                });
                 QAction* editAct = menu.addAction("Properties...");
-                connect(editAct, &QAction::triggered, this, [this, idx]() { openBookDetail(idx); });
+                connect(editAct, &QAction::triggered, this, [this, idx]() {
+                    qInfo().noquote() << "[ContextMenu] Properties triggered";
+                    openBookDetail(idx);
+                });
                 menu.addSeparator();
                 QAction* renameSelectedAct = menu.addAction("Smart Rename Selected");
                 connect(renameSelectedAct, &QAction::triggered, this, [this]() {
+                    qInfo().noquote() << "[ContextMenu] Smart Rename Selected triggered";
                     queueOrRunMenuTask("Smart Rename Selected", [this]() { onSmartRenameSelected(); });
                 });
                 QAction* fetchAct = menu.addAction("Fetch Metadata");
                 connect(fetchAct, &QAction::triggered, this, [this, idx]() {
+                    qInfo().noquote() << "[ContextMenu] Fetch Metadata triggered";
                     QModelIndex src = m_filterModel->mapToSource(idx);
                     if (!src.isValid())
                         return;
@@ -2598,13 +2622,31 @@ void MainWindow::setupViews()
                 });
                 QAction* refsAct = menu.addAction("Related References...");
                 connect(refsAct, &QAction::triggered, this, [this, idx]() {
+                    qInfo().noquote() << "[ContextMenu] Related References triggered";
                     const QModelIndex src = m_filterModel->mapToSource(idx);
                     if (src.isValid())
                         showReferenceLookup(m_model->bookAt(src.row()));
                 });
+                const QModelIndex src = m_filterModel->mapToSource(idx);
+                if (src.isValid()) {
+                    const Book& b = m_model->bookAt(src.row());
+                    const QList<QAction*> pluginActions = PluginManager::instance().contextActionsForBook(b.id);
+                    if (!pluginActions.isEmpty()) {
+                        menu.addSeparator();
+                        QMenu* pluginSubMenu = menu.addMenu("Plugin Actions");
+                        pluginSubMenu->setToolTipsVisible(true);
+                        for (QAction* pluginAction : pluginActions)
+                            pluginSubMenu->addAction(pluginAction);
+                    } else {
+                        qInfo().noquote() << "[ContextMenu] No plugin actions for bookId=" << b.id;
+                    }
+                }
                 menu.addSeparator();
                 QAction* removeAct = menu.addAction("Remove from Library");
-                connect(removeAct, &QAction::triggered, this, &MainWindow::removeSelectedBook);
+                connect(removeAct, &QAction::triggered, this, [this]() {
+                    qInfo().noquote() << "[ContextMenu] Remove from Library triggered";
+                    removeSelectedBook();
+                });
             }
             if (!menu.isEmpty())
                 menu.exec(view->viewport()->mapToGlobal(pos));

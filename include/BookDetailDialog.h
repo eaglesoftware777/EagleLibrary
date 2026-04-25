@@ -15,6 +15,8 @@
 #include <QListWidget>
 #include <QComboBox>
 #include <QDateEdit>
+#include <QCheckBox>
+#include <QToolButton>
 
 class BookDetailDialog : public QDialog
 {
@@ -22,6 +24,7 @@ class BookDetailDialog : public QDialog
 public:
     explicit BookDetailDialog(const Book& book, QWidget* parent = nullptr);
     Book editedBook() const;
+    QList<int> selectedCollectionIds() const;
 
 private:
     Book         m_book;
@@ -46,6 +49,9 @@ private:
     QSpinBox*    m_readingMinutesSpin = nullptr;
     QLineEdit*   m_loanedToEdit = nullptr;
     QDateEdit*   m_loanDueDateEdit = nullptr;
+    QCheckBox*   m_favouriteCheck = nullptr;
+    QListWidget* m_collectionList = nullptr;
+    QList<QToolButton*> m_ratingButtons;
     QTextEdit*   m_descEdit;
     QTextEdit*   m_notesEdit;
     QPushButton* m_openBtn;
@@ -56,4 +62,5 @@ private:
     void setupUi();
     void applyStyles();
     void loadCover(const QString& path);
+    void updateRatingButtons(double rating);
 };

@@ -29,6 +29,8 @@
 #include <QProcess>
 #include <QDebug>
 #include <QMouseEvent>
+#include <QToolButton>
+#include <cmath>
 
 namespace {
 // Lightweight event filter that fires a QAction when the watched widget is clicked.
@@ -235,6 +237,10 @@ void BookDetailDialog::setupUi()
     });
     leftLayout->addWidget(m_googleBtn);
 
+    m_favouriteCheck = new QCheckBox("Favourite");
+    m_favouriteCheck->setChecked(m_book.isFavourite);
+    leftLayout->addWidget(m_favouriteCheck);
+
     const QList<QAction*> pluginActions = PluginManager::instance().contextActionsForBook(m_book.id);
     if (!pluginActions.isEmpty()) {
         // Section header
@@ -305,7 +311,42 @@ void BookDetailDialog::setupUi()
 
     // Tab 1: Core metadata
     auto* metaWidget = new QWidget;
-    auto* metaForm = new QFormLayout(metaWidget);
+    auto* metaLayout = new QVBoxLayout(metaWidget);
+    metaLayout->setContentsMargins(0, 0, 0, 0);
+    metaLayout->setSpacing(12);
+
+    auto* ratingPanel = new QFrame(metaWidget);
+    auto* ratingLayout = new QHBoxLayout(ratingPanel);
+    ratingLayout->setContentsMargins(10, 10, 10, 10);
+    ratingLayout->setSpacing(6);
+    auto* ratingLabel = new QLabel("Quick Rating:");
+    ratingLayout->addWidget(ratingLabel);
+    for (int i = 1; i <= 5; ++i) {
+        auto* button = new QToolButton(ratingPanel);
+        button->setText(QStringLiteral("☆"));
+        button->setAutoRaise(true);
+        button->setToolTip(QString("Set rating to %1 star%2").arg(i).arg(i == 1 ? QString() : QStringLiteral("s")));
+        connect(button, &QToolButton::clicked, this, [this, i]() {
+            if (m_ratingSpin)
+                m_ratingSpin->setValue(i);
+            updateRatingButtons(i);
+        });
+        m_ratingButtons << button;
+        ratingLayout->addWidget(button);
+    }
+    auto* clearRatingBtn = new QToolButton(ratingPanel);
+    clearRatingBtn->setText("Clear");
+    clearRatingBtn->setToolTip("Clear the personal rating");
+    connect(clearRatingBtn, &QToolButton::clicked, this, [this]() {
+        if (m_ratingSpin)
+            m_ratingSpin->setValue(0);
+        updateRatingButtons(0);
+    });
+    ratingLayout->addWidget(clearRatingBtn);
+    ratingLayout->addStretch();
+    metaLayout->addWidget(ratingPanel);
+
+    auto* metaForm = new QFormLayout;
     metaForm->setLabelAlignment(Qt::AlignRight);
     metaForm->setSpacing(10);
 
@@ -324,6 +365,9 @@ void BookDetailDialog::setupUi()
     m_ratingSpin->setRange(0, 5);
     m_ratingSpin->setSingleStep(0.5);
     m_ratingSpin->setValue(m_book.rating);
+    connect(m_ratingSpin, qOverload<double>(&QDoubleSpinBox::valueChanged), this, [this](double value) {
+        updateRatingButtons(value);
+    });
     m_tagsEdit      = new QLineEdit(m_book.tags.join(", "));
     m_tagsEdit->setPlaceholderText("Comma-separated tags: Physics, Math, Reading...");
 
@@ -348,6 +392,7 @@ void BookDetailDialog::setupUi()
     metaForm->addRow("Series:",       m_seriesEdit);
     metaForm->addRow("Volume #:",     m_seriesIndexSpin);
     metaForm->addRow("Edition:",      m_editionEdit);
+    metaLayout->addLayout(metaForm);
     tabs->addTab(metaWidget, "Metadata");
 
     // Tab 2: Reading
@@ -417,6 +462,29 @@ void BookDetailDialog::setupUi()
     notesLayout->addWidget(m_notesEdit);
     tabs->addTab(notesWidget, "Notes");
 
+    auto* collectionsWidget = new QWidget;
+    auto* collectionsLayout = new QVBoxLayout(collectionsWidget);
+    auto* collectionsHint = new QLabel("Use virtual collections to organize a book across multiple shelves and catalogues.");
+    collectionsHint->setWordWrap(true);
+    collectionsLayout->addWidget(collectionsHint);
+    m_collectionList = new QListWidget(collectionsWidget);
+    m_collectionList->setSelectionMode(QAbstractItemView::NoSelection);
+    const QVector<Collection> collections = Database::instance().allCollections();
+    const QList<int> existingCollectionIds = Database::instance().collectionsForBook(m_book.id);
+    QSet<int> assignedCollections;
+    for (int collectionId : existingCollectionIds)
+        assignedCollections.insert(collectionId);
+    for (const Collection& collection : collections) {
+        auto* item = new QListWidgetItem(collection.name, m_collectionList);
+        item->setData(Qt::UserRole, collection.id);
+        item->setFlags(item->flags() | Qt::ItemIsUserCheckable);
+        item->setCheckState(assignedCollections.contains(collection.id) ? Qt::Checked : Qt::Unchecked);
+        if (!collection.color.trimmed().isEmpty())
+            item->setForeground(QBrush(QColor(collection.color)));
+    }
+    collectionsLayout->addWidget(m_collectionList);
+    tabs->addTab(collectionsWidget, "Collections");
+
     mainLayout->addWidget(tabs, 1);
 
     // ── Buttons ───────────────────────────────────────────────
@@ -435,6 +503,7 @@ void BookDetailDialog::applyStyles()
         "QLabel#coverLabel { border-radius: 8px; }");
     m_openBtn->setStyleSheet(
         "QPushButton#primaryBtn { font-weight: bold; }");
+    updateRatingButtons(m_book.rating);
 }
 
 void BookDetailDialog::loadCover(const QString& path)
@@ -481,9 +550,34 @@ Book BookDetailDialog::editedBook() const
     b.loanDueDate = (m_loanDueDateEdit && m_loanDueDateEdit->date() != m_loanDueDateEdit->minimumDate())
         ? QDateTime(m_loanDueDateEdit->date(), QTime(0, 0))
         : QDateTime();
+    b.isFavourite = m_favouriteCheck && m_favouriteCheck->isChecked();
     QString rawTags = m_tagsEdit->text();
     b.tags.clear();
     for (const auto& t : rawTags.split(",", Qt::SkipEmptyParts))
         b.tags << t.trimmed();
     return b;
+}
+
+QList<int> BookDetailDialog::selectedCollectionIds() const
+{
+    QList<int> ids;
+    if (!m_collectionList)
+        return ids;
+
+    for (int row = 0; row < m_collectionList->count(); ++row) {
+        QListWidgetItem* item = m_collectionList->item(row);
+        if (!item || item->checkState() != Qt::Checked)
+            continue;
+        ids << item->data(Qt::UserRole).toInt();
+    }
+    return ids;
+}
+
+void BookDetailDialog::updateRatingButtons(double rating)
+{
+    const int fullStars = qBound(0, static_cast<int>(std::round(rating)), 5);
+    for (int i = 0; i < m_ratingButtons.size(); ++i) {
+        if (QToolButton* button = m_ratingButtons.at(i))
+            button->setText(i < fullStars ? QStringLiteral("★") : QStringLiteral("☆"));
+    }
 }

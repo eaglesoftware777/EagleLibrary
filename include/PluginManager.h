@@ -70,6 +70,11 @@ signals:
 private:
     explicit PluginManager(QObject* parent = nullptr);
     void ensureStarterPlugins(const QString& pluginsDir);
+    void triggerJsonBookAction(const LoadedPlugin& plugin,
+                               const QString& title,
+                               const QString& description,
+                               const QString& urlTemplate,
+                               qint64 bookId);
 
     QMap<QString, LoadedPlugin> m_plugins;
     QWidget*   m_mainWindow = nullptr;

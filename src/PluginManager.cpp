@@ -21,6 +21,10 @@
 #include <QProcess>
 #include <QStandardPaths>
 #include <QSet>
+#include <QMessageBox>
+#include <QListView>
+
+#include "BookModel.h"
 
 PluginManager& PluginManager::instance()
 {
@@ -111,6 +115,11 @@ bool isAllowedPluginUrl(const QUrl& url)
         QStringLiteral("www.semanticscholar.org")
     };
     return allowedHosts.contains(url.host().toLower());
+}
+
+QString describeBookAction(const QJsonObject& actionObj, const QString& fallback)
+{
+    return actionObj.value(QStringLiteral("description")).toString(fallback);
 }
 
 const StarterPluginSeed kStarterPlugins[] = {
@@ -258,6 +267,54 @@ bool PluginManager::isLoaded(const QString& pluginId) const
     return m_plugins.contains(pluginId);
 }
 
+void PluginManager::triggerJsonBookAction(const LoadedPlugin& plugin,
+                                          const QString& title,
+                                          const QString& description,
+                                          const QString& urlTemplate,
+                                          qint64 bookId)
+{
+    const Book book = Database::instance().bookById(bookId);
+    if (book.id <= 0) {
+        const QString message = QStringLiteral("Plugin action could not resolve the selected book.");
+        qWarning().noquote() << "[PluginAction]" << plugin.info.name << title << "failed:" << message;
+        emit statusMessage(message);
+        return;
+    }
+
+    const QUrl url(fillBookTemplate(urlTemplate, book));
+    qInfo().noquote() << "[PluginAction]" << plugin.info.name
+                      << "title=" << title
+                      << "bookId=" << bookId
+                      << "url=" << url.toString();
+
+    if (!isAllowedPluginUrl(url)) {
+        const QString message = QString("Blocked unsafe plugin URL from %1.").arg(plugin.info.name);
+        qWarning().noquote() << "[PluginAction]" << plugin.info.name << title << "blocked";
+        emit statusMessage(message);
+        if (m_mainWindow) {
+            QMessageBox::warning(m_mainWindow,
+                                 QStringLiteral("Plugin Action Blocked"),
+                                 QString("%1\n\nAction: %2\nURL: %3")
+                                     .arg(message, title, url.toString()));
+        }
+        return;
+    }
+
+    const bool opened = QDesktopServices::openUrl(url);
+    if (opened) {
+        emit statusMessage(QString("%1 -> %2").arg(plugin.info.name, title));
+    } else {
+        const QString message = QString("Plugin action failed to open: %1").arg(title);
+        qWarning().noquote() << "[PluginAction]" << plugin.info.name << title << "openUrl failed";
+        emit statusMessage(message);
+        if (m_mainWindow) {
+            QMessageBox::warning(m_mainWindow,
+                                 QStringLiteral("Plugin Action Failed"),
+                                 QString("%1\n\n%2").arg(message, description));
+        }
+    }
+}
+
 void PluginManager::syncPluginMenu()
 {
     if (!m_pluginMenu)
@@ -286,17 +343,63 @@ void PluginManager::syncPluginMenu()
         const QString title = lp.info.version.isEmpty()
             ? lp.info.name
             : QString("%1 (%2)").arg(lp.info.name, lp.info.version);
-        QAction* action = new QAction(title, m_pluginMenu);
-        action->setProperty("plugin_id", lp.info.id);
-        action->setToolTip(lp.info.description);
-        action->setStatusTip(lp.info.description);
-        QObject::connect(action, &QAction::triggered, this, [this, title, lp]() {
-            emit statusMessage(QString("Plugin available: %1").arg(title));
-            if (!lp.sourcePath.isEmpty())
-                emit statusMessage(QString("Plugin manifest: %1").arg(QDir::toNativeSeparators(lp.sourcePath)));
+        QMenu* pluginSubMenu = m_pluginMenu->addMenu(title);
+        pluginSubMenu->setToolTipsVisible(true);
+        pluginSubMenu->menuAction()->setProperty("plugin_id", lp.info.id);
+        pluginSubMenu->menuAction()->setToolTip(lp.info.description);
+        pluginSubMenu->menuAction()->setStatusTip(lp.info.description);
+
+        QAction* infoAction = pluginSubMenu->addAction(lp.info.description.isEmpty()
+            ? QStringLiteral("No description")
+            : lp.info.description);
+        infoAction->setEnabled(false);
+
+        const QList<qint64> selectedIds = selectedBookIds();
+        bool addedExecutableAction = false;
+        for (const QJsonValue& value : lp.bookActions) {
+            if (!value.isObject())
+                continue;
+            const QJsonObject actionObj = value.toObject();
+            const QString actionTitle = actionObj.value(QStringLiteral("title")).toString();
+            const QString urlTemplate = actionObj.value(QStringLiteral("urlTemplate")).toString();
+            if (actionTitle.isEmpty() || urlTemplate.isEmpty())
+                continue;
+
+            QAction* action = pluginSubMenu->addAction(actionTitle);
+            const QString description = describeBookAction(actionObj, lp.info.description);
+            action->setToolTip(description);
+            action->setStatusTip(description);
+            QObject::connect(action, &QAction::triggered, this, [this, lp, actionTitle, description, urlTemplate]() {
+                const QList<qint64> selected = selectedBookIds();
+                if (selected.isEmpty()) {
+                    const QString message = QString("Select a book first to run %1.").arg(actionTitle);
+                    qWarning().noquote() << "[PluginAction]" << lp.info.name << actionTitle << "no selection";
+                    emit statusMessage(message);
+                    if (m_mainWindow)
+                        QMessageBox::information(m_mainWindow, QStringLiteral("Plugin Action"), message);
+                    return;
+                }
+                triggerJsonBookAction(lp, actionTitle, description, urlTemplate, selected.first());
+            });
+            addedExecutableAction = true;
+        }
+
+        pluginSubMenu->addSeparator();
+        QAction* manifestAction = pluginSubMenu->addAction(QStringLiteral("Open Plugin Folder"));
+        QObject::connect(manifestAction, &QAction::triggered, this, [this, lp]() {
+            const QString folder = QFileInfo(lp.sourcePath).absolutePath();
+            qInfo().noquote() << "[PluginMenu] Open folder for" << lp.info.name << QDir::toNativeSeparators(folder);
+            QDesktopServices::openUrl(QUrl::fromLocalFile(folder));
         });
-        m_pluginMenu->addAction(action);
-        lp.menuAction = action;
+
+        if (!addedExecutableAction) {
+            QAction* emptyAction = pluginSubMenu->addAction(selectedIds.isEmpty()
+                ? QStringLiteral("No runnable actions for the current selection")
+                : QStringLiteral("No JSON actions declared"));
+            emptyAction->setEnabled(false);
+        }
+
+        lp.menuAction = pluginSubMenu->menuAction();
     }
 }
 
@@ -340,15 +443,11 @@ QList<QAction*> PluginManager::contextActionsForBook(qint64 id)
             if (title.isEmpty() || urlTemplate.isEmpty())
                 continue;
             QAction* action = new QAction(QString("%1: %2").arg(lp.info.name, title), nullptr);
-            action->setToolTip(actionObj.value("description").toString(lp.info.description));
-            QObject::connect(action, &QAction::triggered, this, [this, urlTemplate, book, lp, title]() {
-                const QUrl url(fillBookTemplate(urlTemplate, book));
-                if (isAllowedPluginUrl(url)) {
-                    QDesktopServices::openUrl(url);
-                    emit statusMessage(QString("%1 -> %2").arg(lp.info.name, title));
-                } else {
-                    emit statusMessage(QString("Blocked unsafe plugin URL from %1.").arg(lp.info.name));
-                }
+            const QString description = describeBookAction(actionObj, lp.info.description);
+            action->setToolTip(description);
+            action->setStatusTip(description);
+            QObject::connect(action, &QAction::triggered, this, [this, urlTemplate, lp, title, description, book]() {
+                triggerJsonBookAction(lp, title, description, urlTemplate, book.id);
             });
             actions << action;
         }
@@ -397,7 +496,22 @@ void PluginManager::addToolBarAction(QAction* action)
 
 QList<qint64> PluginManager::selectedBookIds() const
 {
-    return {};
+    QList<qint64> ids;
+    if (!m_mainWindow)
+        return ids;
+
+    const QList<QListView*> views = m_mainWindow->findChildren<QListView*>();
+    for (QListView* view : views) {
+        if (!view || !view->selectionModel())
+            continue;
+        const QModelIndexList selection = view->selectionModel()->selectedIndexes();
+        for (const QModelIndex& index : selection) {
+            const qint64 id = index.data(IdRole).toLongLong();
+            if (id > 0 && !ids.contains(id))
+                ids << id;
+        }
+    }
+    return ids;
 }
 
 void PluginManager::openBookById(qint64 /*id*/)

@@ -97,14 +97,14 @@ Eagle Library is built around these principles:
 - Status-bar task progress with popup notifications
 - Task Center for queued tasks and recent activity
 - Batch task runner for maintenance workflows
-- Detail dialogs with plugin actions
+- Detail dialogs with quick rating, favourite toggle, collection membership, and plugin actions
 - Multilingual UI with built-in language packs and external language-pack support
 
 ### Extensibility
 
 - Runtime plugin folder
 - Starter plugin manifests
-- Plugin actions in item details
+- Plugin actions in item details and item context menus
 - External translations folder for custom language packs
 - Hardened local hook execution inside the app hooks directory
 
@@ -380,6 +380,9 @@ cleanup, and real reading/lending tracking inside the local catalog.
 - Search tokens extended with `status:`, `kind:`, `progress:`, and `loan:`
 - New sort options for publisher and reading progress
 - Recovery monitor for stalled tasks and unclean previous sessions
+- OCR tool installer now detects missing `winget` and opens the trusted Tesseract download page instead of failing
+- Plugin actions now surface more clearly from plugin menus and book-level context actions
+- Book detail view now exposes favourite state, quick star rating, and collection membership in one place
 
 ### 1.0
 
