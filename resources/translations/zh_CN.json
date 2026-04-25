@@ -127,7 +127,24 @@
     "settings.layoutHint": "紧凑模式和自适应布局可帮助 Eagle 在较小屏幕上保持良好体验。",
     "settings.about.version": "版本 %1",
     "settings.about.copyright": "Copyright (C) 2026 Eagle Software. 保留所有权利。",
+    "settings.invalidLibraryName": "资料库名称不能为空。",
+    "settings.libraryExists": "同名资料库已存在。",
     "dialog.ok": "确定",
-    "dialog.cancel": "取消"
+    "dialog.cancel": "取消",
+    "dialog.close": "关闭",
+    "dialog.clear": "清除",
+    "dialog.save": "保存",
+    "action.manageCollections": "管理集合...",
+    "action.addSelectionToCollection": "将所选内容加入集合...",
+    "action.hideSelectionFromCollection": "从集合中隐藏所选内容...",
+    "action.clearAndRescan": "清空当前资料库并重新扫描...",
+    "action.libraryDashboard": "资料库仪表板...",
+    "action.readingDashboard": "阅读仪表板...",
+    "collection.manage": "管理集合",
+    "collection.new": "新建集合",
+    "collection.namePrompt": "集合名称：",
+    "collection.emptyName": "集合名称不能为空。",
+    "collection.addSelection": "加入所选内容",
+    "collection.removeSelection": "隐藏所选内容"
   }
 }

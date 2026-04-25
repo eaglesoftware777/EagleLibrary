@@ -355,6 +355,10 @@ void PluginManager::syncPluginMenu()
         infoAction->setEnabled(false);
 
         const QList<qint64> selectedIds = selectedBookIds();
+        if (selectedIds.isEmpty()) {
+            QAction* selectionHint = pluginSubMenu->addAction(QStringLiteral("Select a book in the library to enable book-specific actions."));
+            selectionHint->setEnabled(false);
+        }
         bool addedExecutableAction = false;
         for (const QJsonValue& value : lp.bookActions) {
             if (!value.isObject())
@@ -502,7 +506,7 @@ QList<qint64> PluginManager::selectedBookIds() const
 
     const QList<QListView*> views = m_mainWindow->findChildren<QListView*>();
     for (QListView* view : views) {
-        if (!view || !view->selectionModel())
+        if (!view || !view->selectionModel() || !view->isVisible())
             continue;
         const QModelIndexList selection = view->selectionModel()->selectedIndexes();
         for (const QModelIndex& index : selection) {
@@ -510,7 +514,14 @@ QList<qint64> PluginManager::selectedBookIds() const
             if (id > 0 && !ids.contains(id))
                 ids << id;
         }
+        if (!ids.isEmpty()) {
+            qInfo().noquote() << "[PluginSelection] view=" << view->objectName()
+                              << "selectedIds=" << ids.size();
+            break;
+        }
     }
+    if (ids.isEmpty())
+        qInfo().noquote() << "[PluginSelection] No visible selection found for plugin actions";
     return ids;
 }
 

@@ -383,6 +383,12 @@ cleanup, and real reading/lending tracking inside the local catalog.
 - OCR tool installer now detects missing `winget` and opens the trusted Tesseract download page instead of failing
 - Plugin actions now surface more clearly from plugin menus and book-level context actions
 - Book detail view now exposes favourite state, quick star rating, and collection membership in one place
+- Right-click on a book now forces the clicked row into selection first, which makes context actions and plugin actions reliable
+- New `Clear Current Library and Rescan` workflow removes indexed rows for the active library and starts a fresh scan without touching source files
+- The default library profile is now `Main`, and a default virtual collection `Catalogue` is created for first-use organization
+- Collections can now be managed from the context menu, the collection manager, and the book detail view, including hiding selected books from a collection
+- Added a Library Dashboard with compact statistics and progress-bar diagrams for format and category distribution
+- Common new menu and collection actions now have better built-in language-pack coverage in the major shipped translations
 
 ### 1.0
 

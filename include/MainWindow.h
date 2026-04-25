@@ -99,6 +99,7 @@ private slots:
     void removeSelectedBook();
     void cleanMissingFiles();
     void refreshLibrary();
+    void clearCurrentLibraryAndRescan();
     void exportLibrarySnapshot();
     void importLibrarySnapshot();
     void importPreviousDatabaseBackup();
@@ -126,6 +127,9 @@ private slots:
     void manageCollections();
     void createCollection();
     void openReadingDashboard();
+    void openLibraryDashboard();
+    void addSelectedBooksToCollection();
+    void removeSelectedBooksFromCollection();
     // Plugins
     void openPluginManager();
     void openTaskCenter();
@@ -312,6 +316,13 @@ private:
     void startSmartRename(const QVector<Book>& books, const QString& title, const QString& prompt);
     QVector<Book> chooseBooksScope(const QString& featureName);
     QVector<Book> currentLibraryBooks(SortField sort = SortField::Title, SortOrder order = SortOrder::Asc) const;
+    QVector<Book> selectedBooks() const;
+    QString promptForNonEmptyName(const QString& title,
+                                  const QString& label,
+                                  const QString& initialValue = QString(),
+                                  const QString& errorMessage = QString(),
+                                  const QSet<QString>& forbiddenNames = {}) const;
+    void ensureDefaultVirtualWorkspace();
     QString saveJsonArtifact(const QString& baseName, const QJsonObject& payload) const;
     void showReferenceLookup(const Book& book);
     void openBookFile(const QModelIndex& index);

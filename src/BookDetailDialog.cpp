@@ -5,6 +5,7 @@
 #include "BookDetailDialog.h"
 #include "AppConfig.h"
 #include "Database.h"
+#include "LanguageManager.h"
 #include "PluginManager.h"
 #include <QVBoxLayout>
 #include <QHBoxLayout>
@@ -33,6 +34,11 @@
 #include <cmath>
 
 namespace {
+QString trl(const QString& key, const QString& fallback)
+{
+    return LanguageManager::instance().text(key, fallback);
+}
+
 // Lightweight event filter that fires a QAction when the watched widget is clicked.
 class CardClickFilter : public QObject {
     QAction* m_action;
@@ -83,7 +89,7 @@ QString shellOpenErrorString(INT_PTR code)
 BookDetailDialog::BookDetailDialog(const Book& book, QWidget* parent)
     : QDialog(parent), m_book(book)
 {
-    setWindowTitle(QString("Book Details - %1").arg(book.displayTitle()));
+    setWindowTitle(QString("%1 - %2").arg(trl("bookDetail.title", "Book Details"), book.displayTitle()));
     setMinimumSize(700, 520);
     setModal(true);
     setupUi();
@@ -114,7 +120,7 @@ void BookDetailDialog::setupUi()
     leftLayout->addWidget(m_coverLabel);
 
     // File info
-    auto* fileInfoGroup = new QGroupBox("File Info");
+    auto* fileInfoGroup = new QGroupBox(trl("bookDetail.fileInfo", "File Info"));
     auto* fileInfoLayout = new QVBoxLayout(fileInfoGroup);
     auto addInfoRow = [&](const QString& label, const QString& value) {
         auto* lbl = new QLabel(QString("<b>%1</b><br><span>%2</span>")
@@ -122,20 +128,20 @@ void BookDetailDialog::setupUi()
         lbl->setWordWrap(true);
         fileInfoLayout->addWidget(lbl);
     };
-    addInfoRow("Format", m_book.format);
-    addInfoRow("Size",   QString("%1 KB").arg(m_book.fileSize / 1024));
+    addInfoRow(trl("bookDetail.format", "Format"), m_book.format);
+    addInfoRow(trl("bookDetail.size", "Size"),   QString("%1 KB").arg(m_book.fileSize / 1024));
     QFileInfo fi(m_book.filePath);
-    addInfoRow("Folder", fi.absolutePath());
-    addInfoRow("Added",  m_book.dateAdded.toString("dd MMM yyyy"));
+    addInfoRow(trl("bookDetail.folder", "Folder"), fi.absolutePath());
+    addInfoRow(trl("bookDetail.added", "Added"),  m_book.dateAdded.toString("dd MMM yyyy"));
     if (m_book.openCount > 0)
-        addInfoRow("Opened", QString("%1x").arg(m_book.openCount));
+        addInfoRow(trl("bookDetail.opened", "Opened"), QString("%1x").arg(m_book.openCount));
     if (!m_book.readingStatus.trimmed().isEmpty())
-        addInfoRow("Reading", m_book.readingStatus);
+        addInfoRow(trl("bookDetail.reading", "Reading"), m_book.readingStatus);
     if (!m_book.loanedTo.trimmed().isEmpty())
-        addInfoRow("Loaned To", m_book.loanedTo);
+        addInfoRow(trl("bookDetail.loanedTo", "Loaned To"), m_book.loanedTo);
     leftLayout->addWidget(fileInfoGroup);
 
-    auto* locationsGroup = new QGroupBox("File Locations");
+    auto* locationsGroup = new QGroupBox(trl("bookDetail.fileLocations", "File Locations"));
     auto* locationsLayout = new QVBoxLayout(locationsGroup);
     m_locationsList = new QListWidget(locationsGroup);
     m_locationsList->setSelectionMode(QAbstractItemView::SingleSelection);
@@ -148,7 +154,7 @@ void BookDetailDialog::setupUi()
     }
     locationsLayout->addWidget(m_locationsList);
 
-    auto* openLocationBtn = new QPushButton("Open Selected Location");
+    auto* openLocationBtn = new QPushButton(trl("bookDetail.openSelectedLocation", "Open Selected Location"));
     connect(openLocationBtn, &QPushButton::clicked, this, [this]() {
         if (!m_locationsList || !m_locationsList->currentItem())
             return;
@@ -158,7 +164,7 @@ void BookDetailDialog::setupUi()
     locationsLayout->addWidget(openLocationBtn);
     leftLayout->addWidget(locationsGroup);
 
-    m_openBtn = new QPushButton("Open Book");
+    m_openBtn = new QPushButton(trl("bookDetail.openBook", "Open Book"));
     m_openBtn->setObjectName("primaryBtn");
     connect(m_openBtn, &QPushButton::clicked, this, [this]() {
         const QString filePath = QFileInfo(m_book.filePath).absoluteFilePath();
@@ -184,7 +190,7 @@ void BookDetailDialog::setupUi()
             << "Error:" << probeError;
 
         if (!exists) {
-            QMessageBox::warning(this, "Open Book",
+            QMessageBox::warning(this, trl("bookDetail.openBook", "Open Book"),
                                  QString("File does not exist:\n%1").arg(QDir::toNativeSeparators(filePath)));
             return;
         }
@@ -214,21 +220,21 @@ void BookDetailDialog::setupUi()
 #else
             const QString details = QString("No application could open this file.");
 #endif
-            QMessageBox::warning(this, "Open Book",
+            QMessageBox::warning(this, trl("bookDetail.openBook", "Open Book"),
                                  QString("Cannot open file:\n%1\n\n%2")
                                      .arg(QDir::toNativeSeparators(filePath), details));
         }
     });
     leftLayout->addWidget(m_openBtn);
 
-    m_fetchBtn = new QPushButton("Fetch Metadata");
+    m_fetchBtn = new QPushButton(trl("bookDetail.fetchMetadata", "Fetch Metadata"));
     connect(m_fetchBtn, &QPushButton::clicked, this, [this]() {
         setResult(2);
         accept();
     });
     leftLayout->addWidget(m_fetchBtn);
 
-    m_googleBtn = new QPushButton("Search on Google");
+    m_googleBtn = new QPushButton(trl("bookDetail.searchGoogle", "Search on Google"));
     connect(m_googleBtn, &QPushButton::clicked, this, [this]() {
         const QString query = QString("%1 %2").arg(m_book.title, m_book.author).trimmed();
         const QUrl url = QUrl(QString("https://www.google.com/search?q=%1")
@@ -237,14 +243,14 @@ void BookDetailDialog::setupUi()
     });
     leftLayout->addWidget(m_googleBtn);
 
-    m_favouriteCheck = new QCheckBox("Favourite");
+    m_favouriteCheck = new QCheckBox(trl("bookDetail.favourite", "Favourite"));
     m_favouriteCheck->setChecked(m_book.isFavourite);
     leftLayout->addWidget(m_favouriteCheck);
 
     const QList<QAction*> pluginActions = PluginManager::instance().contextActionsForBook(m_book.id);
     if (!pluginActions.isEmpty()) {
         // Section header
-        auto* sectionHeader = new QLabel("PLUGIN ACTIONS");
+        auto* sectionHeader = new QLabel(trl("bookDetail.pluginActions", "PLUGIN ACTIONS"));
         sectionHeader->setStyleSheet(
             "font-size:9px;font-weight:800;letter-spacing:1.2px;"
             "color:#3a6080;padding:12px 0 5px 2px;background:transparent;");
@@ -319,7 +325,7 @@ void BookDetailDialog::setupUi()
     auto* ratingLayout = new QHBoxLayout(ratingPanel);
     ratingLayout->setContentsMargins(10, 10, 10, 10);
     ratingLayout->setSpacing(6);
-    auto* ratingLabel = new QLabel("Quick Rating:");
+    auto* ratingLabel = new QLabel(trl("bookDetail.quickRating", "Quick Rating:"));
     ratingLayout->addWidget(ratingLabel);
     for (int i = 1; i <= 5; ++i) {
         auto* button = new QToolButton(ratingPanel);
@@ -335,8 +341,8 @@ void BookDetailDialog::setupUi()
         ratingLayout->addWidget(button);
     }
     auto* clearRatingBtn = new QToolButton(ratingPanel);
-    clearRatingBtn->setText("Clear");
-    clearRatingBtn->setToolTip("Clear the personal rating");
+    clearRatingBtn->setText(trl("dialog.clear", "Clear"));
+    clearRatingBtn->setToolTip(trl("bookDetail.clearRating", "Clear the personal rating"));
     connect(clearRatingBtn, &QToolButton::clicked, this, [this]() {
         if (m_ratingSpin)
             m_ratingSpin->setValue(0);
@@ -369,31 +375,31 @@ void BookDetailDialog::setupUi()
         updateRatingButtons(value);
     });
     m_tagsEdit      = new QLineEdit(m_book.tags.join(", "));
-    m_tagsEdit->setPlaceholderText("Comma-separated tags: Physics, Math, Reading...");
+    m_tagsEdit->setPlaceholderText(trl("bookDetail.tagsPlaceholder", "Comma-separated tags: Physics, Math, Reading..."));
 
     m_seriesEdit        = new QLineEdit(m_book.series);
-    m_seriesEdit->setPlaceholderText("e.g. \"The Lord of the Rings\"");
+    m_seriesEdit->setPlaceholderText(trl("bookDetail.seriesPlaceholder", "e.g. \"The Lord of the Rings\""));
     m_seriesIndexSpin   = new QSpinBox;
     m_seriesIndexSpin->setRange(0, 9999);
     m_seriesIndexSpin->setValue(m_book.seriesIndex);
     m_seriesIndexSpin->setSpecialValueText("—");
     m_editionEdit       = new QLineEdit(m_book.edition);
-    m_editionEdit->setPlaceholderText("e.g. \"3rd Edition\"");
+    m_editionEdit->setPlaceholderText(trl("bookDetail.editionPlaceholder", "e.g. \"3rd Edition\""));
 
-    metaForm->addRow("Title:",        m_titleEdit);
-    metaForm->addRow("Author:",       m_authorEdit);
-    metaForm->addRow("Publisher:",    m_publisherEdit);
-    metaForm->addRow("ISBN:",         m_isbnEdit);
-    metaForm->addRow("Language:",     m_langEdit);
-    metaForm->addRow("Year:",         m_yearSpin);
-    metaForm->addRow("Pages:",        m_pagesSpin);
-    metaForm->addRow("Rating (0–5):", m_ratingSpin);
-    metaForm->addRow("Tags:",         m_tagsEdit);
-    metaForm->addRow("Series:",       m_seriesEdit);
-    metaForm->addRow("Volume #:",     m_seriesIndexSpin);
-    metaForm->addRow("Edition:",      m_editionEdit);
+    metaForm->addRow(trl("bookDetail.titleLabel", "Title:"),        m_titleEdit);
+    metaForm->addRow(trl("bookDetail.authorLabel", "Author:"),       m_authorEdit);
+    metaForm->addRow(trl("bookDetail.publisherLabel", "Publisher:"),    m_publisherEdit);
+    metaForm->addRow(trl("bookDetail.isbnLabel", "ISBN:"),         m_isbnEdit);
+    metaForm->addRow(trl("bookDetail.languageLabel", "Language:"),     m_langEdit);
+    metaForm->addRow(trl("bookDetail.yearLabel", "Year:"),         m_yearSpin);
+    metaForm->addRow(trl("bookDetail.pagesLabel", "Pages:"),        m_pagesSpin);
+    metaForm->addRow(trl("bookDetail.ratingLabel", "Rating (0-5):"), m_ratingSpin);
+    metaForm->addRow(trl("bookDetail.tagsLabel", "Tags:"),         m_tagsEdit);
+    metaForm->addRow(trl("bookDetail.seriesLabel", "Series:"),       m_seriesEdit);
+    metaForm->addRow(trl("bookDetail.volumeLabel", "Volume #:"),     m_seriesIndexSpin);
+    metaForm->addRow(trl("bookDetail.editionLabel", "Edition:"),      m_editionEdit);
     metaLayout->addLayout(metaForm);
-    tabs->addTab(metaWidget, "Metadata");
+    tabs->addTab(metaWidget, trl("bookDetail.tabMetadata", "Metadata"));
 
     // Tab 2: Reading
     auto* readingWidget = new QWidget;
@@ -402,9 +408,12 @@ void BookDetailDialog::setupUi()
     readingForm->setSpacing(10);
 
     m_readingStatusCombo = new QComboBox(readingWidget);
-    m_readingStatusCombo->addItems({"", "Want to Read", "Reading", "Read"});
+    m_readingStatusCombo->addItem(QString(), QString());
+    m_readingStatusCombo->addItem(trl("reading.want", "Want to Read"), QStringLiteral("Want to Read"));
+    m_readingStatusCombo->addItem(trl("reading.current", "Reading"), QStringLiteral("Reading"));
+    m_readingStatusCombo->addItem(trl("reading.done", "Read"), QStringLiteral("Read"));
     {
-        const int idx = m_readingStatusCombo->findText(m_book.readingStatus);
+        const int idx = m_readingStatusCombo->findData(m_book.readingStatus);
         m_readingStatusCombo->setCurrentIndex(idx >= 0 ? idx : 0);
     }
     m_progressSpin = new QSpinBox(readingWidget);
@@ -429,42 +438,42 @@ void BookDetailDialog::setupUi()
     m_readingMinutesSpin->setSuffix(" min");
     m_readingMinutesSpin->setValue(m_book.readingMinutes);
     m_loanedToEdit = new QLineEdit(m_book.loanedTo, readingWidget);
-    m_loanedToEdit->setPlaceholderText("Borrower name or device");
+    m_loanedToEdit->setPlaceholderText(trl("bookDetail.loanedPlaceholder", "Borrower name or device"));
     m_loanDueDateEdit = new QDateEdit(readingWidget);
     m_loanDueDateEdit->setCalendarPopup(true);
     m_loanDueDateEdit->setSpecialValueText("Not set");
     m_loanDueDateEdit->setMinimumDate(QDate(1900, 1, 1));
     m_loanDueDateEdit->setDate(m_book.loanDueDate.isValid() ? m_book.loanDueDate.date() : m_loanDueDateEdit->minimumDate());
 
-    readingForm->addRow("Status:", m_readingStatusCombo);
-    readingForm->addRow("Progress:", m_progressSpin);
-    readingForm->addRow("Current Page:", m_currentPageSpin);
-    readingForm->addRow("Started:", m_dateStartedEdit);
-    readingForm->addRow("Finished:", m_dateFinishedEdit);
-    readingForm->addRow("Reading Time:", m_readingMinutesSpin);
-    readingForm->addRow("Loaned To:", m_loanedToEdit);
-    readingForm->addRow("Loan Due:", m_loanDueDateEdit);
-    tabs->addTab(readingWidget, "Reading");
+    readingForm->addRow(trl("bookDetail.statusLabel", "Status:"), m_readingStatusCombo);
+    readingForm->addRow(trl("bookDetail.progressLabel", "Progress:"), m_progressSpin);
+    readingForm->addRow(trl("bookDetail.currentPageLabel", "Current Page:"), m_currentPageSpin);
+    readingForm->addRow(trl("bookDetail.startedLabel", "Started:"), m_dateStartedEdit);
+    readingForm->addRow(trl("bookDetail.finishedLabel", "Finished:"), m_dateFinishedEdit);
+    readingForm->addRow(trl("bookDetail.readingTimeLabel", "Reading Time:"), m_readingMinutesSpin);
+    readingForm->addRow(trl("bookDetail.loanedTo", "Loaned To"), m_loanedToEdit);
+    readingForm->addRow(trl("bookDetail.loanDueLabel", "Loan Due:"), m_loanDueDateEdit);
+    tabs->addTab(readingWidget, trl("bookDetail.tabReading", "Reading"));
 
     // Tab 3: Description
     auto* descWidget = new QWidget;
     auto* descLayout = new QVBoxLayout(descWidget);
     m_descEdit = new QTextEdit(m_book.description);
-    m_descEdit->setPlaceholderText("Description / Synopsis...");
+    m_descEdit->setPlaceholderText(trl("bookDetail.descriptionPlaceholder", "Description / Synopsis..."));
     descLayout->addWidget(m_descEdit);
-    tabs->addTab(descWidget, "Description");
+    tabs->addTab(descWidget, trl("bookDetail.tabDescription", "Description"));
 
     // Tab 4: Notes
     auto* notesWidget = new QWidget;
     auto* notesLayout = new QVBoxLayout(notesWidget);
     m_notesEdit = new QTextEdit(m_book.notes);
-    m_notesEdit->setPlaceholderText("Personal notes...");
+    m_notesEdit->setPlaceholderText(trl("bookDetail.notesPlaceholder", "Personal notes..."));
     notesLayout->addWidget(m_notesEdit);
-    tabs->addTab(notesWidget, "Notes");
+    tabs->addTab(notesWidget, trl("bookDetail.tabNotes", "Notes"));
 
     auto* collectionsWidget = new QWidget;
     auto* collectionsLayout = new QVBoxLayout(collectionsWidget);
-    auto* collectionsHint = new QLabel("Use virtual collections to organize a book across multiple shelves and catalogues.");
+    auto* collectionsHint = new QLabel(trl("bookDetail.collectionsHint", "Use virtual collections to organize a book across multiple shelves and catalogues."));
     collectionsHint->setWordWrap(true);
     collectionsLayout->addWidget(collectionsHint);
     m_collectionList = new QListWidget(collectionsWidget);
@@ -483,14 +492,14 @@ void BookDetailDialog::setupUi()
             item->setForeground(QBrush(QColor(collection.color)));
     }
     collectionsLayout->addWidget(m_collectionList);
-    tabs->addTab(collectionsWidget, "Collections");
+    tabs->addTab(collectionsWidget, trl("bookDetail.tabCollections", "Collections"));
 
     mainLayout->addWidget(tabs, 1);
 
     // ── Buttons ───────────────────────────────────────────────
     outerLayout->addLayout(mainLayout);
     auto* btnBox = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel);
-    btnBox->button(QDialogButtonBox::Ok)->setText("Save");
+    btnBox->button(QDialogButtonBox::Ok)->setText(trl("dialog.save", "Save"));
     connect(btnBox, &QDialogButtonBox::accepted, this, &QDialog::accept);
     connect(btnBox, &QDialogButtonBox::rejected, this, &QDialog::reject);
     outerLayout->addWidget(btnBox);
@@ -536,7 +545,7 @@ Book BookDetailDialog::editedBook() const
     b.series      = m_seriesEdit->text().trimmed();
     b.seriesIndex = m_seriesIndexSpin->value();
     b.edition     = m_editionEdit->text().trimmed();
-    b.readingStatus = m_readingStatusCombo ? m_readingStatusCombo->currentText().trimmed() : QString();
+    b.readingStatus = m_readingStatusCombo ? m_readingStatusCombo->currentData().toString().trimmed() : QString();
     b.progressPercent = m_progressSpin ? m_progressSpin->value() : 0;
     b.currentPage = m_currentPageSpin ? m_currentPageSpin->value() : 0;
     b.dateStarted = (m_dateStartedEdit && m_dateStartedEdit->date() != m_dateStartedEdit->minimumDate())

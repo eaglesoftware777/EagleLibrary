@@ -139,6 +139,12 @@
     "menu.plugins": "الإضافات",
     "toolbar.commands": "الأوامر",
     "toolbar.allFormats": "كل الصيغ",
+    "action.manageCollections": "إدارة المجموعات...",
+    "action.addSelectionToCollection": "إضافة التحديد إلى مجموعة...",
+    "action.hideSelectionFromCollection": "إخفاء التحديد من مجموعة...",
+    "action.clearAndRescan": "مسح المكتبة الحالية وإعادة الفحص...",
+    "action.libraryDashboard": "لوحة معلومات المكتبة...",
+    "action.readingDashboard": "لوحة القراءة...",
     "sort.title": "العنوان",
     "sort.author": "المؤلف",
     "sort.year": "السنة",
@@ -152,6 +158,12 @@
     "theme.mac": "نمط macOS",
     "task.extractIsbns": "استخراج ISBN",
     "task.scanningBooks": "فحص %1/%2 كتاب",
-    "task.starting": "بدء..."
+    "task.starting": "بدء...",
+    "collection.manage": "إدارة المجموعات",
+    "collection.new": "مجموعة جديدة",
+    "collection.namePrompt": "اسم المجموعة:",
+    "collection.emptyName": "لا يمكن أن يكون اسم المجموعة فارغاً.",
+    "collection.addSelection": "إضافة التحديد",
+    "collection.removeSelection": "إخفاء التحديد"
   }
 }

@@ -122,6 +122,16 @@ QString trl(const QString& key, const QString& fallback)
     return LanguageManager::instance().text(key, fallback);
 }
 
+QString defaultLibraryName()
+{
+    return QStringLiteral("Main");
+}
+
+QString defaultCollectionName()
+{
+    return QStringLiteral("Catalogue");
+}
+
 QString shelfLabel(const QString& id)
 {
     if (id == QStringLiteral("all")) return trl("shelf.allItems", "All Items");
@@ -404,7 +414,8 @@ QJsonObject loadLibraryProfiles(const QSettings& settings)
     const QStringList legacyFolders = settings.value("library/folders").toStringList();
     for (const QString& folder : legacyFolders)
         folders.append(folder);
-    fallback.insert(settings.value("library/currentName", "Main Library").toString(), folders);
+    const QString currentName = settings.value("library/currentName", defaultLibraryName()).toString().trimmed();
+    fallback.insert(currentName.isEmpty() ? defaultLibraryName() : currentName, folders);
     return fallback;
 }
 
@@ -1539,6 +1550,7 @@ MainWindow::MainWindow(QWidget* parent)
     setupCommandPalette();
     applyStyles();
     loadSettings();
+    ensureDefaultVirtualWorkspace();
     setupRecoveryMonitor();
 
     // Apply saved theme
@@ -1710,6 +1722,12 @@ void MainWindow::setupMenuBar()
     connect(refreshAct2, &QAction::triggered, this, &MainWindow::refreshLibrary);
     // (scan already has F5, so we just connect refresh without shortcut duplicate)
     refreshAct2->setShortcut(QKeySequence());
+    libMenu->addAction(refreshAct2);
+
+    QAction* clearRescanAct = new QAction(trl("action.clearAndRescan", "Clear Current Library and Rescan..."), this);
+    clearRescanAct->setStatusTip(trl("action.clearAndRescanTip", "Remove indexed records for the active library, then scan its watched folders again."));
+    connect(clearRescanAct, &QAction::triggered, this, &MainWindow::clearCurrentLibraryAndRescan);
+    libMenu->addAction(clearRescanAct);
 
     libMenu->addSeparator();
 
@@ -1854,6 +1872,21 @@ void MainWindow::setupMenuBar()
     collectionsAct->setStatusTip("Create and manage virtual book collections");
     connect(collectionsAct, &QAction::triggered, this, &MainWindow::manageCollections);
     libMenu->addAction(collectionsAct);
+
+    QAction* addSelectionCollectionAct = new QAction(trl("action.addSelectionToCollection", "Add Selection to Collection..."), this);
+    addSelectionCollectionAct->setStatusTip(trl("action.addSelectionToCollectionTip", "Assign the selected books to a virtual collection."));
+    connect(addSelectionCollectionAct, &QAction::triggered, this, &MainWindow::addSelectedBooksToCollection);
+    libMenu->addAction(addSelectionCollectionAct);
+
+    QAction* hideSelectionCollectionAct = new QAction(trl("action.hideSelectionFromCollection", "Hide Selection from Collection..."), this);
+    hideSelectionCollectionAct->setStatusTip(trl("action.hideSelectionFromCollectionTip", "Remove the selected books from one virtual collection without deleting files."));
+    connect(hideSelectionCollectionAct, &QAction::triggered, this, &MainWindow::removeSelectedBooksFromCollection);
+    libMenu->addAction(hideSelectionCollectionAct);
+
+    QAction* libraryDashboardAct = new QAction(trl("action.libraryDashboard", "Library Dashboard..."), this);
+    libraryDashboardAct->setStatusTip(trl("action.libraryDashboardTip", "Review collection-wide statistics, formats, and reading health."));
+    connect(libraryDashboardAct, &QAction::triggered, this, &MainWindow::openLibraryDashboard);
+    libMenu->addAction(libraryDashboardAct);
 
     QAction* readingDashboardAct = new QAction(trl("action.readingDashboard", "Reading Dashboard..."), this);
     readingDashboardAct->setStatusTip("Review reading progress, finished items, and loaned books");
@@ -2589,29 +2622,35 @@ void MainWindow::setupViews()
             if (!view)
                 return;
             QModelIndex idx = view->indexAt(pos);
+            if (idx.isValid() && view->selectionModel() && !view->selectionModel()->isSelected(idx)) {
+                view->selectionModel()->clearSelection();
+                view->selectionModel()->select(idx, QItemSelectionModel::Select | QItemSelectionModel::Rows);
+                view->setCurrentIndex(idx);
+                qInfo().noquote() << "[ContextMenu] Forced selection to clicked row in" << view->objectName();
+            }
             qInfo().noquote() << "[ContextMenu] view=" << view->objectName()
                               << "pos=" << pos
                               << "validIndex=" << idx.isValid();
             QMenu menu;
             menu.setStyleSheet(styleSheet());
             if (idx.isValid()) {
-                QAction* openAct = menu.addAction("Open");
+                QAction* openAct = menu.addAction(trl("context.open", "Open"));
                 connect(openAct, &QAction::triggered, this, [this, idx]() {
                     qInfo().noquote() << "[ContextMenu] Open triggered";
                     openBookFile(idx);
                 });
-                QAction* editAct = menu.addAction("Properties...");
+                QAction* editAct = menu.addAction(trl("context.properties", "Properties..."));
                 connect(editAct, &QAction::triggered, this, [this, idx]() {
                     qInfo().noquote() << "[ContextMenu] Properties triggered";
                     openBookDetail(idx);
                 });
                 menu.addSeparator();
-                QAction* renameSelectedAct = menu.addAction("Smart Rename Selected");
+                QAction* renameSelectedAct = menu.addAction(trl("context.smartRenameSelected", "Smart Rename Selected"));
                 connect(renameSelectedAct, &QAction::triggered, this, [this]() {
                     qInfo().noquote() << "[ContextMenu] Smart Rename Selected triggered";
                     queueOrRunMenuTask("Smart Rename Selected", [this]() { onSmartRenameSelected(); });
                 });
-                QAction* fetchAct = menu.addAction("Fetch Metadata");
+                QAction* fetchAct = menu.addAction(trl("context.fetchMetadata", "Fetch Metadata"));
                 connect(fetchAct, &QAction::triggered, this, [this, idx]() {
                     qInfo().noquote() << "[ContextMenu] Fetch Metadata triggered";
                     QModelIndex src = m_filterModel->mapToSource(idx);
@@ -2620,7 +2659,7 @@ void MainWindow::setupViews()
                     const Book& b = m_model->bookAt(src.row());
                     queueOrRunMenuTask("Fetch Metadata", [this, b]() { scheduleMetadataFetch(b); });
                 });
-                QAction* refsAct = menu.addAction("Related References...");
+                QAction* refsAct = menu.addAction(trl("context.relatedReferences", "Related References..."));
                 connect(refsAct, &QAction::triggered, this, [this, idx]() {
                     qInfo().noquote() << "[ContextMenu] Related References triggered";
                     const QModelIndex src = m_filterModel->mapToSource(idx);
@@ -2629,11 +2668,83 @@ void MainWindow::setupViews()
                 });
                 const QModelIndex src = m_filterModel->mapToSource(idx);
                 if (src.isValid()) {
-                    const Book& b = m_model->bookAt(src.row());
+                    Book b = m_model->bookAt(src.row());
+                    QAction* favAct = menu.addAction(b.isFavourite
+                        ? trl("context.removeFavourite", "Remove from Favourites")
+                        : trl("context.addFavourite", "Add to Favourites"));
+                    connect(favAct, &QAction::triggered, this, [this, b]() mutable {
+                        Book updated = b;
+                        updated.isFavourite = !updated.isFavourite;
+                        Database::instance().setFavourite(updated.id, updated.isFavourite);
+                        m_model->updateBook(updated);
+                        qInfo().noquote() << "[ContextMenu] Favourite toggled bookId=" << updated.id << "value=" << updated.isFavourite;
+                        if (m_statusLabel)
+                            m_statusLabel->setText(updated.isFavourite
+                                ? trl("status.addedToFavourites", "Added to favourites.")
+                                : trl("status.removedFromFavourites", "Removed from favourites."));
+                    });
+
+                    const QVector<Collection> collections = Database::instance().allCollections();
+                    if (!collections.isEmpty()) {
+                        QMenu* collectionsMenu = menu.addMenu(trl("context.collections", "Collections"));
+                        collectionsMenu->setToolTipsVisible(true);
+                        const QList<int> assignedIds = Database::instance().collectionsForBook(b.id);
+                        QSet<int> assigned;
+                        for (int collectionId : assignedIds)
+                            assigned.insert(collectionId);
+                        for (const Collection& collection : collections) {
+                            QAction* collectionAct = collectionsMenu->addAction(collection.name);
+                            collectionAct->setCheckable(true);
+                            collectionAct->setChecked(assigned.contains(collection.id));
+                            collectionAct->setToolTip(trl("context.collectionToggleTip", "Add or remove the selected book from this virtual collection."));
+                            connect(collectionAct, &QAction::triggered, this, [this, b, collection](bool checked) {
+                                const bool ok = checked
+                                    ? Database::instance().addBookToCollection(b.id, collection.id)
+                                    : Database::instance().removeBookFromCollection(b.id, collection.id);
+                                qInfo().noquote() << "[Collections] Toggle bookId=" << b.id
+                                                  << "collection=" << collection.name
+                                                  << "checked=" << checked
+                                                  << "ok=" << ok;
+                                refreshCategoryOptions();
+                                if (m_statusLabel) {
+                                    m_statusLabel->setText(checked
+                                        ? trl("status.addedToCollection", "Added to collection: %1").arg(collection.name)
+                                        : trl("status.removedFromCollection", "Removed from collection: %1").arg(collection.name));
+                                }
+                            });
+                        }
+                        collectionsMenu->addSeparator();
+                        QAction* newCollectionAct = collectionsMenu->addAction(trl("context.newCollection", "New Collection..."));
+                        connect(newCollectionAct, &QAction::triggered, this, [this, b]() {
+                            const QString name = promptForNonEmptyName(
+                                trl("collection.new", "New Collection"),
+                                trl("collection.namePrompt", "Collection name:"),
+                                QString(),
+                                trl("collection.emptyName", "Collection names cannot be empty."));
+                            if (name.isEmpty())
+                                return;
+                            int collectionId = Database::instance().createCollection(name.trimmed());
+                            if (collectionId <= 0) {
+                                const QVector<Collection> collections = Database::instance().allCollections();
+                                for (const Collection& collection : collections) {
+                                    if (collection.name.compare(name, Qt::CaseInsensitive) == 0) {
+                                        collectionId = collection.id;
+                                        break;
+                                    }
+                                }
+                            }
+                            if (collectionId > 0) {
+                                Database::instance().addBookToCollection(b.id, collectionId);
+                                refreshCategoryOptions();
+                                qInfo().noquote() << "[Collections] Created/assigned collection=" << name << "bookId=" << b.id;
+                            }
+                        });
+                    }
+
                     const QList<QAction*> pluginActions = PluginManager::instance().contextActionsForBook(b.id);
                     if (!pluginActions.isEmpty()) {
                         menu.addSeparator();
-                        QMenu* pluginSubMenu = menu.addMenu("Plugin Actions");
+                        QMenu* pluginSubMenu = menu.addMenu(trl("context.pluginActions", "Plugin Actions"));
                         pluginSubMenu->setToolTipsVisible(true);
                         for (QAction* pluginAction : pluginActions)
                             pluginSubMenu->addAction(pluginAction);
@@ -2642,7 +2753,7 @@ void MainWindow::setupViews()
                     }
                 }
                 menu.addSeparator();
-                QAction* removeAct = menu.addAction("Remove from Library");
+                QAction* removeAct = menu.addAction(trl("context.removeFromLibrary", "Remove from Library"));
                 connect(removeAct, &QAction::triggered, this, [this]() {
                     qInfo().noquote() << "[ContextMenu] Remove from Library triggered";
                     removeSelectedBook();
@@ -3316,6 +3427,27 @@ void MainWindow::openBookDetail(const QModelIndex& index)
         Book edited = dlg.editedBook();
         m_model->updateBook(edited);
         Database::instance().updateBook(edited);
+        const QList<int> existingCollectionIds = Database::instance().collectionsForBook(edited.id);
+        QSet<int> existingCollections;
+        for (int collectionId : existingCollectionIds)
+            existingCollections.insert(collectionId);
+        const QList<int> selectedCollectionIds = dlg.selectedCollectionIds();
+        QSet<int> selectedCollections;
+        for (int collectionId : selectedCollectionIds)
+            selectedCollections.insert(collectionId);
+        for (int collectionId : existingCollections) {
+            if (!selectedCollections.contains(collectionId))
+                Database::instance().removeBookFromCollection(edited.id, collectionId);
+        }
+        for (int collectionId : selectedCollections) {
+            if (!existingCollections.contains(collectionId))
+                Database::instance().addBookToCollection(edited.id, collectionId);
+        }
+        qInfo().noquote() << "[BookDetail] Saved bookId=" << edited.id
+                          << "favourite=" << edited.isFavourite
+                          << "rating=" << edited.rating
+                          << "collections=" << selectedCollections.values().size();
+        refreshCategoryOptions();
         PluginManager::instance().notifyBookUpdated(edited.id);
     } else if (result == 2) {
         scheduleMetadataFetch(b);
@@ -3548,7 +3680,7 @@ void MainWindow::startSmartRename(const QVector<Book>& books, const QString& tit
 
 QVector<Book> MainWindow::chooseBooksScope(const QString& featureName)
 {
-    const QVector<Book> selected = selectedBooks(m_model, m_filterModel, currentView());
+    const QVector<Book> selected = ::selectedBooks(m_model, m_filterModel, currentView());
     if (selected.isEmpty())
         return currentLibraryBooks();
 
@@ -3568,6 +3700,75 @@ QVector<Book> MainWindow::chooseBooksScope(const QString& featureName)
     if (box.clickedButton() == allBtn)
         return currentLibraryBooks();
     return {};
+}
+
+QVector<Book> MainWindow::selectedBooks() const
+{
+    return ::selectedBooks(m_model, m_filterModel, currentView());
+}
+
+QString MainWindow::promptForNonEmptyName(const QString& title,
+                                          const QString& label,
+                                          const QString& initialValue,
+                                          const QString& errorMessage,
+                                          const QSet<QString>& forbiddenNames) const
+{
+    bool ok = false;
+    const QString entered = QInputDialog::getText(const_cast<MainWindow*>(this),
+                                                  title,
+                                                  label,
+                                                  QLineEdit::Normal,
+                                                  initialValue,
+                                                  &ok);
+    if (!ok)
+        return {};
+
+    const QString trimmed = entered.trimmed();
+    if (trimmed.isEmpty()) {
+        QMessageBox::warning(const_cast<MainWindow*>(this),
+                             title,
+                             errorMessage.isEmpty()
+                                 ? trl("dialog.emptyName", "The name cannot be empty.")
+                                 : errorMessage);
+        return {};
+    }
+    for (const QString& forbidden : forbiddenNames) {
+        if (trimmed.compare(forbidden, Qt::CaseInsensitive) == 0) {
+            QMessageBox::warning(const_cast<MainWindow*>(this),
+                                 title,
+                                 trl("dialog.nameExists", "This name already exists."));
+            return {};
+        }
+    }
+    return trimmed;
+}
+
+void MainWindow::ensureDefaultVirtualWorkspace()
+{
+    if (m_libraryProfiles.contains(QStringLiteral("Main Library")) && !m_libraryProfiles.contains(defaultLibraryName())) {
+        m_libraryProfiles.insert(defaultLibraryName(), m_libraryProfiles.take(QStringLiteral("Main Library")));
+        if (m_currentLibraryName == QStringLiteral("Main Library"))
+            m_currentLibraryName = defaultLibraryName();
+        qInfo().noquote() << "[Libraries] Migrated default library name to" << defaultLibraryName();
+    }
+    if (m_currentLibraryName.trimmed().isEmpty())
+        m_currentLibraryName = defaultLibraryName();
+
+    if (!m_libraryProfiles.contains(m_currentLibraryName))
+        m_libraryProfiles.insert(m_currentLibraryName, QJsonArray{});
+
+    const QVector<Collection> collections = Database::instance().allCollections();
+    bool hasDefaultCatalogue = false;
+    for (const Collection& collection : collections) {
+        if (collection.name.compare(defaultCollectionName(), Qt::CaseInsensitive) == 0) {
+            hasDefaultCatalogue = true;
+            break;
+        }
+    }
+    if (!hasDefaultCatalogue) {
+        Database::instance().createCollection(defaultCollectionName(), QStringLiteral("#4f9cf9"));
+        qInfo().noquote() << "[Collections] Created default collection" << defaultCollectionName();
+    }
 }
 
 QString MainWindow::saveJsonArtifact(const QString& baseName, const QJsonObject& payload) const
@@ -3720,7 +3921,7 @@ void MainWindow::openMetadataManager()
 
     QVector<Book> books;
     if (selectedRadio->isChecked())
-        books = selectedBooks(m_model, m_filterModel, currentView());
+        books = ::selectedBooks(m_model, m_filterModel, currentView());
     else
         books = currentLibraryBooks();
     if (books.isEmpty()) {
@@ -4981,7 +5182,7 @@ void MainWindow::loadSettings()
     m_currentLibraryName = s.value("library/currentName").toString().trimmed();
     if (m_currentLibraryName.isEmpty() || !m_libraryProfiles.contains(m_currentLibraryName)) {
         const QStringList keys = m_libraryProfiles.keys();
-        m_currentLibraryName = keys.isEmpty() ? QStringLiteral("Main Library") : keys.first();
+        m_currentLibraryName = keys.isEmpty() ? defaultLibraryName() : keys.first();
     }
     m_watchFolders = foldersForLibrary(m_libraryProfiles, m_currentLibraryName);
     m_showSidebarPreference = s.value("view/showSidebar", true).toBool();
@@ -5195,9 +5396,9 @@ void MainWindow::updateWorkspaceHeader()
 
     m_workspaceTitleLabel->setText(selected > 0
         ? trl("workspace.itemsSelected", "%1 items selected").arg(selected)
-        : trl("workspace.libraryTitle", "%1 Library").arg(m_currentLibraryName.isEmpty() ? QStringLiteral("Main") : m_currentLibraryName));
+        : trl("workspace.libraryTitle", "%1").arg(m_currentLibraryName.isEmpty() ? defaultLibraryName() : m_currentLibraryName));
     m_workspaceMetaLabel->setText(
-        trl("workspace.meta", "Showing %1 of %2 items across %3 watched folders in the %4 library.")
+        trl("workspace.meta", "Showing %1 of %2 items across %3 watched folders in %4.")
             .arg(shown)
             .arg(total)
             .arg(m_watchFolders.size())
@@ -5899,7 +6100,11 @@ void MainWindow::setupCommandPalette()
         { "quality",      "Quality Check",             "Scan for encoding and meta issues",  "",         "Library",  [this]{ queueOrRunMenuTask("Quality Check", [this]{ runQualityCheck(); }); } },
         { "smart_cat",    "Smart Categorize",          "Auto-classify books, papers, manuals, and slides",   "",         "Library",  [this]{ queueOrRunMenuTask("Smart Categorize", [this]{ smartCategorizeLibrary(); }); } },
         { "smart_rename", "Smart Rename All",          "Auto-rename from filename patterns", "Ctrl+R",   "Library",  [this]{ queueOrRunMenuTask("Smart Rename All", [this]{ onSmartRenameAll(); }); } },
+        { "clear_rescan", "Clear Library and Rescan",  "Remove rows for the current library and rescan watched folders", "", "Library", [this]{ clearCurrentLibraryAndRescan(); } },
         { "collections",  "Manage Collections",        "Create virtual book collections",    "",         "Library",  [this]{ manageCollections(); } },
+        { "collection_add", "Add Selection to Collection", "Assign selected books to a virtual collection", "", "Library", [this]{ addSelectedBooksToCollection(); } },
+        { "collection_hide", "Hide Selection from Collection", "Remove selected books from one virtual collection", "", "Library", [this]{ removeSelectedBooksFromCollection(); } },
+        { "library_dashboard", "Library Dashboard",    "Review collection statistics and diagrams", "",      "Library",  [this]{ openLibraryDashboard(); } },
         { "reading_dashboard", "Reading Dashboard",    "View reading progress and loaned books", "",      "Library",  [this]{ openReadingDashboard(); } },
         { "google",       "Search on Google",          "Search selected book on Google",     "Ctrl+Shift+G", "Research", [this]{ searchSelectedOnGoogle(); } },
         { "adv_search",   "Advanced Search",           "Multi-field search dialog",          "Ctrl+Shift+F", "Search", [this]{ openAdvancedSearch(); } },
@@ -6030,19 +6235,28 @@ void MainWindow::lookupSelectedOnGoodreads()
 void MainWindow::manageCollections()
 {
     QDialog dlg(this);
-    dlg.setWindowTitle("Manage Collections");
-    dlg.setMinimumWidth(480);
-    dlg.setMinimumHeight(360);
+    dlg.setWindowTitle(trl("collection.manage", "Manage Collections"));
+    dlg.setMinimumWidth(720);
+    dlg.setMinimumHeight(430);
+    dlg.setStyleSheet(styleSheet());
 
     auto* layout = new QVBoxLayout(&dlg);
 
-    auto* header = new QLabel("Virtual Collections let you group books across any folders or formats.");
+    const QVector<Book> selection = selectedBooks();
+    auto* header = new QLabel(trl("collection.manageIntro",
+                                  "Virtual collections let you group books across any folders or formats. They behave like virtual shelves and catalogues without moving files."));
     header->setWordWrap(true);
     layout->addWidget(header);
 
+    auto* selectionLabel = new QLabel(selection.isEmpty()
+        ? trl("collection.noSelection", "No books selected. Select one or more books in the library view to assign them here.")
+        : trl("collection.selectionSummary", "%1 selected books can be assigned or removed here.").arg(selection.size()));
+    selectionLabel->setWordWrap(true);
+    layout->addWidget(selectionLabel);
+
     auto* table = new QTableWidget(&dlg);
     table->setColumnCount(3);
-    table->setHorizontalHeaderLabels({"Name", "Color", "Books"});
+    table->setHorizontalHeaderLabels({trl("collection.name", "Name"), trl("collection.color", "Color"), trl("collection.books", "Books")});
     table->horizontalHeader()->setStretchLastSection(false);
     table->horizontalHeader()->setSectionResizeMode(0, QHeaderView::Stretch);
     table->setSelectionBehavior(QAbstractItemView::SelectRows);
@@ -6065,24 +6279,77 @@ void MainWindow::manageCollections()
     loadCollections();
 
     auto* btnBar = new QHBoxLayout;
-    auto* addBtn = new QPushButton("+ New Collection");
-    auto* deleteBtn = new QPushButton("Delete Selected");
-    auto* closeBtn = new QPushButton("Close");
+    auto* addBtn = new QPushButton(trl("collection.newButton", "+ New Collection"));
+    auto* addSelectedBtn = new QPushButton(trl("collection.addSelection", "Add Selection"));
+    auto* removeSelectedBtn = new QPushButton(trl("collection.removeSelection", "Hide Selection"));
+    auto* deleteBtn = new QPushButton(trl("collection.deleteSelected", "Delete Selected"));
+    auto* closeBtn = new QPushButton(trl("dialog.close", "Close"));
     closeBtn->setProperty("primary", true);
     btnBar->addWidget(addBtn);
+    btnBar->addWidget(addSelectedBtn);
+    btnBar->addWidget(removeSelectedBtn);
     btnBar->addWidget(deleteBtn);
     btnBar->addStretch();
     btnBar->addWidget(closeBtn);
     layout->addLayout(btnBar);
 
     connect(addBtn, &QPushButton::clicked, &dlg, [&loadCollections, &dlg, this]() {
-        bool ok = false;
-        const QString name = QInputDialog::getText(&dlg, "New Collection", "Collection name:", QLineEdit::Normal, {}, &ok);
-        if (ok && !name.trimmed().isEmpty()) {
-            Database::instance().createCollection(name.trimmed());
-            loadCollections();
-            refreshCategoryOptions();
-        }
+        const QSet<QString> existingNames = QSet<QString>([&]() {
+            QStringList names;
+            for (const Collection& collection : Database::instance().allCollections())
+                names << collection.name;
+            return QSet<QString>(names.begin(), names.end());
+        }());
+        const QString name = promptForNonEmptyName(
+            trl("collection.new", "New Collection"),
+            trl("collection.namePrompt", "Collection name:"),
+            QString(),
+            trl("collection.emptyName", "Collection names cannot be empty."),
+            existingNames);
+        if (name.isEmpty())
+            return;
+        Database::instance().createCollection(name.trimmed());
+        qInfo().noquote() << "[Collections] Created collection" << name;
+        loadCollections();
+        refreshCategoryOptions();
+    });
+
+    connect(addSelectedBtn, &QPushButton::clicked, &dlg, [&, this]() {
+        const int row = table->currentRow();
+        if (row < 0 || selection.isEmpty())
+            return;
+        const auto collections = Database::instance().allCollections();
+        if (row >= collections.size())
+            return;
+        int changed = 0;
+        for (const Book& book : selection)
+            changed += Database::instance().addBookToCollection(book.id, collections[row].id) ? 1 : 0;
+        qInfo().noquote() << "[Collections] Added selection size=" << selection.size()
+                          << "collection=" << collections[row].name
+                          << "changed=" << changed;
+        loadCollections();
+        refreshCategoryOptions();
+        if (m_statusLabel)
+            m_statusLabel->setText(trl("status.addedSelectionToCollection", "Added selection to collection: %1").arg(collections[row].name));
+    });
+
+    connect(removeSelectedBtn, &QPushButton::clicked, &dlg, [&, this]() {
+        const int row = table->currentRow();
+        if (row < 0 || selection.isEmpty())
+            return;
+        const auto collections = Database::instance().allCollections();
+        if (row >= collections.size())
+            return;
+        int changed = 0;
+        for (const Book& book : selection)
+            changed += Database::instance().removeBookFromCollection(book.id, collections[row].id) ? 1 : 0;
+        qInfo().noquote() << "[Collections] Removed selection size=" << selection.size()
+                          << "collection=" << collections[row].name
+                          << "changed=" << changed;
+        loadCollections();
+        refreshCategoryOptions();
+        if (m_statusLabel)
+            m_statusLabel->setText(trl("status.removedSelectionFromCollection", "Removed selection from collection: %1").arg(collections[row].name));
     });
 
     connect(deleteBtn, &QPushButton::clicked, &dlg, [&, this]() {
@@ -6090,12 +6357,12 @@ void MainWindow::manageCollections()
         if (row < 0) return;
         const auto collections = Database::instance().allCollections();
         if (row >= collections.size()) return;
-        if (QMessageBox::question(&dlg, "Delete Collection",
-                                  "Delete collection \"" + collections[row].name + "\"?\n"
-                                  "Books will not be deleted.",
+        if (QMessageBox::question(&dlg, trl("collection.delete", "Delete Collection"),
+                                  trl("collection.deletePrompt", "Delete collection \"%1\"?\nBooks will not be deleted.").arg(collections[row].name),
                                   QMessageBox::Yes | QMessageBox::Cancel) != QMessageBox::Yes)
             return;
         Database::instance().deleteCollection(collections[row].id);
+        qInfo().noquote() << "[Collections] Deleted collection" << collections[row].name;
         loadCollections();
         refreshCategoryOptions();
     });
@@ -6106,13 +6373,228 @@ void MainWindow::manageCollections()
 
 void MainWindow::createCollection()
 {
-    bool ok = false;
-    const QString name = QInputDialog::getText(this, "New Collection", "Collection name:", QLineEdit::Normal, {}, &ok);
-    if (ok && !name.trimmed().isEmpty()) {
-        Database::instance().createCollection(name.trimmed());
-        refreshCategoryOptions();
-        m_statusLabel->setText("Collection created: " + name);
+    QStringList names;
+    for (const Collection& collection : Database::instance().allCollections())
+        names << collection.name;
+    const QString name = promptForNonEmptyName(
+        trl("collection.new", "New Collection"),
+        trl("collection.namePrompt", "Collection name:"),
+        QString(),
+        trl("collection.emptyName", "Collection names cannot be empty."),
+        QSet<QString>(names.begin(), names.end()));
+    if (name.isEmpty())
+        return;
+    Database::instance().createCollection(name.trimmed());
+    refreshCategoryOptions();
+    if (m_statusLabel)
+        m_statusLabel->setText(trl("status.collectionCreated", "Collection created: %1").arg(name));
+}
+
+void MainWindow::addSelectedBooksToCollection()
+{
+    const QVector<Book> books = selectedBooks();
+    if (books.isEmpty()) {
+        QMessageBox::information(this, trl("collection.addSelection", "Add Selection"),
+                                 trl("collection.noSelection", "No books selected. Select one or more books in the library view to assign them here."));
+        return;
     }
+
+    const QVector<Collection> collections = Database::instance().allCollections();
+    if (collections.isEmpty()) {
+        createCollection();
+        return;
+    }
+
+    QStringList names;
+    for (const Collection& collection : collections)
+        names << collection.name;
+    bool ok = false;
+    const QString chosen = QInputDialog::getItem(this,
+                                                 trl("collection.addSelection", "Add Selection"),
+                                                 trl("collection.chooseTarget", "Choose collection:"),
+                                                 names,
+                                                 0,
+                                                 false,
+                                                 &ok);
+    if (!ok || chosen.isEmpty())
+        return;
+    int changed = 0;
+    for (const Collection& collection : collections) {
+        if (collection.name != chosen)
+            continue;
+        for (const Book& book : books)
+            changed += Database::instance().addBookToCollection(book.id, collection.id) ? 1 : 0;
+        break;
+    }
+    refreshCategoryOptions();
+    qInfo().noquote() << "[Collections] Add selected books count=" << books.size() << "target=" << chosen << "changed=" << changed;
+    if (m_statusLabel)
+        m_statusLabel->setText(trl("status.addedSelectionToCollection", "Added selection to collection: %1").arg(chosen));
+}
+
+void MainWindow::removeSelectedBooksFromCollection()
+{
+    const QVector<Book> books = selectedBooks();
+    if (books.isEmpty()) {
+        QMessageBox::information(this, trl("collection.removeSelection", "Hide Selection"),
+                                 trl("collection.noSelection", "No books selected. Select one or more books in the library view to assign them here."));
+        return;
+    }
+
+    QMap<int, QString> availableCollections;
+    for (const Book& book : books) {
+        const QList<int> ids = Database::instance().collectionsForBook(book.id);
+        for (int id : ids) {
+            if (!availableCollections.contains(id)) {
+                for (const Collection& collection : Database::instance().allCollections()) {
+                    if (collection.id == id) {
+                        availableCollections.insert(id, collection.name);
+                        break;
+                    }
+                }
+            }
+        }
+    }
+    if (availableCollections.isEmpty()) {
+        QMessageBox::information(this, trl("collection.removeSelection", "Hide Selection"),
+                                 trl("collection.noAssignments", "The selected books are not assigned to any virtual collection."));
+        return;
+    }
+
+    QStringList names = availableCollections.values();
+    names.sort(Qt::CaseInsensitive);
+    bool ok = false;
+    const QString chosen = QInputDialog::getItem(this,
+                                                 trl("collection.removeSelection", "Hide Selection"),
+                                                 trl("collection.chooseTarget", "Choose collection:"),
+                                                 names,
+                                                 0,
+                                                 false,
+                                                 &ok);
+    if (!ok || chosen.isEmpty())
+        return;
+
+    int targetId = 0;
+    for (auto it = availableCollections.begin(); it != availableCollections.end(); ++it) {
+        if (it.value() == chosen) {
+            targetId = it.key();
+            break;
+        }
+    }
+    if (targetId <= 0)
+        return;
+    int changed = 0;
+    for (const Book& book : books)
+        changed += Database::instance().removeBookFromCollection(book.id, targetId) ? 1 : 0;
+    refreshCategoryOptions();
+    qInfo().noquote() << "[Collections] Removed selected books count=" << books.size() << "target=" << chosen << "changed=" << changed;
+    if (m_statusLabel)
+        m_statusLabel->setText(trl("status.removedSelectionFromCollection", "Removed selection from collection: %1").arg(chosen));
+}
+
+void MainWindow::clearCurrentLibraryAndRescan()
+{
+    if (m_currentLibraryName.trimmed().isEmpty())
+        return;
+    if (m_watchFolders.isEmpty()) {
+        QMessageBox::information(this,
+                                 trl("action.clearAndRescan", "Clear Current Library and Rescan"),
+                                 trl("action.clearAndRescanNoFolders", "The active library does not have watched folders yet."));
+        return;
+    }
+    if (QMessageBox::question(this,
+                              trl("action.clearAndRescan", "Clear Current Library and Rescan"),
+                              trl("action.clearAndRescanPrompt", "Remove all indexed rows for the current library and scan its watched folders again?\nSource files will not be deleted."),
+                              QMessageBox::Yes | QMessageBox::Cancel,
+                              QMessageBox::Cancel) != QMessageBox::Yes) {
+        return;
+    }
+
+    const int removed = Database::instance().removeBooksForFolders(m_watchFolders);
+    qInfo().noquote() << "[Library] Clear/rescan library=" << m_currentLibraryName
+                      << "folders=" << m_watchFolders.join(QStringLiteral(" | "))
+                      << "removedRows=" << removed;
+    reloadCurrentLibrary();
+    updateStatusCount();
+    if (m_statusLabel)
+        m_statusLabel->setText(trl("status.libraryCleared", "Cleared %1 indexed rows. Starting fresh scan...").arg(removed));
+    queueOrRunMenuTask(trl("action.scanFolders", "Scan Folders"), [this]() { startScanNow(); });
+}
+
+void MainWindow::openLibraryDashboard()
+{
+    const QVector<Book> books = currentLibraryBooks();
+    const int total = books.size();
+    int booksOnly = 0;
+    int documents = 0;
+    int favourites = 0;
+    int missingMetadata = 0;
+    int noCover = 0;
+    QMap<QString, int> formatCounts;
+    QMap<QString, int> categoryCounts;
+
+    for (const Book& book : books) {
+        const QString kind = book.classificationTag();
+        if (kind == QStringLiteral("Book"))
+            ++booksOnly;
+        else
+            ++documents;
+        if (book.isFavourite)
+            ++favourites;
+        if (book.coverPath.trimmed().isEmpty())
+            ++noCover;
+        if (book.title.trimmed().isEmpty() || book.author.trimmed().isEmpty())
+            ++missingMetadata;
+        formatCounts[book.format.isEmpty() ? trl("dashboard.unknownFormat", "Unknown") : book.format] += 1;
+        categoryCounts[kind] += 1;
+    }
+
+    QDialog dlg(this);
+    dlg.setWindowTitle(trl("action.libraryDashboard", "Library Dashboard"));
+    dlg.resize(760, 560);
+    dlg.setStyleSheet(styleSheet());
+    auto* layout = new QVBoxLayout(&dlg);
+
+    auto* summary = new QLabel(trl("dashboard.summary",
+                                   "<b>Library overview</b><br>Total items: %1<br>Books: %2<br>Documents: %3<br>Favourites: %4<br>Missing metadata: %5<br>No cover: %6")
+                                   .arg(total).arg(booksOnly).arg(documents).arg(favourites).arg(missingMetadata).arg(noCover),
+                               &dlg);
+    summary->setWordWrap(true);
+    summary->setTextFormat(Qt::RichText);
+    layout->addWidget(summary);
+
+    auto addDiagram = [&](const QString& title, const QMap<QString, int>& values) {
+        auto* group = new QGroupBox(title, &dlg);
+        auto* groupLayout = new QVBoxLayout(group);
+        QList<QPair<QString, int>> rows;
+        for (auto it = values.begin(); it != values.end(); ++it)
+            rows.append({it.key(), it.value()});
+        std::sort(rows.begin(), rows.end(), [](const auto& a, const auto& b) { return a.second > b.second; });
+        const int topCount = std::min<int>(6, static_cast<int>(rows.size()));
+        for (int i = 0; i < topCount; ++i) {
+            auto* row = new QWidget(group);
+            auto* rowLayout = new QHBoxLayout(row);
+            rowLayout->setContentsMargins(0, 0, 0, 0);
+            auto* name = new QLabel(rows[i].first, row);
+            auto* bar = new QProgressBar(row);
+            bar->setRange(0, qMax(1, total));
+            bar->setValue(rows[i].second);
+            bar->setFormat(QString("%1").arg(rows[i].second));
+            rowLayout->addWidget(name, 1);
+            rowLayout->addWidget(bar, 2);
+            groupLayout->addWidget(row);
+        }
+        layout->addWidget(group);
+    };
+
+    addDiagram(trl("dashboard.byFormat", "Top Formats"), formatCounts);
+    addDiagram(trl("dashboard.byCategory", "Category Split"), categoryCounts);
+
+    auto* buttons = new QDialogButtonBox(QDialogButtonBox::Close, &dlg);
+    connect(buttons, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
+    connect(buttons, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
+    layout->addWidget(buttons);
+    dlg.exec();
 }
 
 void MainWindow::openReadingDashboard()

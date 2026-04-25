@@ -86,6 +86,7 @@ private:
     void retranslateUi();
     void syncCurrentProfileFromUi();
     void loadProfileIntoUi(const QString& name);
+    QString promptForLibraryName(const QString& title, const QString& initialValue = QString(), const QString& currentName = QString()) const;
     void addLibraryProfile();
     void removeLibraryProfile();
     void renameLibraryProfile();

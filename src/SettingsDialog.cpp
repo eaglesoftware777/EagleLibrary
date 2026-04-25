@@ -24,8 +24,11 @@
 #include <QDesktopServices>
 #include <QUrl>
 #include <QPixmap>
+#include <QMessageBox>
 
 namespace {
+
+const char kDefaultLibraryName[] = "Main";
 
 QString trl(const QString& key, const QString& fallback)
 {
@@ -310,9 +313,8 @@ void SettingsDialog::loadProfileIntoUi(const QString& name)
 
 void SettingsDialog::addLibraryProfile()
 {
-    const QString name = QInputDialog::getText(this, trl("settings.newLibrary", "New Library"), trl("settings.libraryProfile", "Library name:"));
-    const QString trimmed = name.trimmed();
-    if (trimmed.isEmpty() || m_libraryProfiles.contains(trimmed))
+    const QString trimmed = promptForLibraryName(trl("settings.newLibrary", "New Library"));
+    if (trimmed.isEmpty())
         return;
     syncCurrentProfileFromUi();
     m_libraryProfiles[trimmed] = QJsonArray{};
@@ -336,8 +338,8 @@ void SettingsDialog::renameLibraryProfile()
     const QString current = m_libraryProfileCombo->currentText().trimmed();
     if (current.isEmpty())
         return;
-    const QString renamed = QInputDialog::getText(this, trl("settings.rename", "Rename Library"), trl("settings.libraryProfile", "Library name:"), QLineEdit::Normal, current).trimmed();
-    if (renamed.isEmpty() || renamed == current || m_libraryProfiles.contains(renamed))
+    const QString renamed = promptForLibraryName(trl("settings.rename", "Rename Library"), current, current);
+    if (renamed.isEmpty() || renamed == current)
         return;
     syncCurrentProfileFromUi();
     m_libraryProfiles[renamed] = m_libraryProfiles.value(current);
@@ -355,7 +357,7 @@ void SettingsDialog::removeFolder()
 void SettingsDialog::loadSettings()
 {
     QSettings s(AppConfig::settingsPath(), QSettings::IniFormat);
-    const QString currentLibrary = s.value("library/currentName", "Main Library").toString();
+    const QString currentLibrary = s.value("library/currentName", QString::fromUtf8(kDefaultLibraryName)).toString().trimmed();
     const QJsonDocument profilesDoc = QJsonDocument::fromJson(s.value("library/profiles").toByteArray());
     if (profilesDoc.isObject())
         m_libraryProfiles = profilesDoc.object();
@@ -363,13 +365,13 @@ void SettingsDialog::loadSettings()
         QJsonArray folders;
         for (const QString& folder : s.value("library/folders").toStringList())
             folders.append(folder);
-        m_libraryProfiles.insert(currentLibrary, folders);
+        m_libraryProfiles.insert(currentLibrary.isEmpty() ? QString::fromUtf8(kDefaultLibraryName) : currentLibrary, folders);
     }
     for (const QString& key : m_libraryProfiles.keys())
         m_libraryProfileCombo->addItem(key);
     if (m_libraryProfileCombo->count() == 0) {
-        m_libraryProfiles.insert("Main Library", QJsonArray{});
-        m_libraryProfileCombo->addItem("Main Library");
+        m_libraryProfiles.insert(QString::fromUtf8(kDefaultLibraryName), QJsonArray{});
+        m_libraryProfileCombo->addItem(QString::fromUtf8(kDefaultLibraryName));
     }
     const int libraryIndex = qMax(0, m_libraryProfileCombo->findText(currentLibrary));
     m_libraryProfileCombo->setCurrentIndex(libraryIndex);
@@ -478,6 +480,34 @@ bool SettingsDialog::diagnosticLogsEnabled() const { return m_diagnosticLogsChec
 QString SettingsDialog::selectedLanguage() const
 {
     return m_languageCombo ? m_languageCombo->currentData().toString() : QStringLiteral("en");
+}
+
+QString SettingsDialog::promptForLibraryName(const QString& title, const QString& initialValue, const QString& currentName) const
+{
+    bool ok = false;
+    const QString entered = QInputDialog::getText(const_cast<SettingsDialog*>(this),
+                                                  title,
+                                                  trl("settings.libraryProfile", "Library name:"),
+                                                  QLineEdit::Normal,
+                                                  initialValue,
+                                                  &ok);
+    if (!ok)
+        return {};
+
+    const QString trimmed = entered.trimmed();
+    if (trimmed.isEmpty()) {
+        QMessageBox::warning(const_cast<SettingsDialog*>(this),
+                             title,
+                             trl("settings.invalidLibraryName", "Library names cannot be empty."));
+        return {};
+    }
+    if (trimmed.compare(currentName, Qt::CaseInsensitive) != 0 && m_libraryProfiles.contains(trimmed)) {
+        QMessageBox::warning(const_cast<SettingsDialog*>(this),
+                             title,
+                             trl("settings.libraryExists", "A library with this name already exists."));
+        return {};
+    }
+    return trimmed;
 }
 
 void SettingsDialog::retranslateUi()
